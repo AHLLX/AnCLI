@@ -294,7 +294,6 @@ class TestWrapperGeneration:
         assert 'if [ "$ANCLI_IN_CONTAINER" = "1" ] || [ -n "$PROOT_TMP_DIR" ]; then' in wrapper
         assert 'exec "/usr/local/bin/mimo" "$@"' in wrapper
         assert "export PROOT_NO_SECCOMP=1" in wrapper
-        assert "-b /dev/null:" in wrapper
         assert "ANCLI_IN_CONTAINER=1 PATH=" in wrapper
         # env bootstrap + per-tool secrets sourcing
         assert "ancli_env.sh" in wrapper
@@ -1324,7 +1323,6 @@ class TestBrowserHandoff:
 
         wrapper = (tmp_path / "ancli" / "bin" / "dsh").read_text(encoding="utf-8")
         assert "export PROOT_NO_SECCOMP=1" in wrapper
-        assert "-b /dev/null:" in wrapper
         assert "/usr/bin/env ANCLI_IN_CONTAINER=1 PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/system/bin SHELL=/bin/bash BROWSER=/usr/local/bin/xdg-open dsh" in wrapper
         assert "/data/adb/ksu/bin" not in wrapper.split("PATH=")[1].split()[0]
 

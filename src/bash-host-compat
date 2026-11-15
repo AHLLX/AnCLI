@@ -8,10 +8,10 @@
 # - 若需使用 GNU Bash 专有语法，仍应进入容器内的 `/bin/bash` 执行。
 # - 注入动态与模块 bin 目录到 PATH，确保宿主机继承极简 PATH（仅 `/system/bin`）时也能找到 `ancli`/`agy`/`dsh` 等托管命令的包装脚本。
 # 如果是在 PRoot 容器内被误调，直接转交容器内真正的 GNU Bash
-if [ "$ANCLI_IN_CONTAINER" = "1" ] || [ -n "$PROOT_TMP_DIR" ] || [ -f "/.proot" ]; then
-    if [ -x "/bin/bash" ]; then
+if [ "$ANCLI_IN_CONTAINER" = "1" ] || [ -n "$PROOT_TMP_DIR" ] || [ -f "/.proot" ] || [ -e "/bin/bash" ]; then
+    if [ -e "/bin/bash" ]; then
         exec /bin/bash "$@"
-    elif [ -x "/usr/bin/bash" ]; then
+    elif [ -e "/usr/bin/bash" ]; then
         exec /usr/bin/bash "$@"
     fi
 fi

@@ -913,7 +913,6 @@ ANCLI_WRAPPER_PID="$$"
 ANCLI_WATCHDOG_PID=$!
 export PROOT_NO_SECCOMP=1
 {ANCLI_DIR}/bin/proot -r {ROOTFS} -b /dev -b /proc -b /sys -b {ANCLI_DIR} \\
--b /dev/null:{ANCLI_DIR}/rootfs \\
 $ANCLI_BIND_ARGS \\
 -b {ANCLI_DIR}/hosts:/etc/hosts -b /data/adb $SHM_BIND \\
 -w "$PROOT_CWD" /usr/bin/env ANCLI_IN_CONTAINER=1 PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/system/bin SHELL=/bin/bash BROWSER=/usr/local/bin/xdg-open {executable} "$@"
@@ -2332,6 +2331,21 @@ def _deploy_guest_ancli(verbose=True):
                 os.symlink("/usr/local/bin/ancli", link_path)
             except Exception:
                 pass
+
+        # 确保容器内 /usr/local/bin/bash 存在（指向 /bin/bash），方便 Go/exec.LookPath 优先命中
+        guest_bash = f"{ROOTFS}/usr/local/bin/bash"
+        if not os.path.lexists(guest_bash):
+            try:
+                os.symlink("/bin/bash", guest_bash)
+            except Exception:
+                pass
+
+        etc_env = f"{ROOTFS}/etc/environment"
+        try:
+            with open(etc_env, "w", encoding="utf-8", newline="\n") as fh:
+                fh.write('PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/system/bin"\n')
+        except Exception:
+            pass
 
         if verbose:
             print("\033[92m[OK] Container ancli entrypoint deployed (/usr/local/bin/ancli).\033[0m")

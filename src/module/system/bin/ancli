@@ -80,6 +80,5 @@ done
 # 6. 抹除 seccomp 警告，替换当前进程启动 PRoot 容器并执行 ancli-core.py
 export PROOT_NO_SECCOMP=1
 exec /data/local/tmp/ancli/bin/proot -r /data/local/tmp/ancli/rootfs -b /dev -b /proc -b /sys -b /data/local/tmp/ancli \
-    -b /dev/null:/data/local/tmp/ancli/rootfs \
     $ANCLI_BIND_ARGS -b /data/local/tmp/ancli/hosts:/etc/hosts -b /data/adb $SHM_BIND \
     -w "$PROOT_CWD" /usr/bin/env ANCLI_IN_CONTAINER=1 PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/system/bin python3 /data/local/tmp/ancli/bin/ancli-core.py "$@"
