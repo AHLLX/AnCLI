@@ -1,14 +1,16 @@
 ## v1.2.613-beta (2026-11-15)
 
-### PRoot container isolation, seccomp fix, and Agent memory guide onboarding
+### PRoot isolation, assertion crash fix, AGY LookPath, and WebUI About/Beta update channel
 
-- **Container PATH isolation & Shadowing fix**: Strip `/data/adb/ksu/bin` and `/data/adb/ap/bin` from container wrapper PATH, leaving a clean environment (`PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/system/bin`). This prevents guest invocations of `bash`, `agy`, or `ancli` from hitting host wrappers and triggering nested PRoot lockups or watchdog timeouts.
-- **Container re-entrance guard**: Add `ANCLI_IN_CONTAINER=1` / `PROOT_TMP_DIR` checks in wrapper headers, `bash-host-compat`, and `system/bin/ancli`. Invocations inside PRoot directly execute native guest binaries (`/usr/local/bin/{tool}` or `/bin/bash`) without re-entering PRoot.
-- **Suppress PRoot seccomp warnings & TUI cursor corruption**: Export `PROOT_NO_SECCOMP=1` before launching PRoot in wrappers and `system/bin/ancli`, skipping the unsupported `PTRACE_O_TRACESECCOMP` probe and eliminating the stderr warning that caused AGY's ANSI cursor positioning to duplicate screen text.
-- **Proc assertion crash mitigation**: Mask host rootfs in PRoot binds with `-b /dev/null:{ANCLI_DIR}/rootfs` to prevent tools like `find` from scanning nested proc entries and triggering `readlink_proc: comparison == compare_paths` SIGABRT (Terminated 143) crashes. Add runtime memory rule #15 documenting this boundary.
-- **WebUI Agent memory onboarding**: Display a dedicated guidance dialog on first launch explaining the global memory template (`/root/.agents/AGENTS.md`) and initial hardware probe. Allow users to choose "Add (Recommended)" or "Do not add (Clean mode)". Integrate with `ancli config --set agent_memory=enabled/disabled` and settings dropdown, automatically pruning template files and symlinks when disabled.
-- **Mobile WebUI dialog bottom border-radius**: Convert `.settings-viewport` to elastic flex sizing with responsive height constraints, ensuring modal dialog headers, tab bars, action buttons, and bottom corner radii (`border-radius: var(--r-lg)`) remain 100% visible across narrow and short mobile viewports.
-- **KernelSU catalog compatibility**: Keep `update.json` on the official v1.2.612 release so module managers do not recognize this pre-release build as an automatic OTA update.
+- **PRoot proc assertion crash root-cause fix**: Completely eliminate `-b /dev/null:{ANCLI_DIR}/rootfs` binds that collided with PRoot's internal reverse path mapping and caused SIGABRT (`Assertion failed: comparison == compare_paths("/proc", base) (./path/proc.c: readlink_proc: 52)`, Terminated 143) when inspecting `/proc/*/fd`.
+- **AGY & Go LookPath bash resolution**: Symlink `/usr/local/bin/bash -> /bin/bash` as the primary path inside the PRoot container, preventing `exec.LookPath` (syscall.Faccessat) from failing on secondary symlinks and eliminating `remote error: run bash: exec: "bash": executable file not found in $PATH`.
+- **Hardened bash host compatibility & environment**: Update `bash-host-compat` to inspect container identity and `/etc/debian_version` so container invocations 100% execute GNU Bash, and persist `/etc/environment` for clean non-interactive shells.
+- **WebUI About modal & Dual Update Channel (Stable / Beta)**: Add an About view in Settings displaying the AnCLI logo, GitHub repository link, and an interactive Update Channel switcher (`stable` vs `beta`). Allows the WebUI to discover and install pre-release builds while KernelSU manager strictly tracks the immutable stable catalog.
+- **WebUI Clean Uninstall in Reset modal**: Add an explicit option to completely uninstall all managed CLI tools and the module itself cleanly without leaving orphaned container files.
+- **Bilingual tool descriptions**: Format CLI tool descriptions with Chinese and English displayed on separate lines in the WebUI.
+- **Agent memory guide onboarding & gentle probing**: Display a first-launch guidance dialog for the global memory template (`/root/.agents/AGENTS.md`) and relax initial probing to on-demand execution, avoiding heavy background workloads during standard conversational greetings.
+- **Container PATH isolation & Shadowing fix**: Strip `/data/adb/ksu/bin` and `/data/adb/ap/bin` from container wrapper PATH, leaving a clean guest environment (`PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/system/bin`) to prevent nested PRoot lockups.
+- **Suppress PRoot seccomp warnings**: Export `PROOT_NO_SECCOMP=1` before launching PRoot in wrappers and `system/bin/ancli`, skipping unsupported `PTRACE_O_TRACESECCOMP` probe and eliminating stderr noise that corrupted terminal ANSI cursor positions.
 
 ## v1.2.612 (2026-11-15)
 

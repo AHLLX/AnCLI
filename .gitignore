@@ -42,4 +42,5 @@ KernelSU_install_log_*.log
 # Scratch files (commit messages, temp extractions)
 .commit-msg*.txt
 .git-commit-msg.txt
+.release-notes.md
 .tmp_*
