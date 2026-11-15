@@ -37,7 +37,7 @@ MOD_DIR = "/data/adb/modules/ancli"
 KSU_BIN = "/data/adb/ksu/bin"
 AP_BIN  = "/data/adb/ap/bin"
 
-VERSION = "1.2.612"
+VERSION = "1.2.613-beta"
 
 # 2026-11-13: 应用目录随模块固化打包；官方版本检查直接读取各应用自身的 `latest` 字段，
 # 不再从网络拉取第二份 AnCLI 注册表。
@@ -49,7 +49,7 @@ CONFIG_FILE    = "/root/.ancli-config.json"
 # 避免 TUI 工具在 "/" 下扫描整个容器及 /data、/sdcard 挂载树。
 DEFAULT_CWD    = "/root"
 # 2026-11-13: `ancli config` 仅接受以下全局配置键；各工具的 API 密钥仍由注册表定义并保存在 secrets/<tool>.env。
-GLOBAL_CONFIG_KEYS = ("default_cwd", "lang", "proxy_mode", "proxy_url")
+GLOBAL_CONFIG_KEYS = ("default_cwd", "lang", "proxy_mode", "proxy_url", "agent_memory")
 # 运行时动态绑定挂载的 Android 根目录（在 $ROOTFS 磁盘上不存在实体目录，校验存在性时跳过）
 BIND_MOUNT_ROOTS = ("/dev", "/proc", "/sys", "/sdcard", "/storage", "/mnt",
                     "/data", "/apex", "/system", "/linkerconfig")
@@ -208,6 +208,22 @@ def set_proxy_mode(value):
     return True, ""
 
 
+def set_agent_memory(value):
+    """设置是否启用 Agent 全局记忆模板（enabled / disabled），置空返回错误。"""
+    val = (value or "").strip().lower()
+    if val in ("1", "true", "enabled", "yes", "on", "add"):
+        mode = "enabled"
+    elif val in ("0", "false", "disabled", "no", "off", "none", "skip"):
+        mode = "disabled"
+    else:
+        return False, "agent_memory 必须是 enabled (添加) 或 disabled (不添加)"
+    cfg = load_config()
+    cfg["agent_memory"] = mode
+    save_config(cfg)
+    setup_runtime_context(verbose=False)
+    return True, ""
+
+
 def settings_command(argv):
     """Handle `ancli config` without an app id (global settings only)."""
     errors = []
@@ -223,6 +239,8 @@ def settings_command(argv):
             ok, err = set_proxy_url(value)
         elif key == "proxy_mode":
             ok, err = set_proxy_mode(value)
+        elif key == "agent_memory":
+            ok, err = set_agent_memory(value)
         else:
             ok, err = False, f"未知配置项：{key}（支持 {', '.join(GLOBAL_CONFIG_KEYS)}）"
         if not ok:
@@ -241,6 +259,7 @@ def settings_command(argv):
             "effective_cwd": cfg.get("default_cwd") or DEFAULT_CWD,
             "proxy_url": cfg.get("proxy_url", ""),
             "proxy_mode": cfg.get("proxy_mode", "system"),
+            "agent_memory": cfg.get("agent_memory", "unconfigured"),
             "detected_proxy": detected_proxy,
             "proxy_connected": bool(detected_proxy),
             "supported_keys": list(GLOBAL_CONFIG_KEYS),
@@ -258,6 +277,7 @@ def settings_command(argv):
         print(f"代理模式: {cfg.get('proxy_mode', 'system')}")
         print(f"代理地址: {cfg.get('proxy_url') or '未设置'}")
         print(f"当前代理: {detected_proxy or '未连接'}")
+        print(f"Agent全局记忆: {cfg.get('agent_memory', '未选择 (默认开启)')}")
     for err in errors:
         print(f"\033[91m[X] {err}\033[0m")
     if errors:
@@ -669,6 +689,16 @@ def generate_proot_wrapper(executable, env_dict=None, runtime_env_list=None, pro
     wrapper = f"""#!/system/bin/sh
 # AnCLI wrapper for: {executable}
 
+# 0. Container re-entrance guard: if called inside PRoot, execute guest binary directly
+#    to prevent nested PRoot lockups and watchdog timeouts.
+if [ "$ANCLI_IN_CONTAINER" = "1" ] || [ -n "$PROOT_TMP_DIR" ]; then
+    if [ -x "/usr/local/bin/{executable}" ]; then
+        exec "/usr/local/bin/{executable}" "$@"
+    elif [ -x "/usr/bin/{executable}" ]; then
+        exec "/usr/bin/{executable}" "$@"
+    fi
+fi
+
 # 1. Load centralized proxy & environment variables
 . {ANCLI_DIR}/bin/ancli_env.sh 2>/dev/null || true
 
@@ -865,10 +895,12 @@ ANCLI_WRAPPER_PID="$$"
     done
 ) &
 ANCLI_WATCHDOG_PID=$!
+export PROOT_NO_SECCOMP=1
 {ANCLI_DIR}/bin/proot -r {ROOTFS} -b /dev -b /proc -b /sys -b {ANCLI_DIR} \\
+-b /dev/null:{ANCLI_DIR}/rootfs \\
 $ANCLI_BIND_ARGS \\
 -b {ANCLI_DIR}/hosts:/etc/hosts -b /data/adb $SHM_BIND \\
--w "$PROOT_CWD" /usr/bin/env PATH=/usr/local/bin:/usr/bin:/bin:/data/adb/ksu/bin:/data/adb/ap/bin:/system/bin SHELL=/bin/bash BROWSER=/usr/local/bin/xdg-open {executable} "$@"
+-w "$PROOT_CWD" /usr/bin/env ANCLI_IN_CONTAINER=1 PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/system/bin SHELL=/bin/bash BROWSER=/usr/local/bin/xdg-open {executable} "$@"
 _ancli_rc=$?
 kill "$ANCLI_WATCHDOG_PID" 2>/dev/null || true
 wait "$ANCLI_WATCHDOG_PID" 2>/dev/null || true
@@ -1665,6 +1697,32 @@ def setup_runtime_context(verbose=True, refresh=False):
         "status": "skipped",
         "reason": None,
     }
+    cfg = load_config()
+    if cfg.get("agent_memory") == "disabled":
+        if target_file and os.path.exists(target_file):
+            has_marker = False
+            try:
+                with open(target_file, "r", encoding="utf-8", errors="replace") as fh:
+                    has_marker = (RUNTIME_CONTEXT_MARKER in fh.read())
+            except OSError:
+                pass
+            if has_marker:
+                try:
+                    os.remove(target_file)
+                except OSError:
+                    pass
+        for p in _runtime_context_compat_targets():
+            if os.path.islink(p) or os.path.exists(p):
+                try:
+                    os.remove(p)
+                except OSError:
+                    pass
+        result["status"] = "disabled"
+        result["reason"] = "已根据配置禁用 Agent 全局记忆（纯净模式）"
+        if verbose:
+            print("\033[96m[i] Agent 全局记忆已禁用（纯净模式），未写入 AGENTS.md。\033[0m")
+        return result
+
     template = _load_runtime_context_template()
     if template is None:
         result["reason"] = "模块中缺少 runtime-context/AGENTS.md 模板"
@@ -3263,6 +3321,7 @@ def status_json():
             ),
             "detected_proxy": detected_proxy,
             "proxy_connected": bool(detected_proxy),
+            "agent_memory": load_config().get("agent_memory", "unconfigured"),
         }
     print(json.dumps(payload, ensure_ascii=False))
 

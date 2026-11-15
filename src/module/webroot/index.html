@@ -418,30 +418,31 @@ body.ime-open .topbar { backdrop-filter: none; -webkit-backdrop-filter: none; ba
   box-shadow: 0 1px 2px rgba(0,0,0,0.06);
 }
 
-/* 保持弹窗高度不变，设置固定高度的平滑滑动视口，适配手机屏幕 */
+/* 保持弹窗高度自适应，设置弹性滑动视口，适配各类手机屏幕 */
 .settings-viewport {
   position: relative;
   width: 100%;
   max-width: 100%;
-  height: clamp(200px, 42vh, 310px);
+  height: clamp(150px, 36vh, 300px);
+  max-height: calc(84vh - 160px);
   overflow: hidden;
   min-width: 0;
-  min-height: 0;
+  min-height: 120px;
   box-sizing: border-box;
-  flex-shrink: 0;
+  flex: 1 1 auto;
 }
 .settings-slider {
   display: flex;
-  width: 400%;
-  max-width: 400%;
+  width: 500%;
+  max-width: 500%;
   height: 100%;
   transition: transform 0.28s cubic-bezier(0.25, 1, 0.5, 1);
   will-change: transform;
 }
 .settings-panel {
-  flex: 0 0 25%;
-  width: 25%;
-  max-width: 25%;
+  flex: 0 0 20%;
+  width: 20%;
+  max-width: 20%;
   min-width: 0;
   height: 100%;
   overflow-y: auto;
@@ -451,10 +452,55 @@ body.ime-open .topbar { backdrop-filter: none; -webkit-backdrop-filter: none; ba
   -webkit-overflow-scrolling: touch;
 }
 
+/* ============================ 关于界面样式 ============================ */
+.about-hero {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  padding: 12px 10px 14px; text-align: center;
+}
+.about-logo {
+  width: 54px; height: 54px; border-radius: 13px; margin-bottom: 8px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+  object-fit: cover;
+}
+.about-brand {
+  display: flex; align-items: center; gap: 8px; justify-content: center;
+}
+.about-name {
+  font-size: 17px; font-weight: 700; letter-spacing: -0.02em; color: var(--text);
+}
+.about-badge {
+  font-size: 10.5px; font-weight: 600; padding: 2px 7px; border-radius: var(--r-pill);
+  background: var(--accent-soft); color: var(--accent); border: 1px solid var(--accent-line);
+}
+.about-desc {
+  font-size: 11.5px; color: var(--muted); margin: 5px 0 0; line-height: 1.4;
+}
+.about-list {
+  display: flex; flex-direction: column; gap: 7px; margin-top: 2px;
+}
+.about-item {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  padding: 9px 12px; background: var(--surface-2); border: 1px solid var(--border);
+  border-radius: var(--r); text-decoration: none; color: inherit; transition: .16s ease;
+}
+.about-item:hover { border-color: var(--border-strong); }
+.about-item-left {
+  display: flex; align-items: center; gap: 10px; min-width: 0;
+}
+.about-item-icon {
+  width: 32px; height: 32px; border-radius: 8px; background: var(--surface);
+  border: 1px solid var(--border); display: grid; place-items: center;
+  color: var(--text); flex-shrink: 0;
+}
+.about-item-text { min-width: 0; }
+.about-item-text b { display: block; font-size: 12px; font-weight: 650; color: var(--text); line-height: 1.35; }
+.about-item-text small { display: block; font-size: 10.5px; color: var(--muted); line-height: 1.35; margin-top: 1px; }
+.about-item-arrow { color: var(--faint); font-size: 13px; font-weight: 600; margin-right: 2px; }
+
 /* 针对矮屏手机或横屏模式自适应视口高度，确保底下的圆角和按钮完整显示 */
 @media (max-height: 600px) {
-  .dialog { max-height: 92vh; }
-  .settings-viewport { height: clamp(160px, 38vh, 220px); }
+  .dialog { max-height: 94vh; }
+  .settings-viewport { height: clamp(130px, 32vh, 200px); max-height: calc(94vh - 145px); }
 }
 
 /* 统一条目行样式：标题居左、选择框紧随条目后边 */
@@ -620,10 +666,10 @@ body.ime-open .topbar { backdrop-filter: none; -webkit-backdrop-filter: none; ba
   .console-head .spacer { display: none; }
   .console-head .icon-btn:first-of-type { margin-left: auto; }
   .log { max-height: 230px; padding: 9px 10px; font-size: 11px; }
-  .dialog { width: min(480px, calc(100vw - 20px)); max-height: min(84vh, 520px); border-radius: var(--r-lg); }
-  .dlg-body { padding: 12px 12px 5px; }
-  .dlg-foot { padding-left: 12px; padding-right: 12px; border-radius: 0 0 var(--r-lg) var(--r-lg); }
-  .settings-viewport { height: clamp(190px, 42vh, 300px); max-height: calc(84vh - 140px); }
+  .dialog { width: min(480px, calc(100vw - 20px)); max-height: min(86vh, 520px); border-radius: var(--r-lg); }
+  .dlg-body { padding: 11px 12px 4px; }
+  .dlg-foot { padding: 9px 12px; border-radius: 0 0 var(--r-lg) var(--r-lg); }
+  .settings-viewport { height: clamp(140px, 35vh, 280px); max-height: calc(86vh - 150px); }
   .settings-grid { grid-template-columns: 1fr; }
   .settings-status { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
@@ -753,6 +799,7 @@ body.ime-open .topbar { backdrop-filter: none; -webkit-backdrop-filter: none; ba
         <button type="button" class="tab-btn" data-tab="proxy" role="tab" id="tabProxy" data-i18n="tabProxy">代理</button>
         <button type="button" class="tab-btn" data-tab="logs" role="tab" id="tabLogs" data-i18n="tabLogs">日志</button>
         <button type="button" class="tab-btn" data-tab="reset" role="tab" id="tabReset" data-i18n="tabReset">重置</button>
+        <button type="button" class="tab-btn" data-tab="about" role="tab" id="tabAbout" data-i18n="tabAbout">关于</button>
       </div>
 
       <div class="settings-viewport">
@@ -785,6 +832,20 @@ body.ime-open .topbar { backdrop-filter: none; -webkit-backdrop-filter: none; ba
                 <option value="auto">自动</option>
                 <option value="light">浅色</option>
                 <option value="dark">深色</option>
+              </select>
+            </div>
+
+            <div class="setting-item">
+              <div class="setting-item-left">
+                <span class="setting-icon" aria-hidden="true">🧠</span>
+                <div class="setting-item-text">
+                  <b data-i18n="agentMemorySetting">Agent 全局记忆</b>
+                  <small data-i18n="agentMemoryHint">AGENTS.md 与环境探测</small>
+                </div>
+              </div>
+              <select id="setAgentMemory" class="setting-select">
+                <option value="enabled" data-i18n="agentMemoryEnabled">添加（推荐）</option>
+                <option value="disabled" data-i18n="agentMemoryDisabled">不添加</option>
               </select>
             </div>
 
@@ -851,9 +912,9 @@ body.ime-open .topbar { backdrop-filter: none; -webkit-backdrop-filter: none; ba
             </section>
           </div>
 
-          <!-- 面板 4：重置环境 -->
+          <!-- 面板 4：重置与卸载 -->
           <div class="settings-panel" id="panel-reset">
-            <section class="settings-danger" style="margin-bottom: 0;">
+            <section class="settings-danger" style="margin-bottom: 10px;">
               <div class="setting-card-head">
                 <span class="setting-icon" aria-hidden="true">!</span>
                 <div><b data-i18n="factoryReset">完全初始化环境</b><small data-i18n="factoryResetTitle">恢复模块自带的干净 Agent 环境</small></div>
@@ -861,6 +922,76 @@ body.ime-open .topbar { backdrop-filter: none; -webkit-backdrop-filter: none; ba
               <p data-i18n="factoryResetHint">删除已安装应用、密钥、配置、skills、记忆文件和日志，保留 Ubuntu rootfs 与模块本体。操作完成后需要重新安装应用。</p>
               <button class="btn xs danger" id="btnFactoryReset" data-i18n="factoryResetAction">完全初始化</button>
             </section>
+
+            <section class="settings-danger" style="margin-bottom: 0;">
+              <div class="setting-card-head">
+                <span class="setting-icon" aria-hidden="true" style="color: var(--danger); background: var(--surface);">🗑</span>
+                <div><b data-i18n="uninstallModule">彻底卸载模块本体</b><small data-i18n="uninstallModuleTitle">卸载插件并彻底删除全部容器资产</small></div>
+              </div>
+              <p data-i18n="uninstallModuleHint">完全卸载所有已安装的应用，彻底删除 Ubuntu rootfs、密钥、配置与所有数据，并清除模块本体及宿主动态注入（如 bash、ancli 包装器）。</p>
+              <button class="btn xs danger" id="btnUninstallModule" data-i18n="uninstallModuleAction">彻底卸载模块</button>
+            </section>
+          </div>
+
+          <!-- 面板 5：关于 -->
+          <div class="settings-panel" id="panel-about">
+            <div class="about-hero">
+              <img src="logo.png?v=1.2.613" class="about-logo" alt="AnCLI Logo">
+              <div class="about-brand">
+                <span class="about-name">AnCLI</span>
+                <span class="about-badge" id="aboutVer">v1.2.613-beta</span>
+              </div>
+              <p class="about-desc" data-i18n="aboutDesc">统一的 Android 命令行与 AI Agent 环境管理器</p>
+            </div>
+
+            <div class="about-list">
+              <!-- GitHub 仓库 -->
+              <a href="https://github.com/AHLLX/AnCLI" target="_blank" rel="noopener noreferrer" class="about-item" id="aboutGithub">
+                <div class="about-item-left">
+                  <span class="about-item-icon" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
+                      <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/>
+                    </svg>
+                  </span>
+                  <div class="about-item-text">
+                    <b data-i18n="aboutRepoTitle">GitHub 项目主页</b>
+                    <small>github.com/AHLLX/AnCLI</small>
+                  </div>
+                </div>
+                <span class="about-item-arrow" aria-hidden="true">↗</span>
+              </a>
+
+              <!-- 检查更新按钮 -->
+              <div class="about-item" id="aboutCheckItem" style="cursor: pointer;">
+                <div class="about-item-left">
+                  <span class="about-item-icon" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/>
+                    </svg>
+                  </span>
+                  <div class="about-item-text">
+                    <b data-i18n="aboutCheckTitle">检查新版本</b>
+                    <small id="aboutCheckHint" data-i18n="aboutCheckHint">查询最新 Release 与模块更新</small>
+                  </div>
+                </div>
+                <button type="button" class="btn xs primary" id="aboutCheckBtn" data-i18n="aboutCheckBtn">检查更新</button>
+              </div>
+
+              <!-- 开源许可与作者 -->
+              <div class="about-item">
+                <div class="about-item-left">
+                  <span class="about-item-icon" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <circle cx="12" cy="12" r="10"/><path d="M14.83 14.83a4 4 0 1 1 0-5.66"/>
+                    </svg>
+                  </span>
+                  <div class="about-item-text">
+                    <b data-i18n="aboutAuthorTitle">作者与开源协议</b>
+                    <small>AHLLX · GPL-3.0 License</small>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -894,6 +1025,64 @@ body.ime-open .topbar { backdrop-filter: none; -webkit-backdrop-filter: none; ba
     <div class="dlg-foot">
       <button class="btn" id="resetCancel" data-i18n="cancel">取消</button>
       <button class="btn danger" id="resetApply" data-i18n="factoryResetAction">完全初始化</button>
+    </div>
+  </div>
+</div>
+
+<div class="overlay" id="uninstallOverlay" aria-hidden="true">
+  <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="uninstallTitle">
+    <div class="dlg-head">
+      <h3 id="uninstallTitle" data-i18n="uninstallModule">彻底卸载模块本体</h3>
+      <button class="icon-btn" id="uninstallClose" aria-label="关闭" data-i18n-title="close">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      </button>
+    </div>
+    <div class="dlg-body">
+      <div class="note" data-i18n="uninstallWarning">⚠️ <b>危险操作！</b>此操作将完全销毁 AnCLI 的一切数据与插件本体：<br>1. 卸载并删除所有已安装的命令行工具与 AI Agent；<br>2. 彻底抹除 Ubuntu 容器系统（/data/local/tmp/ancli）及所有配置、密钥与记忆；<br>3. 卸载 AnCLI 模块本体（/data/adb/modules/ancli）并移除宿主所有注入脚本。<br>操作完成后，请立即重启手机以清理内核文件系统挂载。</div>
+      <div class="field">
+        <label data-i18n="uninstallConfirmLabel">输入 UNINSTALL 继续</label>
+        <input id="uninstallConfirm" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="UNINSTALL">
+      </div>
+    </div>
+    <div class="dlg-foot">
+      <button class="btn" id="uninstallCancel" data-i18n="cancel">取消</button>
+      <button class="btn danger" id="uninstallApply" data-i18n="uninstallModuleAction">彻底卸载模块</button>
+    </div>
+  </div>
+</div>
+
+<div class="overlay" id="memoryOverlay" aria-hidden="true">
+  <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="memTitle">
+    <div class="dlg-head">
+      <h3 id="memTitle" data-i18n="memPromptTitle">Agent 全局记忆与环境探测</h3>
+    </div>
+    <div class="dlg-body">
+      <div class="note" data-i18n="memPromptDesc">
+        模块提供面向 AI Agent（AGY、Claude、Grok 等）的全局规范记忆模板（/root/.agents/AGENTS.md）与配套环境检测机制。首次运行时要求 Agent 执行环境探测以自适应本机硬件与挂载边界。请选择是否向容器添加该文件：
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 8px; margin-top: 10px;">
+        <label class="setting-item" style="cursor: pointer; margin-bottom: 0;">
+          <div class="setting-item-left">
+            <input type="radio" name="memChoice" id="memChoiceAdd" value="enabled" checked style="width: 17px; height: 17px; accent-color: var(--accent);">
+            <div class="setting-item-text">
+              <b data-i18n="memAddTitle">添加（推荐）</b>
+              <small data-i18n="memAddDesc">自动配置 AGENTS.md 规范与首启环境探测引导</small>
+            </div>
+          </div>
+        </label>
+        <label class="setting-item" style="cursor: pointer; margin-bottom: 0;">
+          <div class="setting-item-left">
+            <input type="radio" name="memChoice" id="memChoiceSkip" value="disabled" style="width: 17px; height: 17px; accent-color: var(--accent);">
+            <div class="setting-item-text">
+              <b data-i18n="memSkipTitle">不添加（纯净模式）</b>
+              <small data-i18n="memSkipDesc">不写入全局 AGENTS.md 文件，由用户或项目自主管理</small>
+            </div>
+          </div>
+        </label>
+      </div>
+    </div>
+    <div class="dlg-foot">
+      <button class="btn primary" id="memConfirm" data-i18n="confirm">确认</button>
     </div>
   </div>
 </div>
@@ -1499,6 +1688,12 @@ async function loadStatus() {
     setStat('stRootfs', s.rootfs_ready ? '就绪' : '缺失', s.rootfs_ready ? 'ok' : 'bad');
     setStat('stProot', s.proot_deployed ? '已部署' : '缺失', s.proot_deployed ? 'ok' : 'bad');
     setStat('stCount', (s.installed_count ?? '?') + ' 个');
+    if (s.agent_memory === 'unconfigured') {
+      const anyOverlayOpen = document.querySelector('.overlay.show');
+      if (!anyOverlayOpen) {
+        openMemoryPrompt();
+      }
+    }
   } catch (e) {
     logLine('状态加载失败: ' + e, 'err');
   }
@@ -1568,8 +1763,30 @@ const UI_TEXT = {
   zh: { check: '检查更新', refresh: '刷新', repair: '修复环境', settings: '设置', tools: '工具', output: '输出', proxy: '代理',
     copyAll: '复制全部', clear: '清空输出', follow: '自动滚动到底部', notChecked: '尚未检查', install: '安装', update: '更新',
     config: '配置', uninstall: '卸载', openWeb: '打开 Web UI', copyCommand: '复制命令', running: '运行中', done: '完成', failed: '失败', cancel: '取消', save: '保存', close: '关闭', footer: 'AnCLI · Android CLI 环境管理器',
-    tabGeneral: '常规', tabProxy: '代理', tabLogs: '日志', tabReset: '重置',
+    tabGeneral: '常规', tabProxy: '代理', tabLogs: '日志', tabReset: '重置', tabAbout: '关于',
+    aboutDesc: '统一的 Android 命令行与 AI Agent 环境管理器',
+    aboutRepoTitle: 'GitHub 项目主页',
+    aboutCheckTitle: '检查新版本',
+    aboutCheckHint: '查询最新 Release 与模块更新',
+    aboutCheckBtn: '检查更新',
+    aboutAuthorTitle: '作者与开源协议',
+    uninstallModule: '彻底卸载模块本体',
+    uninstallModuleTitle: '卸载插件并彻底删除全部容器资产',
+    uninstallModuleHint: '完全卸载所有已安装的应用，彻底删除 Ubuntu rootfs、密钥、配置与所有数据，并清除模块本体及宿主动态注入（如 bash、ancli 包装器）。',
+    uninstallModuleAction: '彻底卸载模块',
+    uninstallWarning: '⚠️ <b>危险操作！</b>此操作将完全销毁 AnCLI 的一切数据与插件本体：<br>1. 卸载并删除所有已安装的命令行工具与 AI Agent；<br>2. 彻底抹除 Ubuntu 容器系统（/data/local/tmp/ancli）及所有配置、密钥与记忆；<br>3. 卸载 AnCLI 模块本体（/data/adb/modules/ancli）并移除宿主所有注入脚本。<br>操作完成后，请立即重启手机以清理内核文件系统挂载。',
+    uninstallConfirmLabel: '输入 UNINSTALL 继续',
+    uninstallInvalid: '请输入大写的 UNINSTALL 才能继续彻底卸载',
+    uninstallStarting: '正在彻底卸载模块与容器数据…',
+    uninstallDone: '模块与容器已彻底卸载完毕！请重启手机以应用系统变更。',
     languageSetting: '语言', languageHint: '界面文本', themeSetting: '主题', themeHint: '页面外观', installedCount: '已安装', updatesCount: '可更新',
+    agentMemorySetting: 'Agent 全局记忆', agentMemoryHint: 'AGENTS.md 与环境探测',
+    agentMemoryEnabled: '添加（推荐）', agentMemoryDisabled: '不添加（纯净模式）',
+    memPromptTitle: 'Agent 全局记忆与环境探测',
+    memPromptDesc: '模块提供面向 AI Agent（AGY、Claude、Grok 等）的全局规范记忆模板（/root/.agents/AGENTS.md）与配套环境检测机制。首次运行时要求 Agent 执行环境探测以自适应本机硬件与挂载边界。请选择是否向容器添加该文件：',
+    memAddTitle: '添加（推荐）', memAddDesc: '自动配置 AGENTS.md 规范与首启环境探测引导',
+    memSkipTitle: '不添加（纯净模式）', memSkipDesc: '不写入全局 AGENTS.md 文件，由用户或项目自主管理',
+    confirm: '确认',
     backend: '运行后端', dataChannel: '数据通道', effectiveCwd: '生效目录', proxyStatus: '代理状态',
     defaultCwd: '默认工作目录', cwdHint: '从 / 启动工具时使用；必须是容器内存在的绝对路径。留空使用 /root。',
     proxyHint: '直接填写 IP:端口（如 192.168.1.10:7890）；直连模式清除工具代理。',
@@ -1590,8 +1807,30 @@ const UI_TEXT = {
   en: { check: 'Check updates', refresh: 'Refresh', repair: 'Repair', settings: 'Settings', tools: 'Tools', output: 'Output', proxy: 'Proxy',
     copyAll: 'Copy all', clear: 'Clear output', follow: 'Follow output', notChecked: 'Not checked', install: 'Install', update: 'Update',
     config: 'Configure', uninstall: 'Uninstall', openWeb: 'Open Web UI', copyCommand: 'Copy command', running: 'Running', done: 'Done', failed: 'Failed', cancel: 'Cancel', save: 'Save', close: 'Close', footer: 'AnCLI · Android CLI environment manager',
-    tabGeneral: 'General', tabProxy: 'Proxy', tabLogs: 'Logs', tabReset: 'Reset',
+    tabGeneral: 'General', tabProxy: 'Proxy', tabLogs: 'Logs', tabReset: 'Reset', tabAbout: 'About',
+    aboutDesc: 'Unified CLI and AI Agent environment manager for Android',
+    aboutRepoTitle: 'GitHub Repository',
+    aboutCheckTitle: 'Check for Updates',
+    aboutCheckHint: 'Check latest release and module updates',
+    aboutCheckBtn: 'Check',
+    aboutAuthorTitle: 'Author & License',
+    uninstallModule: 'Uninstall Module & Purge',
+    uninstallModuleTitle: 'Remove module and purge container',
+    uninstallModuleHint: 'Completely remove all apps, purge container rootfs, configs, secrets and module payloads.',
+    uninstallModuleAction: 'Uninstall Module',
+    uninstallWarning: '⚠️ <b>DANGER!</b> This will completely destroy all AnCLI data and the module itself:<br>1. Uninstall all apps and AI Agents;<br>2. Purge container (/data/local/tmp/ancli), configs and secrets;<br>3. Remove module directory and all host wrappers.<br>Please reboot device after completion.',
+    uninstallConfirmLabel: 'Type UNINSTALL to proceed',
+    uninstallInvalid: 'Type uppercase UNINSTALL to confirm purge',
+    uninstallStarting: 'Purging module and container data…',
+    uninstallDone: 'Module and container purged! Please reboot your device.',
     languageSetting: 'Language', languageHint: 'Interface text', themeSetting: 'Theme', themeHint: 'Page appearance', installedCount: 'Installed', updatesCount: 'Updates',
+    agentMemorySetting: 'Agent global memory', agentMemoryHint: 'AGENTS.md and environment probe',
+    agentMemoryEnabled: 'Add (Recommended)', agentMemoryDisabled: 'Do not add (Clean mode)',
+    memPromptTitle: 'Agent Global Memory & Environment Probe',
+    memPromptDesc: 'The module provides a global memory guide (/root/.agents/AGENTS.md) and probe workflow for AI Agents (AGY, Claude, Grok, etc.). On first launch, the Agent is asked to probe hardware and mount limits. Choose whether to add this file to your container:',
+    memAddTitle: 'Add (Recommended)', memAddDesc: 'Auto-configure AGENTS.md guide and first-run probe flow',
+    memSkipTitle: 'Do not add (Clean mode)', memSkipDesc: 'Do not write global AGENTS.md; manage yourself',
+    confirm: 'Confirm',
     backend: 'Backend', dataChannel: 'Data channel', effectiveCwd: 'Effective directory', proxyStatus: 'Proxy',
     defaultCwd: 'Default working directory', cwdHint: 'Used when a tool starts from /. Use an absolute path inside the container; blank uses /root.',
     proxyHint: 'Enter IP:port (e.g. 192.168.1.10:7890); direct mode clears tool proxy variables.',
@@ -2048,7 +2287,7 @@ function currentThemeMode() {
   try { return localStorage.getItem('ancli_theme') || 'auto'; } catch (e) { return 'auto'; }
 }
 
-const SETTINGS_TAB_ORDER = ['general', 'proxy', 'logs', 'reset'];
+const SETTINGS_TAB_ORDER = ['general', 'proxy', 'logs', 'reset', 'about'];
 
 function switchSettingsTab(tabName) {
   const index = SETTINGS_TAB_ORDER.indexOf(tabName);
@@ -2058,7 +2297,7 @@ function switchSettingsTab(tabName) {
   });
   const slider = document.getElementById('settingsSlider');
   if (slider) {
-    slider.style.transform = 'translateX(-' + (index * 25) + '%)';
+    slider.style.transform = 'translateX(-' + (index * 20) + '%)';
   }
 }
 
@@ -2139,6 +2378,11 @@ async function openSettings() {
   document.body.style.overflow = 'hidden';
   renderSettingsHistory();
   void refreshLogHistory();
+  const stVer = document.getElementById('stVer');
+  if (stVer && stVer.textContent) {
+    const aboutVer = document.getElementById('aboutVer');
+    if (aboutVer) aboutVer.textContent = stVer.textContent;
+  }
   try {
     const [cfg, runtime] = await Promise.all([
       ancli('config --json', true).then(JSON.parse),
@@ -2149,6 +2393,7 @@ async function openSettings() {
     document.getElementById('setProxyUrl').value = cleanUrl;
     document.getElementById('setProxyMode').value = cfg.proxy_mode || (cfg.proxy_url ? 'manual' : 'system');
     document.getElementById('setLang').value = cfg.lang === 'en' ? 'en' : uiLang;
+    document.getElementById('setAgentMemory').value = cfg.agent_memory === 'disabled' ? 'disabled' : 'enabled';
     updateProxyInputVisibility();
     setSettingsStatus(cfg, runtime);
   } catch (e) {
@@ -2163,11 +2408,43 @@ function closeSettings() {
   document.body.style.overflow = '';
 }
 
+function openMemoryPrompt() {
+  const ov = document.getElementById('memoryOverlay');
+  if (!ov) return;
+  ov.classList.add('show');
+  ov.setAttribute('aria-hidden', 'false');
+  document.body.style.overflow = 'hidden';
+}
+
+function closeMemoryPrompt() {
+  const ov = document.getElementById('memoryOverlay');
+  if (!ov) return;
+  ov.classList.remove('show');
+  ov.setAttribute('aria-hidden', 'true');
+  document.body.style.overflow = '';
+}
+
+async function confirmMemoryPrompt() {
+  const choice = document.querySelector('input[name="memChoice"]:checked')?.value || 'enabled';
+  closeMemoryPrompt();
+  setBusy(true, uiText('savingSettings'));
+  try {
+    await ancli('config --set agent_memory=' + encodeURIComponent(choice));
+    toast(uiText('settingsSaved'));
+    await loadStatus();
+  } catch (e) {
+    toast(uiText('settingsFailed'), 'err');
+  } finally {
+    setBusy(false);
+  }
+}
+
 async function saveSettings() {
   const v = document.getElementById('setCwd').value.trim();
   const proxyMode = document.getElementById('setProxyMode').value;
   const proxyUrl = document.getElementById('setProxyUrl').value.trim();
   const lang = document.getElementById('setLang').value === 'en' ? 'en' : 'zh';
+  const agentMemory = document.getElementById('setAgentMemory').value;
   const theme = ['auto', 'light', 'dark'].includes(document.getElementById('setTheme').value)
     ? document.getElementById('setTheme').value : 'auto';
 
@@ -2194,7 +2471,8 @@ async function saveSettings() {
   try {
     // 空值 = 恢复内置默认 /root；core 侧会校验绝对路径与目录是否存在
     await ancli('config --set default_cwd=' + encodeURIComponent(v) + ' --set lang=' + lang +
-      ' --set proxy_mode=' + encodeURIComponent(proxyMode) + ' --set proxy_url=' + encodeURIComponent(proxyValue));
+      ' --set proxy_mode=' + encodeURIComponent(proxyMode) + ' --set proxy_url=' + encodeURIComponent(proxyValue) +
+      ' --set agent_memory=' + encodeURIComponent(agentMemory));
     applyLanguage(lang);
     applyTheme(theme);
     await loadStatus();
@@ -2227,6 +2505,54 @@ function closeReset() {
   ov.classList.remove('show');
   ov.setAttribute('aria-hidden', 'true');
   document.body.style.overflow = '';
+}
+
+function openUninstall() {
+  if (busy > 0) {
+    toast(uiText('resetStarting'), 'err');
+    return;
+  }
+  const input = document.getElementById('uninstallConfirm');
+  if (input) input.value = '';
+  const ov = document.getElementById('uninstallOverlay');
+  ov.classList.add('show');
+  ov.setAttribute('aria-hidden', 'false');
+  document.body.style.overflow = 'hidden';
+  if (input) setTimeout(() => input.focus(), 0);
+}
+
+function closeUninstall() {
+  const ov = document.getElementById('uninstallOverlay');
+  ov.classList.remove('show');
+  ov.setAttribute('aria-hidden', 'true');
+  document.body.style.overflow = '';
+}
+
+async function performUninstall() {
+  const input = document.getElementById('uninstallConfirm');
+  if (!input || input.value.trim().toUpperCase() !== 'UNINSTALL') {
+    toast(uiText('uninstallInvalid'), 'err');
+    return;
+  }
+  closeUninstall();
+  closeSettings();
+  setBusy(true, uiText('uninstallStarting'));
+
+  const uninstallCmd = 'sh /data/adb/modules/ancli/uninstall.sh --purge 2>&1 || sh /data/local/tmp/ancli/uninstall.sh --purge 2>&1';
+  try {
+    await runBackground(uninstallCmd, uiText('uninstallStarting'), { keepLog: true });
+  } catch (e) {
+    // 忽略异常，模块删除后后台通信会中断
+  } finally {
+    setBusy(false);
+    document.body.innerHTML = `
+      <div style="min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 24px; text-align: center; font-family: system-ui, sans-serif; background: var(--bg); color: var(--text);">
+        <div style="width: 56px; height: 56px; border-radius: 50%; background: var(--ok); color: #fff; display: grid; place-items: center; margin-bottom: 16px; font-size: 28px;">✓</div>
+        <h2 style="margin: 0 0 10px; font-size: 19px;">` + esc(uiText('uninstallDone')) + `</h2>
+        <p style="margin: 0; color: var(--muted); font-size: 13px; max-width: 360px; line-height: 1.6;">模块与容器数据已完全抹除。请立即重启手机以清理内核文件系统挂载。</p>
+      </div>
+    `;
+  }
 }
 
 async function performReset() {
@@ -2306,6 +2632,24 @@ document.getElementById('btnFactoryReset').onclick = openReset;
 document.getElementById('resetCancel').onclick = closeReset;
 document.getElementById('resetClose').onclick = closeReset;
 document.getElementById('resetApply').onclick = () => { void performReset(); };
+document.getElementById('btnUninstallModule').onclick = openUninstall;
+document.getElementById('uninstallCancel').onclick = closeUninstall;
+document.getElementById('uninstallClose').onclick = closeUninstall;
+document.getElementById('uninstallApply').onclick = () => { void performUninstall(); };
+document.getElementById('aboutGithub').addEventListener('click', e => {
+  e.preventDefault();
+  void openAndroidUrl('https://github.com/AHLLX/AnCLI').catch(() => {
+    window.open('https://github.com/AHLLX/AnCLI', '_blank');
+  });
+});
+const aboutCheckAction = () => {
+  closeSettings();
+  void doCheck();
+};
+document.getElementById('aboutCheckBtn').onclick = aboutCheckAction;
+document.getElementById('aboutCheckItem').onclick = (e) => {
+  if (e.target.id !== 'aboutCheckBtn') aboutCheckAction();
+};
 document.getElementById('btnLogHistoryRefresh').onclick = () => { void refreshLogHistory(); };
 document.getElementById('btnLogHistoryClear').onclick = () => { void clearHistoryLogs(); };
 document.getElementById('setLogHistory').addEventListener('click', e => {
@@ -2320,6 +2664,10 @@ document.getElementById('setOverlay').addEventListener('click', e => {
 document.getElementById('resetOverlay').addEventListener('click', e => {
   if (e.target.id === 'resetOverlay') closeReset();
 });
+document.getElementById('memConfirm').onclick = () => { void confirmMemoryPrompt(); };
+document.getElementById('memoryOverlay').addEventListener('click', e => {
+  if (e.target.id === 'memoryOverlay') closeMemoryPrompt();
+});
 document.getElementById('cfgOverlay').addEventListener('click', e => {
   if (e.target.id === 'cfgOverlay') closeConfig();
 });
@@ -2327,7 +2675,9 @@ document.addEventListener('keydown', e => {
   if (e.key !== 'Escape') return;
   if (document.getElementById('cfgOverlay').classList.contains('show')) closeConfig();
   else if (document.getElementById('resetOverlay').classList.contains('show')) closeReset();
+  else if (document.getElementById('uninstallOverlay').classList.contains('show')) closeUninstall();
   else if (document.getElementById('setOverlay').classList.contains('show')) closeSettings();
+  else if (document.getElementById('memoryOverlay').classList.contains('show')) closeMemoryPrompt();
 });
 
 document.getElementById('btnLogClear').onclick = () => {

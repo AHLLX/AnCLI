@@ -4,6 +4,11 @@
 # 职责：加载宿主机环境桥接 -> 解析容器内工作目录 -> 处理 reset 预清理
 #       -> 组装 PRoot 挂载参数并启动 ancli-core.py
 # ============================================================
+# 0. 容器重入守卫：若已在 PRoot 容器内被误调，直接直通执行 python3 ancli-core.py，严禁嵌套启动 PRoot
+if [ "$ANCLI_IN_CONTAINER" = "1" ] || [ -n "$PROOT_TMP_DIR" ]; then
+    exec /usr/bin/env python3 /data/local/tmp/ancli/bin/ancli-core.py "$@"
+fi
+
 . /data/local/tmp/ancli/bin/ancli_env.sh 2>/dev/null || true
 
 # 1. 读取全局配置中的默认工作目录（通过 `ancli config --set default_cwd=...` 或 WebUI 设置）
@@ -72,5 +77,9 @@ for _ancli_bind in /sdcard /storage /mnt /data /apex /linkerconfig /system; do
     fi
 done
 
-# 6. 替换当前进程启动 PRoot 容器并执行 ancli-core.py
-exec /data/local/tmp/ancli/bin/proot -r /data/local/tmp/ancli/rootfs -b /dev -b /proc -b /sys -b /data/local/tmp/ancli $ANCLI_BIND_ARGS -b /data/local/tmp/ancli/hosts:/etc/hosts -b /data/adb $SHM_BIND -w "$PROOT_CWD" /usr/bin/env python3 /data/local/tmp/ancli/bin/ancli-core.py "$@"
+# 6. 抹除 seccomp 警告，替换当前进程启动 PRoot 容器并执行 ancli-core.py
+export PROOT_NO_SECCOMP=1
+exec /data/local/tmp/ancli/bin/proot -r /data/local/tmp/ancli/rootfs -b /dev -b /proc -b /sys -b /data/local/tmp/ancli \
+    -b /dev/null:/data/local/tmp/ancli/rootfs \
+    $ANCLI_BIND_ARGS -b /data/local/tmp/ancli/hosts:/etc/hosts -b /data/adb $SHM_BIND \
+    -w "$PROOT_CWD" /usr/bin/env ANCLI_IN_CONTAINER=1 PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/system/bin python3 /data/local/tmp/ancli/bin/ancli-core.py "$@"

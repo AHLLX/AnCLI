@@ -65,7 +65,7 @@ const mock = `
 </script>
 `;
 
-const trailer = (scenario, theme, dialog, settings) => `
+const trailer = (scenario, theme, dialog, settings, memory, tab) => `
 <style>
 /* Screenshot harness only: headless virtual-time does not advance CSS
    transitions, so shots would otherwise catch the mid-transition state. */
@@ -76,7 +76,8 @@ const trailer = (scenario, theme, dialog, settings) => `
   applyTheme(${JSON.stringify(theme)});
   ${scenarios[scenario].join('\n  ')}
   ${dialog ? `setTimeout(function () { openConfig(${JSON.stringify(dialog)}); }, 400);` : ''}
-  ${settings ? `setTimeout(function () { openSettings(); }, 400);` : ''}
+  ${settings ? `setTimeout(function () { openSettings(); ${tab ? `switchSettingsTab(${JSON.stringify(tab)});` : ''} }, 400);` : ''}
+  ${memory ? `setTimeout(function () { openMemoryPrompt(); }, 400);` : ''}
   ${scenario === 'busy' ? `setTimeout(function () { document.getElementById('log').closest('section').scrollIntoView({ block: 'center' }); }, 700);` : ''}
 })();
 </script>
@@ -87,7 +88,7 @@ let html = fs.readFileSync(src, 'utf8');
 // packaged logo beside index.html.
 if (fs.existsSync(logo)) {
   const logoData = 'data:image/png;base64,' + fs.readFileSync(logo).toString('base64');
-  html = html.replace(/src="logo\.png\?v=[^"]+"/, `src="${logoData}"`);
+  html = html.replace(/src="logo\.png\?v=[^"]+"/g, `src="${logoData}"`);
 }
 // 2026-11-13: Accept LF and CRLF source files; the preview harness must not
 // depend on the editor's line-ending choice when injecting the bridge mock.
@@ -100,9 +101,12 @@ const targets = [
   { file: 'preview-log.html', scenario: 'busy', theme: 'light', dialog: null },
   { file: 'preview-dialog.html', scenario: 'default', theme: 'dark', dialog: 'claude-code' },
   { file: 'preview-settings.html', scenario: 'default', theme: 'light', dialog: null, settings: true },
+  { file: 'preview-memory.html', scenario: 'default', theme: 'light', dialog: null, settings: false, memory: true },
+  { file: 'preview-about.html', scenario: 'default', theme: 'light', dialog: null, settings: true, memory: false, tab: 'about' },
+  { file: 'preview-reset.html', scenario: 'default', theme: 'light', dialog: null, settings: true, memory: false, tab: 'reset' },
 ];
 
 for (const t of targets) {
-  fs.writeFileSync(path.join(__dirname, t.file), html + trailer(t.scenario, t.theme, t.dialog, t.settings), 'utf8');
+  fs.writeFileSync(path.join(__dirname, t.file), html + trailer(t.scenario, t.theme, t.dialog, t.settings, t.memory, t.tab), 'utf8');
 }
 console.log('built: ' + targets.map(t => t.file).join(', '));

@@ -1,3 +1,15 @@
+## v1.2.613-beta (2026-11-15)
+
+### PRoot container isolation, seccomp fix, and Agent memory guide onboarding
+
+- **Container PATH isolation & Shadowing fix**: Strip `/data/adb/ksu/bin` and `/data/adb/ap/bin` from container wrapper PATH, leaving a clean environment (`PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/system/bin`). This prevents guest invocations of `bash`, `agy`, or `ancli` from hitting host wrappers and triggering nested PRoot lockups or watchdog timeouts.
+- **Container re-entrance guard**: Add `ANCLI_IN_CONTAINER=1` / `PROOT_TMP_DIR` checks in wrapper headers, `bash-host-compat`, and `system/bin/ancli`. Invocations inside PRoot directly execute native guest binaries (`/usr/local/bin/{tool}` or `/bin/bash`) without re-entering PRoot.
+- **Suppress PRoot seccomp warnings & TUI cursor corruption**: Export `PROOT_NO_SECCOMP=1` before launching PRoot in wrappers and `system/bin/ancli`, skipping the unsupported `PTRACE_O_TRACESECCOMP` probe and eliminating the stderr warning that caused AGY's ANSI cursor positioning to duplicate screen text.
+- **Proc assertion crash mitigation**: Mask host rootfs in PRoot binds with `-b /dev/null:{ANCLI_DIR}/rootfs` to prevent tools like `find` from scanning nested proc entries and triggering `readlink_proc: comparison == compare_paths` SIGABRT (Terminated 143) crashes. Add runtime memory rule #15 documenting this boundary.
+- **WebUI Agent memory onboarding**: Display a dedicated guidance dialog on first launch explaining the global memory template (`/root/.agents/AGENTS.md`) and initial hardware probe. Allow users to choose "Add (Recommended)" or "Do not add (Clean mode)". Integrate with `ancli config --set agent_memory=enabled/disabled` and settings dropdown, automatically pruning template files and symlinks when disabled.
+- **Mobile WebUI dialog bottom border-radius**: Convert `.settings-viewport` to elastic flex sizing with responsive height constraints, ensuring modal dialog headers, tab bars, action buttons, and bottom corner radii (`border-radius: var(--r-lg)`) remain 100% visible across narrow and short mobile viewports.
+- **KernelSU catalog compatibility**: Keep `update.json` on the official v1.2.612 release so module managers do not recognize this pre-release build as an automatic OTA update.
+
 ## v1.2.612 (2026-11-15)
 
 ### Agent PRoot environment & mobile WebUI enhancements

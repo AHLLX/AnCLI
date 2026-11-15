@@ -1,50 +1,67 @@
 #!/system/bin/sh
 # ============================================================
 # AnCLI 模块卸载脚本 (uninstall.sh)
-# 触发时机：用户在 Magisk / KernelSU / APatch 管理器中卸载模块时自动执行。
-# 核心原则：默认保留 Ubuntu rootfs、已安装工具清单及 API 密钥，防止模块升级或误卸丢失数据。
+# 触发时机：
+#   1. 用户在 Magisk / KernelSU / APatch 管理器中卸载模块时自动执行；
+#   2. 或在 WebUI / 终端中触发彻底完全卸载 (uninstall.sh --purge)。
 # ============================================================
 
 ANCLI_DIR="/data/local/tmp/ancli"
 
-# 1. 仅终止正在使用 AnCLI rootfs 的 PRoot 进程，避免误杀 Termux 等其他容器进程。
-pkill -f "proot.*${ANCLI_DIR}/rootfs" 2>/dev/null || \
-    pkill -f "proot.*ancli" 2>/dev/null || true
+# 1. 终止所有正在运行的 Agent 与 PRoot 进程
+_ancli_agent_re='(/data/adb/(ksu|ap)/bin|/usr/local/bin)/(aider|mimo|agy|dsh|claude|opencode|grok)'
+/system/bin/toybox pkill -KILL -f "$_ancli_agent_re" 2>/dev/null || true
+pkill -9 -f "proot.*${ANCLI_DIR}/rootfs" 2>/dev/null || \
+    pkill -9 -f "proot.*ancli" 2>/dev/null || true
 
-# 2. 判断是否保留容器数据：
-#    管理器卸载在非交互后台运行（无 TTY），因此默认 KEEP_DATA=1；
-#    仅当存在一次性标记文件 /data/local/tmp/ancli_force_purge 时才彻底清空。
+# 2. 判断是否彻底清除容器与模块资产：
+#    管理器卸载默认保留用户资产（KEEP_DATA=1）；
+#    当存在标记文件 /data/local/tmp/ancli_force_purge 或传入 --purge/-f 参数时彻底清空。
 KEEP_DATA=1
 PURGE_MARKER="/data/local/tmp/ancli_force_purge"
-if [ -f "$PURGE_MARKER" ]; then
+if [ -f "$PURGE_MARKER" ] || [ "${1:-}" = "--purge" ] || [ "${1:-}" = "-f" ] || [ "${1:-}" = "--all" ]; then
     KEEP_DATA=0
-    # 标记文件为一次性指令，读取后立即删除，避免后续重装或升级被意外清空
-    rm -f "$PURGE_MARKER"
+    rm -f "$PURGE_MARKER" 2>/dev/null || true
 fi
 
 if [ "$KEEP_DATA" -eq 1 ]; then
-    # 默认保留 rootfs、installed.json、secrets/ 等用户资产，仅移除宿主机动态可执行目录
+    # 默认安全保留模式（仅升级或非强制卸载）：保留 rootfs、installed.json、secrets/ 等用户资产
     rm -rf "$ANCLI_DIR/bin"
-    # 移除模块部署的 AGY 宿主机 bash 兼容模板（用户自定义的 host bash 在下方单独保护）
     rm -f "$ANCLI_DIR/bash-host-compat"
 else
-    # 强制彻底清理模式：删除整个 AnCLI 运行时目录
-    rm -rf "$ANCLI_DIR"
+    # 彻底完全清理模式：抹除真实数据通道挂载与整个容器根文件系统
+    echo "[*] 正在解除数据通道挂载..."
+    umount -l /mnt/ancli-data 2>/dev/null || true
+    rm -rf /mnt/ancli-data 2>/dev/null || true
+
+    echo "[*] 正在彻底删除容器根目录与所有数据 (/data/local/tmp/ancli)..."
+    rm -rf "$ANCLI_DIR" 2>/dev/null || true
+    rm -f /data/local/tmp/ancli* 2>/dev/null || true
 fi
 
 # 3. 清理 KernelSU / APatch 动态 bin 目录中由 AnCLI 注入的包装器与辅助脚本
+echo "[*] 正在清理宿主注入脚本..."
 for BIN_DIR in /data/adb/ksu/bin /data/adb/ap/bin; do
     if [ -d "$BIN_DIR" ]; then
-        # 删除文件内容引用了 ANCLI_DIR 的包装脚本
         grep -rl "$ANCLI_DIR" "$BIN_DIR" 2>/dev/null | while IFS= read -r f; do
             rm -f "$f" 2>/dev/null || true
         done
-        # xdg-open 宿主机桥接脚本不直接引用 ANCLI_DIR 字符串，需按文件名显式清理
+        rm -f "$BIN_DIR/ancli" 2>/dev/null || true
         rm -f "$BIN_DIR/xdg-open" 2>/dev/null || true
-        # 仅删除带有 AnCLI 标记的 bash 兼容脚本，绝不误删用户自己安装的真实 bash 二进制
         if [ -f "$BIN_DIR/bash" ] && head -n 8 "$BIN_DIR/bash" 2>/dev/null \
             | grep -q 'AnCLI AGY host bash compatibility'; then
             rm -f "$BIN_DIR/bash" 2>/dev/null || true
         fi
     fi
 done
+
+# 4. 如果是彻底清除模式，标记卸载并清理模块本体
+if [ "$KEEP_DATA" -eq 0 ]; then
+    MOD_DIR="/data/adb/modules/ancli"
+    if [ -d "$MOD_DIR" ]; then
+        echo "[*] 正在标记并清理模块本体 (/data/adb/modules/ancli)..."
+        touch "$MOD_DIR/remove" 2>/dev/null || true
+        rm -rf "$MOD_DIR/system" "$MOD_DIR/ancli" "$MOD_DIR/bin" "$MOD_DIR/shm" 2>/dev/null || true
+    fi
+    echo "[OK] AnCLI 模块与全部容器应用已彻底清理完毕！请重启手机以应用系统变更。"
+fi

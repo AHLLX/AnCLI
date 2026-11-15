@@ -290,6 +290,12 @@ class TestWrapperGeneration:
         # Keep the PRoot command in the foreground so TUI input stays attached
         # to the terminal's foreground process group.
         assert not re.search(r'BROWSER=/usr/local/bin/xdg-open mimo "\$@" &', wrapper)
+        # Re-entrance guard to prevent nested PRoot invocations
+        assert 'if [ "$ANCLI_IN_CONTAINER" = "1" ] || [ -n "$PROOT_TMP_DIR" ]; then' in wrapper
+        assert 'exec "/usr/local/bin/mimo" "$@"' in wrapper
+        assert "export PROOT_NO_SECCOMP=1" in wrapper
+        assert "-b /dev/null:" in wrapper
+        assert "ANCLI_IN_CONTAINER=1 PATH=" in wrapper
         # env bootstrap + per-tool secrets sourcing
         assert "ancli_env.sh" in wrapper
         assert "secrets/mimo.env" in wrapper
@@ -1120,6 +1126,12 @@ def test_release_version_strings_move_together():
     prop_version = re.search(r'^version=(.+)$', prop, re.M).group(1).strip()
     prop_code = int(re.search(r'^versionCode=(\d+)$', prop, re.M).group(1))
 
+    # Pre-release / beta test builds intentionally keep update.json on the stable release
+    # so KernelSU / Magisk managers do not alert production users of a test build.
+    if "-beta" in prop_version or "-test" in prop_version:
+        assert 'v' + core.VERSION == prop_version
+        return
+
     assert prop_version == manifest['version'] == 'v' + core.VERSION
     assert prop_code == manifest['versionCode']
     assert manifest['zipUrl'].endswith(f"ancli-{prop_code}-{prop_version}.zip")
@@ -1311,7 +1323,10 @@ class TestBrowserHandoff:
         core.generate_proot_wrapper("dsh", {}, [])
 
         wrapper = (tmp_path / "ancli" / "bin" / "dsh").read_text(encoding="utf-8")
-        assert "/usr/bin/env PATH=/usr/local/bin:/usr/bin:/bin:/data/adb/ksu/bin:/data/adb/ap/bin:/system/bin SHELL=/bin/bash BROWSER=/usr/local/bin/xdg-open dsh" in wrapper
+        assert "export PROOT_NO_SECCOMP=1" in wrapper
+        assert "-b /dev/null:" in wrapper
+        assert "/usr/bin/env ANCLI_IN_CONTAINER=1 PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/system/bin SHELL=/bin/bash BROWSER=/usr/local/bin/xdg-open dsh" in wrapper
+        assert "/data/adb/ksu/bin" not in wrapper.split("PATH=")[1].split()[0]
 
     def test_wrapper_prefers_a_full_browser_over_the_chooser(self, tmp_path, monkeypatch):
         """No default browser => `am start` raises "Open with"; a WebView-based pick
@@ -1427,7 +1442,8 @@ class TestDefaultWorkingDirectory:
         payload = json.loads(capsys.readouterr().out)
         assert payload["effective_cwd"] == core.DEFAULT_CWD
         assert payload["default_cwd"] == ""
-        assert payload["supported_keys"] == ["default_cwd", "lang", "proxy_mode", "proxy_url"]
+        assert payload["supported_keys"] == ["default_cwd", "lang", "proxy_mode", "proxy_url", "agent_memory"]
+        assert payload["agent_memory"] == "unconfigured"
         assert "detected_proxy" in payload
         assert "proxy_connected" in payload
 
@@ -1591,6 +1607,29 @@ class TestAgentMemory:
         payload = json.loads(capsys.readouterr().out)
         assert payload["effective_cwd"] == "/srv/project"
         assert payload["runtime_context"]["status"] == "created"
+
+    def test_agent_memory_disabled_cleans_up_template_and_symlinks(self, tmp_path, monkeypatch):
+        _, memory = self._target(tmp_path, monkeypatch)
+        cfg_file = tmp_path / "cfg.json"
+        monkeypatch.setattr(core, "CONFIG_FILE", str(cfg_file))
+        gemini_dir = tmp_path / ".gemini"
+        monkeypatch.setattr(
+            core, "_runtime_context_compat_targets",
+            lambda: [str(gemini_dir / "AGENTS.md"), str(gemini_dir / "GEMINI.md")],
+        )
+
+        ok, err = core.set_agent_memory("enabled")
+        assert ok
+        assert memory.exists()
+
+        ok, err = core.set_agent_memory("disabled")
+        assert ok
+        assert not memory.exists()
+        assert not (gemini_dir / "AGENTS.md").exists()
+        assert not (gemini_dir / "GEMINI.md").exists()
+
+        res = core.setup_runtime_context(verbose=False)
+        assert res["status"] == "disabled"
 
 
 class TestDshCookiePatch:

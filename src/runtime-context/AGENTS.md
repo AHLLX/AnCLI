@@ -78,6 +78,7 @@ AGY 的全局规则入口可能是 `/root/.gemini/AGENTS.md` 或 `/root/.gemini/
 12. 容器可以通过绑定路径读写手机文件。共享存储使用 `/sdcard`，跨 App 的真实数据使用 `/mnt/ancli-data/data/<包名>`。涉及删除或批量修改时先列出目标并保存 dry-run 结果。
 13. WebUI 的设置窗口与 `ancli config` 共用 `lang`、`default_cwd`、`proxy_mode` 和 `proxy_url`；修改全局配置优先使用这两个入口，不要另建配置文件。主题只属于 WebUI 本地偏好。
 14. `dsh` 在 AnCLI registry 中使用直连模式；其他工具按 `proxy_mode` 使用系统探测、手动代理或直连。开始下载或更新前先阅读代理预检输出，确认实际网络路径。
+15. 严禁在容器内对宿主 AnCLI 目录运行全局递归遍历扫描（如 `find /data/local/tmp/ancli`）。宿主该目录包含容器 rootfs 实体镜像，扫描其嵌套的 proc/sys 等虚拟节点会触发 PRoot 底层路径断言异常（`readlink_proc: comparison == compare_paths`）导致进程闪退（Terminated 143）。代码与工具检索请限定在目标项目或 `/root` 内。
 
 ## 常用命令
 
