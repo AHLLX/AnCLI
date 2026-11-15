@@ -24,6 +24,7 @@ import re
 import ssl
 import contextlib
 import datetime
+import zipfile
 
 # 2026-11-13: TLS 降级回退仅限定在单次请求作用域内，严禁修改全局 ssl 上下文，
 # 以防止容器内 CA 证书库不完整时意外削弱全进程 TLS 校验安全性。
@@ -37,7 +38,7 @@ MOD_DIR = "/data/adb/modules/ancli"
 KSU_BIN = "/data/adb/ksu/bin"
 AP_BIN  = "/data/adb/ap/bin"
 
-VERSION = "1.2.615-beta"
+VERSION = "1.2.616-beta"
 
 # 2026-11-13: 应用目录随模块固化打包；官方版本检查直接读取各应用自身的 `latest` 字段，
 # 不再从网络拉取第二份 AnCLI 注册表。
@@ -55,6 +56,7 @@ BIND_MOUNT_ROOTS = ("/dev", "/proc", "/sys", "/sdcard", "/storage", "/mnt",
                     "/data", "/apex", "/system", "/linkerconfig")
 # `ancli check` 写入的官方最新版本缓存，会合并到 `ancli list --json` 输出中供 WebUI 离线兜底
 UPDATE_CACHE   = f"{ANCLI_DIR}/.update_cache.json"
+MODULE_UPDATE_DIR = f"{ANCLI_DIR}/module-updates"
 DNS_CACHE      = f"{ANCLI_DIR}/.dns_cache"   # 由宿主机 ancli_env.sh 探测写入的真实 DNS 缓存
 CHECK_TTL      = 6 * 3600                 # 旧版 WebUI 客户端参考的缓存提示周期（6 小时）
 CHECK_TTL_FAILED = 15 * 60                # 检查失败后的较短重试提示周期（15 分钟）
@@ -357,6 +359,10 @@ STRINGS = {
                                  设置该工具声明的环境变量
   ancli list                     列出所有已安装的应用
   ancli check                    联网检查版本与可更新项
+  ancli check-module --channel=beta
+                                 检查 AnCLI 模块的 Beta 版本
+  ancli download-module --channel=beta
+                                 下载并校验模块更新包
   ancli doctor --json            输出只读路径、挂载和工具诊断
   ancli skills                   统一各 Agent 的全局 skills 目录（~/.agents/skills）
   ancli agent-init               生成容器全局 Agent 记忆与环境指导
@@ -455,6 +461,10 @@ STRINGS = {
                                  Set a registry-declared environment variable
   ancli list                     List all installed apps
   ancli check                    Check versions and available updates
+  ancli check-module --channel=beta
+                                 Check the AnCLI Beta module channel
+  ancli download-module --channel=beta
+                                 Download and verify a module update ZIP
   ancli doctor --json            Print read-only path, mount, and tool diagnostics
   ancli skills                   Unify the agent CLIs' global skills dir (~/.agents/skills)
   ancli agent-init               Create the guest-global Agent memory and environment guide
@@ -515,19 +525,22 @@ def _t(key, *args):
 # 内置应用目录、上游版本探测与安装状态持久化 (Catalog, Version Checks & State)
 # ---------------------------------------------------------------------------
 
-def _urlopen_verified(url, headers, timeout):
-    """Open a URL with TLS certificate verification; falls back to an unverified
-    context only on certificate validation errors (container CA store may be incomplete)."""
+def _urlopen_response(url, headers, timeout):
+    """Open a streaming response with the narrow TLS fallback used by HTTP helpers."""
     req = urllib.request.Request(url, headers=headers)
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as response:
-            return response.read()
+        return urllib.request.urlopen(req, timeout=timeout)
     except (ssl.SSLError, urllib.error.URLError) as e:
         if not _is_cert_verification_error(e):
             raise
         print(f"\033[93m[!] TLS certificate verification failed ({e}); retrying this request without verification.\033[0m")
-        with urllib.request.urlopen(req, timeout=timeout, context=ssl._create_unverified_context()) as response:
-            return response.read()
+        return urllib.request.urlopen(req, timeout=timeout, context=ssl._create_unverified_context())
+
+
+def _urlopen_verified(url, headers, timeout):
+    """Read a URL with TLS verification; fall back only on certificate errors."""
+    with _urlopen_response(url, headers, timeout) as response:
+        return response.read()
 
 
 def _is_cert_verification_error(e):
@@ -3469,6 +3482,119 @@ def check_module_update(channel=None):
     return result
 
 
+# 2026-11-16：给 WebUI 提供可校验、可报告进度的模块更新下载，不再把 ZIP 交给浏览器处理。
+def download_module_update(channel=None):
+    """Download the selected module channel into the host-visible update directory.
+
+    The WebUI runs this command in the guest, while ``/data/local/tmp`` remains
+    host-visible through the standard bind.  Progress lines are deliberately
+    plain text so the WebUI can update a progress bar without parsing stdout as
+    JSON.  The ZIP is validated before a ready marker is emitted.
+    """
+    result = check_module_update(channel)
+    if result.get("status") != "ok":
+        print(f"[X] 模块版本检查失败：{result.get('error', '未知错误')}")
+        return None
+
+    zip_url = str(result.get("zip_url") or "").strip()
+    if not zip_url or not zip_url.startswith("https://github.com/AHLLX/AnCLI/releases/download/"):
+        print("[X] 更新清单没有受信任的模块下载地址。")
+        return None
+
+    asset_name = os.path.basename(urllib.parse.unquote(urllib.parse.urlparse(zip_url).path))
+    if not re.fullmatch(
+        r"ancli-\d+-v?\d+\.\d+\.\d+(?:-[A-Za-z0-9][A-Za-z0-9.-]*)?\.zip",
+        asset_name,
+    ):
+        print("[X] 模块下载文件名不符合 AnCLI 资产格式。")
+        return None
+
+    target = os.path.join(MODULE_UPDATE_DIR, asset_name)
+    partial = target + ".part"
+    expected_version = str(result.get("latest_version") or "")
+    expected_code = int(result.get("latest_version_code") or 0)
+    received = 0
+    last_report = 0.0
+
+    try:
+        os.makedirs(MODULE_UPDATE_DIR, exist_ok=True)
+        # 2026-11-16：每次下载先删除旧目标和半成品，避免把上次中断的 ZIP 当成可安装包。
+        for stale in (target, partial):
+            try:
+                if os.path.exists(stale):
+                    os.remove(stale)
+            except OSError:
+                pass
+
+        print(f"[i] 正在下载 {asset_name} …", flush=True)
+        with _urlopen_response(zip_url, {"User-Agent": "AnCLI"}, timeout=30) as response:
+            raw_total = response.headers.get("Content-Length") or "0"
+            try:
+                total = max(0, int(raw_total))
+            except (TypeError, ValueError):
+                total = 0
+            with open(partial, "wb") as output:
+                while True:
+                    chunk = response.read(64 * 1024)
+                    if not chunk:
+                        break
+                    output.write(chunk)
+                    received += len(chunk)
+                    now = time.monotonic()
+                    if total and (now - last_report >= 0.2 or received >= total):
+                        percent = min(100, int(received * 100 / total))
+                        print(f"ANCLI_DOWNLOAD_PROGRESS {received} {total} {percent}", flush=True)
+                        last_report = now
+                output.flush()
+
+        os.replace(partial, target)
+        with zipfile.ZipFile(target) as package:
+            names = set(package.namelist())
+            if "module.prop" not in names:
+                raise ValueError("ZIP 根目录缺少 module.prop")
+            prop = package.read("module.prop").decode("utf-8", errors="replace")
+        found_version = re.search(r"^version=(.+)$", prop, re.M)
+        found_code = re.search(r"^versionCode=(\d+)$", prop, re.M)
+        actual_version = found_version.group(1).strip() if found_version else ""
+        actual_code = int(found_code.group(1)) if found_code else 0
+        if expected_version and actual_version != expected_version:
+            raise ValueError(f"ZIP 版本不匹配：清单 {expected_version}，文件 {actual_version}")
+        if expected_code and actual_code != expected_code:
+            raise ValueError(f"ZIP versionCode 不匹配：清单 {expected_code}，文件 {actual_code}")
+
+        if not total:
+            print(f"ANCLI_DOWNLOAD_PROGRESS {received} {received} 100", flush=True)
+        print(
+            "ANCLI_MODULE_DOWNLOAD_READY "
+            + json.dumps(
+                {
+                    "path": target,
+                    "version": actual_version or expected_version,
+                    "version_code": actual_code or expected_code,
+                    "bytes": received,
+                },
+                ensure_ascii=False,
+            ),
+            flush=True,
+        )
+        print(f"[OK] 更新包已下载并校验：{target}", flush=True)
+        return {
+            "path": target,
+            "version": actual_version or expected_version,
+            "version_code": actual_code or expected_code,
+            "bytes": received,
+        }
+    except Exception as exc:
+        for stale in (partial, target):
+            try:
+                if os.path.exists(stale):
+                    os.remove(stale)
+            except OSError:
+                pass
+        print(f"[X] 更新包下载失败：{exc}")
+        return None
+
+
 
 def status_json():
     """Container/module status as pure JSON (used by the WebUI)."""
@@ -3821,6 +3947,16 @@ if __name__ == "__main__":
                     else:
                         print(f"\033[92m[OK] 当前已是最新版本 ({res.get('current_version')})\033[0m")
                 sys.exit(0 if res.get("status") == "ok" else 1)
+            elif action == "download-module":
+                channel = None
+                json_mode = "--json" in sys.argv
+                for arg in sys.argv[2:]:
+                    if arg.startswith("--channel="):
+                        channel = arg.split("=", 1)[1]
+                downloaded = download_module_update(channel)
+                if json_mode:
+                    print(json.dumps(downloaded or {"status": "error"}, ensure_ascii=False))
+                sys.exit(0 if downloaded else 1)
             elif action == "config" and app_id in ("--help", "-h"):
                 # 2026-11-13: Keep config help offline and independent of the
                 # registry; app-specific keys are listed by `ancli list --json`.

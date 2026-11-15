@@ -503,6 +503,16 @@ body.ime-open .topbar { backdrop-filter: none; -webkit-backdrop-filter: none; ba
 .about-item-text b { display: block; font-size: 12px; font-weight: 650; color: var(--text); line-height: 1.35; }
 .about-item-text small { display: block; font-size: 10.5px; color: var(--muted); line-height: 1.35; margin-top: 1px; }
 .about-item-arrow { color: var(--faint); font-size: 13px; font-weight: 600; margin-right: 2px; }
+.module-update-result { margin-top: 8px; padding: 10px; border-radius: var(--r); background: var(--surface-2); border: 1px solid var(--border); }
+.module-update-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 6px; }
+.module-update-head b { color: var(--ok); font-size: 12px; }
+.module-update-head small { color: var(--muted); font-size: 10px; }
+.module-update-changelog { white-space: pre-wrap; max-height: 150px; overflow-y: auto; margin: 6px 0; padding: 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--muted); font: 11px/1.5 var(--font-mono, monospace); }
+.module-download-progress { margin-top: 9px; }
+.module-download-track { width: 100%; height: 8px; overflow: hidden; border-radius: 99px; background: var(--border); }
+.module-download-fill { width: 0; height: 100%; border-radius: inherit; background: var(--accent); transition: width .18s ease-out; }
+.module-download-meta { display: flex; justify-content: space-between; gap: 8px; margin-top: 5px; color: var(--muted); font-size: 10.5px; font-variant-numeric: tabular-nums; }
+.module-download-message { margin-top: 7px; color: var(--muted); font-size: 11px; }
 
 /* 针对矮屏手机或横屏模式自适应视口高度，确保底下的圆角和按钮完整显示 */
 @media (max-height: 600px) {
@@ -699,7 +709,7 @@ body.ime-open .topbar { backdrop-filter: none; -webkit-backdrop-filter: none; ba
 <header class="topbar">
   <div class="brand">
     <span class="mark" aria-hidden="true">
-      <img src="logo.png?v=1.2.615" alt="">
+      <img src="logo.png?v=1.2.616" alt="">
     </span>
     <span>
       <b>AnCLI</b>
@@ -943,10 +953,10 @@ body.ime-open .topbar { backdrop-filter: none; -webkit-backdrop-filter: none; ba
           <!-- 面板 5：关于 -->
           <div class="settings-panel" id="panel-about">
             <div class="about-hero">
-              <img src="logo.png?v=1.2.615" class="about-logo" alt="AnCLI Logo">
+              <img src="logo.png?v=1.2.616" class="about-logo" alt="AnCLI Logo">
               <div class="about-brand">
                 <span class="about-name">AnCLI</span>
-                <span class="about-badge" id="aboutVer">v1.2.615-beta</span>
+                <span class="about-badge" id="aboutVer">v1.2.616-beta</span>
               </div>
               <p class="about-desc" data-i18n="aboutDesc">统一的 Android 命令行与 AI Agent 环境管理器</p>
             </div>
@@ -1218,7 +1228,12 @@ function execOnBridge(b, cmd, name) {
   });
 }
 
-async function execCmd(cmd) {
+// 2026-11-16：KernelSU WebUI 的 exec 回调在同一时间并发时可能丢失后续回调。
+// 所有命令走一个轻量队列，保证首屏状态、配置读取和更新检查按顺序完成。
+let bridgeExecTail = Promise.resolve();
+const BRIDGE_COMMAND_TIMEOUT_MS = 20000;
+
+async function execCmdDirect(cmd) {
   if (!bridge) {
     try {
       const found = await waitForBridge(10000);
@@ -1231,6 +1246,33 @@ async function execCmd(cmd) {
     }
   }
   return await execOnBridge(bridge, cmd, bridgeName);
+}
+
+function execCmd(cmd) {
+  const run = () => new Promise((resolve, reject) => {
+    let settled = false;
+    const timer = setTimeout(() => {
+      if (!settled) {
+        settled = true;
+        reject(new Error('命令执行超时: ' + String(cmd).slice(0, 80)));
+      }
+    }, BRIDGE_COMMAND_TIMEOUT_MS);
+    execCmdDirect(cmd).then(value => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve(value);
+    }, error => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      reject(error);
+    });
+  });
+  const queued = bridgeExecTail.then(run, run);
+  // 保持队列可继续向前推进，即使某个命令失败或超时。
+  bridgeExecTail = queued.catch(() => undefined);
+  return queued;
 }
 
 const sh = execCmd;
@@ -1302,6 +1344,16 @@ function appendTaskOutput(task, text, kind) {
       pane.textContent = task.output.join('\n');
       pane.scrollTop = pane.scrollHeight;
     }
+  }
+}
+
+function visibleTaskOutput(task, text) {
+  if (typeof task.onOutput !== 'function') return text;
+  try {
+    const visible = task.onOutput(text, task);
+    return visible === undefined ? text : visible;
+  } catch (e) {
+    return text;
   }
 }
 
@@ -1452,6 +1504,14 @@ async function execQuiet(cmd) {
   return strip(r.stdout || '');
 }
 
+// 2026-11-16：短命令可以走队列；网络检查必须以后台 shell 启动，避免
+// KernelSU 的同步 exec 在远端连接慢时冻结 WebView 的计时器和按钮。
+async function startDetached(cmd) {
+  const shell = cmd + ' >/dev/null 2>&1 &';
+  const r = await execCmd('sh -c ' + shQuote(shell));
+  if (r.code !== 0) throw new Error('后台命令启动失败（exit ' + r.code + '）');
+}
+
 // 后台执行 + 实时输出（每次运行独立日志文件，避免两个任务互相串台）
 async function runBackground(cmd, preface, options) {
   options = options || {};
@@ -1460,7 +1520,7 @@ async function runBackground(cmd, preface, options) {
   const exitFile = logFile + '.exit';
   const metaFile = logFile + '.meta';
   const scoped = cmd.match(/\bancli\s+(?:install|update|uninstall|config)\s+([^\s]+)/);
-  const task = { id: tag, label: cmd.replace(/^.*ancli\s+/, ''), command: cmd, scope: scoped ? scoped[1] : '', logFile, exitFile, metaFile, status: 'running' };
+  const task = { id: tag, label: cmd.replace(/^.*ancli\s+/, ''), command: cmd, scope: scoped ? scoped[1] : '', logFile, exitFile, metaFile, status: 'running', onOutput: options.onOutput };
   taskTabs.set(task.id, task);
   if (task.scope) {
     expandedAppLogs.add(task.scope);
@@ -1475,6 +1535,7 @@ async function runBackground(cmd, preface, options) {
   clearLogView();
   if (preface) appendLogRow(preface, 'dim');
   appendLogRow('$ ' + cmd + '  （后台执行）', 'cmd');
+  const deadline = Number(options.timeoutMs) > 0 ? Date.now() + Number(options.timeoutMs) : 0;
   try { await execCmd('printf ' + shQuote(JSON.stringify(task)) + ' > ' + shQuote(metaFile)); } catch (e) { /* log file remains usable */ }
   try {
     const actualCmd = options.keepLog ? cmd + ' --keep-log=' + shQuote(logFile) : cmd;
@@ -1492,13 +1553,20 @@ async function runBackground(cmd, preface, options) {
   }
   let last = 0;
   for (;;) {
+    if (deadline && Date.now() >= deadline) {
+      task.status = 'failed';
+      appendTaskOutput(task, '任务超时，未确认模块安装结果。', 'err');
+      renderTaskTabs();
+      break;
+    }
     await sleep(TASK_POLL_MS);
     let out;
     try { out = await execCmd('tail -c +' + (last + 1) + ' ' + logFile + ' 2>/dev/null'); }
     catch (e) { continue; }
     const text = strip(out.stdout || '');
     if (text) {
-      appendTaskOutput(task, text);
+      const visible = visibleTaskOutput(task, text);
+      if (visible) appendTaskOutput(task, visible);
       // `tail -c` 按字节计数：必须用 UTF-8 字节长度推进，否则会重复读取或截断中文
       last += new TextEncoder().encode(out.stdout || '').length;
     }
@@ -1509,7 +1577,8 @@ async function runBackground(cmd, preface, options) {
     if (code !== '') {
       try {
         const rest = strip((await execCmd('tail -c +' + (last + 1) + ' ' + logFile + ' 2>/dev/null')).stdout || '');
-        if (rest) appendTaskOutput(task, rest);
+        const visibleRest = visibleTaskOutput(task, rest);
+        if (visibleRest) appendTaskOutput(task, visibleRest);
       } catch (e) { /* ignore */ }
       if (code === '0') { task.status = 'done'; appendTaskOutput(task, '✓ 完成', 'ok'); }
       else { task.status = 'failed'; appendTaskOutput(task, '退出码: ' + code + '（命令失败，未生效）', 'err'); }
@@ -1726,15 +1795,6 @@ async function waitForDshUrl(logFile, timeoutMs) {
 }
 
 // ---------- 数据 ----------
-async function findAncli() {
-  try {
-    const r = await sh('for p in /data/adb/ksu/bin/ancli /data/adb/ap/bin/ancli /data/adb/modules/ancli/system/bin/ancli /data/local/tmp/ancli/bin/ancli; do [ -x "$p" ] && echo "$p" && exit 0; done; echo ancli');
-    const p = strip(r.stdout || '').trim();
-    if (p) return p;
-  } catch (e) { /* fallback */ }
-  return 'ancli';
-}
-
 function setStat(id, text, state) {
   const el = document.getElementById(id);
   el.textContent = text;
@@ -1834,9 +1894,17 @@ const UI_TEXT = {
     channelDescStable: '当前通道：正式主线 (Stable)',
     channelDescBeta: '当前通道：Beta 预览通道 (Beta)',
     aboutCheckChecking: '正在检查…',
+    aboutCheckLoading: '正在获取远程 Release 信息…',
     aboutCheckLatest: '当前已是最新版本',
+    aboutNoUpdate: '当前版本已是最新版本，无需下载',
     aboutCheckHasUpdate: '发现新版本',
-    aboutDownloadZip: '下载更新包',
+    aboutDownloadNow: '现在下载',
+    aboutDownloadStarting: '正在下载更新包…',
+    aboutDownloadDone: '下载完成，可以开始更新',
+    aboutInstallNow: '现在开始更新',
+    aboutInstallStarting: '正在安装下载包…',
+    aboutInstallDone: '安装命令已提交，KernelSU 正在切换模块',
+    aboutDownloadFailed: '下载失败，请重试',
     aboutViewRelease: '查看详情',
     aboutCheckFailed: '检查更新失败，请检查网络或代理设置',
     uninstallModule: '彻底卸载模块本体',
@@ -1887,9 +1955,17 @@ const UI_TEXT = {
     channelDescStable: 'Channel: Official Stable',
     channelDescBeta: 'Channel: Beta Preview',
     aboutCheckChecking: 'Checking…',
+    aboutCheckLoading: 'Fetching the remote Release information…',
     aboutCheckLatest: 'Already up to date',
+    aboutNoUpdate: 'This version is current; no download is needed',
     aboutCheckHasUpdate: 'Update Available',
-    aboutDownloadZip: 'Download ZIP',
+    aboutDownloadNow: 'Download now',
+    aboutDownloadStarting: 'Downloading update package…',
+    aboutDownloadDone: 'Download complete; ready to update',
+    aboutInstallNow: 'Install update now',
+    aboutInstallStarting: 'Installing downloaded package…',
+    aboutInstallDone: 'Install command submitted; KernelSU is switching modules',
+    aboutDownloadFailed: 'Download failed; retry',
     aboutViewRelease: 'View Release',
     aboutCheckFailed: 'Check failed, verify network or proxy',
     uninstallModule: 'Uninstall Module & Purge',
@@ -2206,7 +2282,8 @@ async function doRepair() {
 }
 
 async function maybeAutoCheck() {
-  // 2026-11-16：自动检查只占用后台 Promise，不写日志、不改 busy，不阻塞任何按钮。
+  // 2026-11-16：自动检查只启动后台 shell，不等待网络结果，避免占用 WebUI
+  // 的同步 exec；下次打开页面时由缓存展示结果。
   if (autoCheckStarted || !supportsCheck) return;
   if (!currentApps.some(a => a.installed)) return;
   if (busy > 0) {
@@ -2215,8 +2292,7 @@ async function maybeAutoCheck() {
   }
   autoCheckStarted = true;
   try {
-    await execQuiet(ANCLI + ' check');
-    await Promise.allSettled([loadApps(), loadStatus()]);
+    await startDetached(ANCLI + ' check');
   } catch (e) {
     // 网络不好时保持当前缓存，不弹窗、不污染输出面板。
   }
@@ -2489,17 +2565,14 @@ async function openSettings() {
   ov.setAttribute('aria-hidden', 'false');
   document.body.style.overflow = 'hidden';
   renderSettingsHistory();
-  void refreshLogHistory();
   const stVer = document.getElementById('stVer');
   if (stVer && stVer.textContent) {
     const aboutVer = document.getElementById('aboutVer');
     if (aboutVer) aboutVer.textContent = stVer.textContent;
   }
   try {
-    const [cfg, runtime] = await Promise.all([
-      ancli('config --json', true).then(JSON.parse),
-      ancli('doctor --json', true).then(JSON.parse).catch(() => ancli('status --json', true).then(JSON.parse))
-    ]);
+    // 2026-11-16：配置读取必须单独完成；诊断命令较重且会与更新检查争用桥接。
+    const cfg = JSON.parse(await ancli('config --json', true));
     document.getElementById('setCwd').value = cfg.default_cwd || '';
     const cleanUrl = (cfg.proxy_url || '').replace(/^https?:\/\//i, '').replace(/\/$/, '');
     document.getElementById('setProxyUrl').value = cleanUrl;
@@ -2510,7 +2583,7 @@ async function openSettings() {
       updateChannelUI(cfg.update_channel);
     }
     updateProxyInputVisibility();
-    setSettingsStatus(cfg, runtime);
+    setSettingsStatus(cfg, null);
   } catch (e) {
     // Keep the local defaults if the bridge is temporarily unavailable.
   }
@@ -2758,7 +2831,10 @@ document.getElementById('aboutGithub').addEventListener('click', e => {
   });
 });
 let currentModuleChannel = 'stable';
+let moduleDownloadBusy = false;
 
+// 2026-11-16：模块更新改为桥接下载与安装，检查、进度和安装状态都留在关于面板内。
+// 2026-11-16：统一使用页面已有的 esc() 转义函数，避免更新检查因未定义函数中断。
 function updateChannelUI(channel) {
   currentModuleChannel = channel === 'beta' ? 'beta' : 'stable';
   const btnStable = document.getElementById('chanStable');
@@ -2770,6 +2846,132 @@ function updateChannelUI(channel) {
   }
   if (desc) {
     desc.textContent = currentModuleChannel === 'beta' ? uiText('channelDescBeta') : uiText('channelDescStable');
+  }
+}
+
+function setModuleCheckControls(disabled) {
+  ['aboutCheckBtn', 'chanStable', 'chanBeta'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.disabled = disabled;
+  });
+}
+
+function updateModuleDownloadProgress(received, total, percent) {
+  const fill = document.getElementById('aboutDownloadFill');
+  const meta = document.getElementById('aboutDownloadMeta');
+  if (!fill || !meta) return;
+  const safePercent = Math.max(0, Math.min(100, Number(percent) || 0));
+  fill.style.width = safePercent + '%';
+  meta.textContent = total
+    ? formatBytes(received) + ' / ' + formatBytes(total) + ' · ' + safePercent + '%'
+    : formatBytes(received) + ' · ' + safePercent + '%';
+}
+
+function consumeModuleDownloadOutput(text, task) {
+  const visible = [];
+  String(text || '').split(/\r?\n/).forEach(line => {
+    const progress = line.match(/^ANCLI_DOWNLOAD_PROGRESS\s+(\d+)\s+(\d+)\s+(\d+)$/);
+    if (progress) {
+      updateModuleDownloadProgress(Number(progress[1]), Number(progress[2]), Number(progress[3]));
+      return;
+    }
+    const ready = line.match(/^ANCLI_MODULE_DOWNLOAD_READY\s+(\{.*\})$/);
+    if (ready) {
+      try {
+        const data = JSON.parse(ready[1]);
+        task.moduleDownloadPath = data.path || '';
+        updateModuleDownloadProgress(Number(data.bytes || 0), Number(data.bytes || 0), 100);
+      } catch (e) { /* the final task status still reports a failure if no path is found */ }
+      return;
+    }
+    if (line) visible.push(line);
+  });
+  return visible.join('\n');
+}
+
+async function installDownloadedModule(path, button, messageEl) {
+  if (moduleDownloadBusy) return;
+  if (!/^\/data\/local\/tmp\/ancli\/module-updates\/ancli-\d+-/.test(path || '')) {
+    messageEl.textContent = uiText('aboutDownloadFailed');
+    return;
+  }
+  moduleDownloadBusy = true;
+  setModuleCheckControls(true);
+  button.disabled = true;
+  button.textContent = uiText('aboutInstallStarting');
+  messageEl.textContent = uiText('aboutInstallStarting');
+  setBusy(true, uiText('aboutInstallStarting'));
+  const installCmd =
+    'if [ -x /data/adb/ksu/bin/ksud ]; then /data/adb/ksu/bin/ksud module install ' + shQuote(path) +
+    '; elif [ -x /data/adb/ap/bin/ksud ]; then /data/adb/ap/bin/ksud module install ' + shQuote(path) +
+    '; else echo "ksud 不可用" >&2; exit 127; fi';
+  try {
+    const task = await runBackground(installCmd, '', { keepLog: true, timeoutMs: 180000 });
+    if (task.status === 'done') {
+      messageEl.textContent = uiText('aboutInstallDone');
+      button.textContent = uiText('aboutInstallDone');
+      // KernelSU may restart this WebUI while applying the ZIP; reload as a fallback.
+      setTimeout(() => { try { window.location.reload(); } catch (e) { /* page is already restarting */ } }, 2600);
+    } else {
+      messageEl.textContent = uiText('aboutDownloadFailed');
+      button.disabled = false;
+      button.textContent = uiText('aboutInstallNow');
+    }
+  } catch (e) {
+    messageEl.textContent = uiText('aboutDownloadFailed') + '：' + (e.message || e);
+    button.disabled = false;
+    button.textContent = uiText('aboutInstallNow');
+  } finally {
+    moduleDownloadBusy = false;
+    setModuleCheckControls(false);
+    setBusy(false);
+  }
+}
+
+async function startModuleDownload(data) {
+  if (moduleDownloadBusy || !data || !data.zip_url) return;
+  const resultEl = document.getElementById('aboutCheckResult');
+  const button = document.getElementById('btnDownloadModule');
+  const progress = document.getElementById('aboutDownloadProgress');
+  const messageEl = document.getElementById('aboutDownloadMessage');
+  if (!resultEl || !button || !progress || !messageEl) return;
+
+  moduleDownloadBusy = true;
+  setModuleCheckControls(true);
+  setBusy(true, uiText('aboutDownloadStarting'));
+  button.disabled = true;
+  button.textContent = uiText('aboutDownloadStarting');
+  progress.hidden = false;
+  messageEl.textContent = uiText('aboutDownloadStarting');
+  updateModuleDownloadProgress(0, 0, 0);
+
+  try {
+    const task = await runBackground(
+      ANCLI + ' download-module --channel=' + currentModuleChannel,
+      '',
+      { keepLog: true, onOutput: consumeModuleDownloadOutput, timeoutMs: 180000 }
+    );
+    const path = task.moduleDownloadPath || '';
+    if (task.status === 'done' && path) {
+      messageEl.textContent = uiText('aboutDownloadDone');
+      button.disabled = false;
+      button.textContent = uiText('aboutInstallNow');
+      button.onclick = () => { void installDownloadedModule(path, button, messageEl); };
+    } else {
+      messageEl.textContent = uiText('aboutDownloadFailed');
+      button.disabled = false;
+      button.textContent = uiText('aboutDownloadNow');
+      button.onclick = () => { void startModuleDownload(data); };
+    }
+  } catch (e) {
+    messageEl.textContent = uiText('aboutDownloadFailed') + '：' + (e.message || e);
+    button.disabled = false;
+    button.textContent = uiText('aboutDownloadNow');
+    button.onclick = () => { void startModuleDownload(data); };
+  } finally {
+    moduleDownloadBusy = false;
+    setModuleCheckControls(false);
+    setBusy(false);
   }
 }
 
@@ -2792,11 +2994,18 @@ async function runCheckModuleUpdate() {
 
   btn.disabled = true;
   btn.textContent = uiText('aboutCheckChecking');
-  resultEl.style.display = 'none';
-  resultEl.innerHTML = '';
+  setModuleCheckControls(true);
+  resultEl.style.display = 'block';
+  resultEl.innerHTML = '<div class="module-update-result"><div class="module-update-message">' + esc(uiText('aboutCheckLoading')) + '</div></div>';
 
   try {
-    const raw = await ancli('check-module --channel=' + currentModuleChannel + ' --json', true);
+    const task = await runBackground(
+      ANCLI + ' check-module --channel=' + currentModuleChannel + ' --json',
+      '',
+      { timeoutMs: 30000 }
+    );
+    if (task.status !== 'done') throw new Error('检查更新超时，请稍后重试');
+    const raw = (task.output || []).filter(line => line !== '✓ 完成').join('\n');
     let data = null;
     try {
       data = JSON.parse(raw.trim());
@@ -2809,37 +3018,40 @@ async function runCheckModuleUpdate() {
     resultEl.style.display = 'block';
     if (data.status === 'error') {
       resultEl.innerHTML = `
-        <div class="note" style="margin-top: 8px; border-left: 3px solid var(--danger); font-size: 11px;">
-          ${escapeHtml(uiText('aboutCheckFailed'))}：${escapeHtml(data.error || '')}
+        <div class="module-update-result note" style="border-left: 3px solid var(--danger);">
+          ${esc(uiText('aboutCheckFailed'))}：${esc(data.error || '')}
         </div>`;
     } else if (data.has_update) {
-      const ver = escapeHtml(data.latest_version || '');
-      const code = escapeHtml(String(data.latest_version_code || ''));
-      const changelog = data.changelog ? escapeHtml(data.changelog) : '';
+      const ver = esc(data.latest_version || '');
+      const code = esc(String(data.latest_version_code || ''));
+      const changelog = data.changelog ? esc(data.changelog) : '';
       let buttonsHtml = '';
       if (data.zip_url) {
-        buttonsHtml += `<button type="button" class="btn xs primary" id="btnDownloadZip">${escapeHtml(uiText('aboutDownloadZip'))}</button>`;
+        buttonsHtml += `<button type="button" class="btn xs primary" id="btnDownloadModule">${esc(uiText('aboutDownloadNow'))}</button>`;
       }
       if (data.html_url) {
-        buttonsHtml += `<button type="button" class="btn xs" id="btnViewRelease" style="margin-left: 6px;">${escapeHtml(uiText('aboutViewRelease'))}</button>`;
+        buttonsHtml += `<button type="button" class="btn xs" id="btnViewRelease" style="margin-left: 6px;">${esc(uiText('aboutViewRelease'))}</button>`;
       }
 
       resultEl.innerHTML = `
-        <div style="margin-top: 8px; padding: 10px; border-radius: var(--r); background: var(--surface-2); border: 1px solid var(--border);">
-          <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px;">
-            <b style="color: var(--ok); font-size: 12px;">🎉 ${escapeHtml(uiText('aboutCheckHasUpdate'))}：${ver}</b>
-            <span style="font-size: 10px; color: var(--muted);">Build ${code}</span>
+        <div class="module-update-result">
+          <div class="module-update-head">
+            <b>🎉 ${esc(uiText('aboutCheckHasUpdate'))}：${ver}</b>
+            <small>Build ${code}</small>
           </div>
-          ${changelog ? `<pre style="white-space: pre-wrap; font-size: 11px; max-height: 120px; overflow-y: auto; background: var(--surface); padding: 8px; border-radius: 8px; margin: 6px 0; border: 1px solid var(--border); color: var(--muted);">${changelog}</pre>` : ''}
+          ${changelog ? `<pre class="module-update-changelog">${changelog}</pre>` : ''}
+          <div class="module-download-progress" id="aboutDownloadProgress" hidden>
+            <div class="module-download-track"><div class="module-download-fill" id="aboutDownloadFill"></div></div>
+            <div class="module-download-meta"><span id="aboutDownloadMeta">0 B · 0%</span><span>${esc(uiText('aboutDownloadStarting'))}</span></div>
+          </div>
+          <div class="module-download-message" id="aboutDownloadMessage"></div>
           <div style="margin-top: 8px; display: flex; align-items: center; gap: 6px;">
             ${buttonsHtml}
           </div>
         </div>`;
 
-      if (data.zip_url && document.getElementById('btnDownloadZip')) {
-        document.getElementById('btnDownloadZip').onclick = () => {
-          void openAndroidUrl(data.zip_url).catch(() => window.open(data.zip_url, '_blank'));
-        };
+      if (data.zip_url && document.getElementById('btnDownloadModule')) {
+        document.getElementById('btnDownloadModule').onclick = () => { void startModuleDownload(data); };
       }
       if (data.html_url && document.getElementById('btnViewRelease')) {
         document.getElementById('btnViewRelease').onclick = () => {
@@ -2847,20 +3059,21 @@ async function runCheckModuleUpdate() {
         };
       }
     } else {
-      const ver = escapeHtml(data.current_version || '');
+      const ver = esc(data.current_version || '');
       resultEl.innerHTML = `
-        <div style="margin-top: 8px; padding: 8px 12px; border-radius: var(--r); background: var(--surface-2); border: 1px solid var(--border); display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--muted);">
-          <span style="color: var(--ok); font-weight: bold;">✓</span>
-          <span>${escapeHtml(uiText('aboutCheckLatest'))} (${ver})</span>
+        <div class="module-update-result">
+          <div class="module-update-head"><b>✓ ${esc(uiText('aboutCheckLatest'))}（${ver}）</b></div>
+          <div class="module-download-message">${esc(uiText('aboutNoUpdate'))}</div>
         </div>`;
     }
   } catch (err) {
     resultEl.style.display = 'block';
     resultEl.innerHTML = `
-      <div class="note" style="margin-top: 8px; border-left: 3px solid var(--danger); font-size: 11px;">
-        ${escapeHtml(uiText('aboutCheckFailed'))}：${escapeHtml(err.message || String(err))}
+      <div class="module-update-result note" style="border-left: 3px solid var(--danger);">
+        ${esc(uiText('aboutCheckFailed'))}：${esc(err.message || String(err))}
       </div>`;
   } finally {
+    if (!moduleDownloadBusy) setModuleCheckControls(false);
     btn.disabled = false;
     btn.textContent = uiText('aboutCheckBtn');
   }
@@ -3008,21 +3221,17 @@ if (window.matchMedia) {
   // 首屏只等待两个轻量 JSON 请求，两个请求各自完成后立即更新对应区域。
   const firstLoad = Promise.allSettled([loadStatus(), loadApps()]);
 
-  // 路径探测与远端配置读取不参与首屏完成条件。
-  void (async () => {
-    try {
-      ANCLI = await findAncli();
-      const cfg = JSON.parse(await ancli('config --json', true));
-      applyLanguage(cfg.lang || savedLang);
-    } catch (e) { /* 首屏已可用，保留本地语言和默认命令 */ }
-  })();
+  // 2026-11-16：默认 PATH 已由模块 wrapper 提供 ancli；不再在首屏额外
+  // 探测绝对路径，避免一条无关 shell 命令阻塞设置和更新按钮。
 
   // 日志维护、任务恢复与官方版本查询延迟到首屏稳定后静默运行。
   void firstLoad.finally(() => {
     setTimeout(() => {
       void trimTaskLogs();
       void restoreTasks();
-      void maybeAutoCheck();
+      // 2026-11-16：把网络自动检查再延后到首屏稳定后，给手动更新检查
+      // 留出独占桥接的窗口；自动检查仍在后台进行且不弹窗。
+      setTimeout(() => { void maybeAutoCheck(); }, 30000);
     }, 600);
   });
 })();
