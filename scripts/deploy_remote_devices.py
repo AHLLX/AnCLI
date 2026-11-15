@@ -8,7 +8,7 @@ DEVICES = [
     ("6spro", "192.168.1.207:36657"),
 ]
 
-ZIP_NAME = "ancli-25-v1.2.613-beta.zip"
+ZIP_NAME = "ancli-26-v1.2.614-beta.zip"
 
 def run_adb(device_serial, cmd):
     full_cmd = ["adb", "-s", device_serial] + cmd
@@ -64,7 +64,7 @@ def deploy(name, serial):
         "-b /data/adb/modules/ancli "
         "-b /data/adb/ksu "
         "-b /data/adb/ap "
-        "python3 -"
+        "/usr/bin/env PATH=/usr/local/bin:/usr/bin:/bin python3 -"
     )
     p = subprocess.Popen(
         ["adb", "-s", serial, "shell", "su", "-c", proot_cmd],
