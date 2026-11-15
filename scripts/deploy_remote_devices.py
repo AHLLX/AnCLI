@@ -4,8 +4,8 @@ import subprocess
 import sys
 
 DEVICES = [
-    ("k80p", "192.168.1.174:42111"),
-    ("6spro", "192.168.1.207:45165"),
+    ("k80p", "192.168.1.174:37785"),
+    ("6spro", "192.168.1.207:36657"),
 ]
 
 ZIP_NAME = "ancli-25-v1.2.613-beta.zip"
@@ -75,12 +75,17 @@ def deploy(name, serial):
     if h_err:
         print(f"Helper stderr: {h_err}")
 
-    # 6. Verify with ancli check-module and status
-    print(f"[*] Verifying on {name}...")
-    rc, out, err = run_adb(serial, ["shell", "su", "-c", "/data/local/tmp/ancli/bin/proot -r /data/local/tmp/ancli/rootfs python3 /data/local/tmp/ancli/bin/ancli-core.py check-module --json"])
-    print(f"Check module: {out.strip()}")
+    # 6. Run ancli repair to ensure guest bash symlink and dual injection
+    print(f"[*] Running ancli repair on {name}...")
+    run_adb(serial, ["shell", "su", "-c", "/data/adb/ksu/bin/ancli repair"])
 
-    rc, out, err = run_adb(serial, ["shell", "su", "-c", "/data/local/tmp/ancli/bin/proot -r /data/local/tmp/ancli/rootfs python3 /data/local/tmp/ancli/bin/ancli-core.py status --json"])
+    # 7. Clean up old webui log files
+    print(f"[*] Cleaning up stale WebUI temporary logs on {name}...")
+    run_adb(serial, ["shell", "su", "-c", "rm -f /data/local/tmp/ancli/.webui_*.log*"])
+
+    # 8. Verify with status
+    print(f"[*] Verifying on {name}...")
+    rc, out, err = run_adb(serial, ["shell", "su", "-c", "/data/adb/ksu/bin/ancli status --json"])
     print(f"Status: {out.strip()}")
 
     return True

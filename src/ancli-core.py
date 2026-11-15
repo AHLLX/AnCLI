@@ -3476,7 +3476,7 @@ def status_json():
         detected_proxy = _get_detected_proxy()
         payload = {
             "ancli_version": VERSION,
-            "rootfs_ready": os.path.exists(f"{ROOTFS}/bin/bash"),
+            "rootfs_ready": os.path.exists(f"{ROOTFS}/bin/bash") or os.path.exists("/bin/bash"),
             "proot_deployed": os.path.exists(f"{ANCLI_DIR}/bin/proot"),
             "installed_count": len(load_installed()),
             "android_data": _android_data_mounted(),
@@ -3508,7 +3508,7 @@ def doctor_json():
         payload = {
             "ancli_version": VERSION,
             "execution_backend": "proot-ubuntu",
-            "rootfs_ready": os.path.exists(f"{ROOTFS}/bin/bash"),
+            "rootfs_ready": os.path.exists(f"{ROOTFS}/bin/bash") or os.path.exists("/bin/bash"),
             "proot_deployed": os.path.exists(f"{ANCLI_DIR}/bin/proot"),
             "android_data": _android_data_mounted(),
             "paths": paths,

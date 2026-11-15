@@ -1098,6 +1098,22 @@ body.ime-open .topbar { backdrop-filter: none; -webkit-backdrop-filter: none; ba
   </div>
 </div>
 
+<div class="overlay" id="installOverlay" aria-hidden="true">
+  <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="instTitle">
+    <div class="dlg-head">
+      <h3 id="instTitle">安装应用</h3>
+    </div>
+    <div class="dlg-body">
+      <div class="note" id="instDesc" style="line-height:1.5;"></div>
+      <div id="instCmdNote" class="detail" style="margin-top:10px; font-family:var(--font-mono, monospace); font-size:12px; word-break:break-all; background:var(--card-bg-subtle, rgba(0,0,0,0.04)); padding:8px 10px; border-radius:8px;"></div>
+    </div>
+    <div class="dlg-foot">
+      <button class="btn" type="button" id="instCancel" data-i18n="cancel">取消</button>
+      <button class="btn primary" type="button" id="instConfirm">开始安装</button>
+    </div>
+  </div>
+</div>
+
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
 <script>
@@ -1574,21 +1590,26 @@ async function proxyDownloadNote(app) {
 
 async function restoreTasks() {
   try {
-    const files = await execCmd("ls -t /data/local/tmp/ancli/.webui_*.log.meta 2>/dev/null || true");
-    for (const path of strip(files.stdout || '').split(/\r?\n/).filter(Boolean)) {
+    const raw = await execCmd(
+      'for m in $(ls -t /data/local/tmp/ancli/.webui_*.log.meta 2>/dev/null | head -n 10); do ' +
+      'echo "===META==="; cat "$m" 2>/dev/null; echo ""; ' +
+      'echo "===EXIT==="; e="${m%.meta}"; [ -f "$e" ] && cat "$e" 2>/dev/null || true; echo ""; done'
+    );
+    const chunks = strip(raw.stdout || '').split('===META===').filter(Boolean);
+    for (const chunk of chunks) {
       try {
-        const raw = await execCmd('cat ' + shQuote(path));
-        const task = JSON.parse(raw.stdout || '{}');
+        const parts = chunk.split('===EXIT===');
+        const task = JSON.parse((parts[0] || '').trim() || '{}');
         if (!task.id || !task.logFile || taskTabs.has(task.id)) continue;
-        const exit = await execCmd('[ -f ' + shQuote(task.exitFile) + ' ] && cat ' + shQuote(task.exitFile) + ' || true');
-        task.status = strip(exit.stdout || '').trim() === '' ? 'running' : (strip(exit.stdout || '').trim() === '0' ? 'done' : 'failed');
+        const exitCode = (parts[1] || '').trim();
+        task.status = exitCode === '' ? 'running' : (exitCode === '0' ? 'done' : 'failed');
         taskTabs.set(task.id, task);
         if (task.scope) expandedAppLogs.add(task.scope);
-      } catch (e) { /* ignore malformed or concurrently removed task */ }
+      } catch (e) { /* ignore single malformed entry */ }
     }
     renderTaskTabs();
     const first = taskTabs.values().next().value;
-    if (first) await selectTask(first.id);
+    if (first && activeTaskId === 'session') await selectTask(first.id);
     for (const task of taskTabs.values()) if (task.status === 'running') monitorTask(task);
   } catch (e) { /* the first page load can proceed without task history */ }
 }
@@ -1671,18 +1692,11 @@ async function waitForDshUrl(logFile, timeoutMs) {
 
 // ---------- 数据 ----------
 async function findAncli() {
-  const candidates = [
-    '/data/adb/ksu/bin/ancli',
-    '/data/adb/ap/bin/ancli',
-    '/data/adb/modules/ancli/system/bin/ancli',
-    '/data/local/tmp/ancli/bin/ancli',
-  ];
-  for (const p of candidates) {
-    try {
-      const r = await sh('[ -x ' + p + ' ] && echo yes');
-      if (r.code === 0 && strip(r.stdout).trim() === 'yes') return p;
-    } catch (e) { /* next */ }
-  }
+  try {
+    const r = await sh('for p in /data/adb/ksu/bin/ancli /data/adb/ap/bin/ancli /data/adb/modules/ancli/system/bin/ancli /data/local/tmp/ancli/bin/ancli; do [ -x "$p" ] && echo "$p" && exit 0; done; echo ancli');
+    const p = strip(r.stdout || '').trim();
+    if (p) return p;
+  } catch (e) { /* fallback */ }
   return 'ancli';
 }
 
@@ -1924,6 +1938,8 @@ document.querySelectorAll('#langSwitch button').forEach(b => {
   };
 });
 
+let lastRenderTime = 0;
+
 function renderApps(apps) {
   const wrap = document.getElementById('apps');
   const pending = apps.filter(a => a.installed && a.update_available).length;
@@ -2004,6 +2020,7 @@ function renderApps(apps) {
   if (busy > 0) {
     document.querySelectorAll('#apps button[data-act]:not([data-act="toggle-log"])').forEach(b => { b.disabled = true; });
   }
+  lastRenderTime = Date.now();
 }
 
 async function toggleAppLog(id, button) {
@@ -2027,6 +2044,33 @@ async function toggleAppLog(id, button) {
 }
 
 // ---------- 动作 ----------
+let pendingInstallAppId = null;
+
+function promptInstall(id) {
+  const app = currentApps.find(a => a.id === id) || { name: id, id };
+  pendingInstallAppId = id;
+  const overlay = document.getElementById('installOverlay');
+  const title = document.getElementById('instTitle');
+  const desc = document.getElementById('instDesc');
+  const cmdNote = document.getElementById('instCmdNote');
+  title.textContent = (uiLang === 'en' ? 'Install ' : '安装 ') + app.name;
+  desc.innerHTML = uiLang === 'en'
+    ? 'Are you sure you want to install <b>' + esc(app.name) + '</b> into the Ubuntu container?'
+    : '确定要将 <b>' + esc(app.name) + '</b> 安装到 Ubuntu 容器环境中吗？';
+  if (cmdNote) {
+    cmdNote.textContent = '$ ancli install ' + id;
+  }
+  overlay.classList.add('show');
+  overlay.setAttribute('aria-hidden', 'false');
+}
+
+function closeInstallPrompt() {
+  pendingInstallAppId = null;
+  const overlay = document.getElementById('installOverlay');
+  overlay.classList.remove('show');
+  overlay.setAttribute('aria-hidden', 'true');
+}
+
 async function doInstall(id) {
   const app = currentApps.find(a => a.id === id) || { name: id };
   // 2026-11-13: Start installs directly; browser confirm dialogs can be hidden
@@ -2622,6 +2666,8 @@ async function performReset() {
 
 /* ================= 事件绑定 ================= */
 document.getElementById('apps').addEventListener('click', e => {
+  // 渲染后 350ms 内忽略点击，防止 DOM 切换时发生幽灵误触
+  if (Date.now() - lastRenderTime < 350) return;
   const btn = e.target.closest('button[data-act]');
   if (!btn) return;
   const host = btn.closest('.app');
@@ -2633,7 +2679,7 @@ document.getElementById('apps').addEventListener('click', e => {
     toast(uiLang === 'en' ? 'Wait for the current task to finish; its log is still available.' : '当前任务仍在运行，可先展开日志查看进度。', 'err');
     return;
   }
-  if (act === 'install') doInstall(id);
+  if (act === 'install') promptInstall(id);
   else if (act === 'update') doUpdate(id);
   else if (act === 'config') openConfig(id);
   else if (act === 'launch') doLaunch(id);
@@ -2808,9 +2854,19 @@ document.getElementById('memoryOverlay').addEventListener('click', e => {
 document.getElementById('cfgOverlay').addEventListener('click', e => {
   if (e.target.id === 'cfgOverlay') closeConfig();
 });
+document.getElementById('instCancel').onclick = closeInstallPrompt;
+document.getElementById('instConfirm').onclick = () => {
+  const id = pendingInstallAppId;
+  closeInstallPrompt();
+  if (id) doInstall(id);
+};
+document.getElementById('installOverlay').addEventListener('click', e => {
+  if (e.target.id === 'installOverlay') closeInstallPrompt();
+});
 document.addEventListener('keydown', e => {
   if (e.key !== 'Escape') return;
   if (document.getElementById('cfgOverlay').classList.contains('show')) closeConfig();
+  else if (document.getElementById('installOverlay').classList.contains('show')) closeInstallPrompt();
   else if (document.getElementById('resetOverlay').classList.contains('show')) closeReset();
   else if (document.getElementById('uninstallOverlay').classList.contains('show')) closeUninstall();
   else if (document.getElementById('setOverlay').classList.contains('show')) closeSettings();
@@ -2901,15 +2957,28 @@ if (window.matchMedia) {
   let savedLang = 'zh';
   try { savedLang = localStorage.getItem('ancli_lang') || 'zh'; } catch (e) { /* ignore */ }
   applyLanguage(savedLang);
+
+  // 1. 快速单次探测 ancli 入口
   ANCLI = await findAncli();
-  // Keep history until the shared 10 MB budget is reached; do not expire it
-  // merely because the user was away from the device.
-  await trimTaskLogs();
-  try { const cfg = JSON.parse(await ancli('config --json', true)); applyLanguage(cfg.lang || savedLang); } catch (e) { /* keep local language */ }
-  await restoreTasks();
-  await loadStatus();
-  await loadApps();
-  await maybeAutoCheck();
+
+  // 2. 首屏核心并发加载（状态 + 应用列表 + 本地语言）：单次并发往返完成首屏渲染，达成秒开
+  await Promise.allSettled([
+    loadStatus(),
+    loadApps(),
+    (async () => {
+      try {
+        const cfg = JSON.parse(await ancli('config --json', true));
+        applyLanguage(cfg.lang || savedLang);
+      } catch (e) { /* keep local language */ }
+    })()
+  ]);
+
+  // 3. 次要耗时操作全部延迟到后台静默运行，绝不抢占首屏渲染与用户点击响应
+  setTimeout(() => {
+    void trimTaskLogs();
+    void restoreTasks();
+    void maybeAutoCheck();
+  }, 1000);
 })();
 </script>
 </body>

@@ -10,7 +10,9 @@
 - **Bilingual tool descriptions**: Format CLI tool descriptions with Chinese and English displayed on separate lines in the WebUI.
 - **Agent memory guide onboarding & gentle probing**: Display a first-launch guidance dialog for the global memory template (`/root/.agents/AGENTS.md`) and relax initial probing to on-demand execution, avoiding heavy background workloads during standard conversational greetings.
 - **Container PATH isolation & Shadowing fix**: Strip `/data/adb/ksu/bin` and `/data/adb/ap/bin` from container wrapper PATH, leaving a clean guest environment (`PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/system/bin`) to prevent nested PRoot lockups.
-- **Suppress PRoot seccomp warnings**: Export `PROOT_NO_SECCOMP=1` before launching PRoot in wrappers and `system/bin/ancli`, skipping unsupported `PTRACE_O_TRACESECCOMP` probe and eliminating stderr noise that corrupted terminal ANSI cursor positions.
+- **WebUI startup speedup & zero-blocking concurrent loading**: Redesign WebUI initialization from sequential serial IPC to single-round parallel fetching (`Promise.allSettled` for status, app list, and config), offloading task history restoration, log trimming, and auto version checks to delayed background routines. WebUI now launches and responds in ~300ms without blocking.
+- **WebUI install confirmation modal & ghost-click debounce**: Introduce an explicit installation confirmation dialog and 350ms post-render click debounce, preventing cumulative layout shift (CLS) from accidentally triggering application downloads during touch interactions.
+- **Rootfs ready state detection fix**: Ensure `rootfs_ready` evaluates `/bin/bash` directly inside PRoot guest environments as well as on the host, preventing the status badge from incorrectly showing "missing".
 
 ## v1.2.612 (2026-11-15)
 
