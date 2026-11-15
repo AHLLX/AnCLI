@@ -64,6 +64,7 @@
 * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 html { -webkit-text-size-adjust: 100%; }
 body {
+  overflow-x: hidden;
   font: 14px/1.55 system-ui, -apple-system, "PingFang SC", "Noto Sans CJK SC", "Microsoft YaHei", sans-serif;
   color: var(--text);
   background: var(--bg);
@@ -93,11 +94,11 @@ body.ime-open .topbar { backdrop-filter: none; -webkit-backdrop-filter: none; ba
 .brand b { font-size: 15px; font-weight: 650; letter-spacing: .01em; }
 .brand small { display: block; color: var(--faint); font-size: 11px; font-variant-numeric: tabular-nums; line-height: 1.2; }
 
-.seg { display: flex; gap: 2px; padding: 2px; border-radius: var(--r-pill); background: var(--surface-2); border: 1px solid var(--border); }
+.seg { display: flex; gap: 2px; max-width: 100%; overflow: hidden; padding: 2px; border-radius: var(--r-pill); background: var(--surface-2); border: 1px solid var(--border); }
 .seg button {
   border: 0; background: transparent; color: var(--muted); cursor: pointer;
   font: 500 11.5px/1 inherit; padding: 6px 10px; border-radius: var(--r-pill); transition: .16s;
-  white-space: nowrap;
+  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .seg button.active { background: var(--surface); color: var(--text); box-shadow: var(--shadow-sm); }
 .lang-seg { margin-left: auto; }
@@ -248,16 +249,21 @@ body.ime-open .topbar { backdrop-filter: none; -webkit-backdrop-filter: none; ba
 .log .l-dim { color: var(--faint); }
 .log:empty::after { content: "等待操作…"; color: var(--faint); }
 
+/* 2026-11-16：弹窗只在显示时接收触摸，隐藏状态不再拦截首屏点击。 */
 /* ============================ 配置弹窗 ============================ */
 .overlay {
   position: fixed; inset: 0; z-index: 40;
   display: flex; align-items: center; justify-content: center;
   padding: 20px 14px; background: rgba(12, 14, 18, .48);
-  opacity: 0; visibility: hidden; transition: opacity .2s ease, visibility .2s ease;
+  opacity: 0; visibility: hidden; pointer-events: none;
+  transition: opacity .18s ease, visibility 0s linear .18s;
   backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px);
   box-sizing: border-box; overflow-y: auto;
 }
-.overlay.show { opacity: 1; visibility: visible; }
+.overlay.show {
+  opacity: 1; visibility: visible; pointer-events: auto;
+  transition-delay: 0s;
+}
 .dialog {
   width: min(480px, calc(100vw - 28px)); max-width: 100%; max-height: min(84vh, 520px);
   display: flex; flex-direction: column;
@@ -380,6 +386,7 @@ body.ime-open .topbar { backdrop-filter: none; -webkit-backdrop-filter: none; ba
 .adv[open] summary::before { transform: rotate(90deg); }
 .adv .field + .field { margin-top: 13px; }
 
+/* 2026-11-16：设置页只移动一个面板宽度，动画时长固定，避免不同屏幕比例下跳帧。 */
 /* ============================ 设置弹窗 Tab 与滑动动画 ============================ */
 .settings-tabs {
   display: flex;
@@ -436,7 +443,7 @@ body.ime-open .topbar { backdrop-filter: none; -webkit-backdrop-filter: none; ba
   width: 500%;
   max-width: 500%;
   height: 100%;
-  transition: transform 0.28s cubic-bezier(0.25, 1, 0.5, 1);
+  transition: transform 0.22s cubic-bezier(0.22, 1, 0.36, 1);
   will-change: transform;
 }
 .settings-panel {
@@ -643,8 +650,8 @@ body.ime-open .topbar { backdrop-filter: none; -webkit-backdrop-filter: none; ba
   }
   .topbar > * { min-width: 0; }
   .brand { grid-area: brand; }
-  #themeSwitch { grid-area: theme; justify-self: start; max-width: 100%; margin-left: 0; }
-  #langSwitch { grid-area: language; justify-self: end; margin-left: 0; }
+  #themeSwitch { grid-area: theme; justify-self: start; max-width: min(100%, calc(100vw - 108px)); margin-left: 0; }
+  #langSwitch { grid-area: language; justify-self: end; max-width: 100px; margin-left: 0; }
   #btnSettings { grid-area: settings; min-height: 36px; padding: 8px 11px; white-space: nowrap; }
   .seg button { padding: 7px 9px; }
   .wrap { padding: 12px 10px calc(24px + env(safe-area-inset-bottom)); gap: 10px; }
@@ -692,7 +699,7 @@ body.ime-open .topbar { backdrop-filter: none; -webkit-backdrop-filter: none; ba
 <header class="topbar">
   <div class="brand">
     <span class="mark" aria-hidden="true">
-      <img src="logo.png?v=1.2.610" alt="">
+      <img src="logo.png?v=1.2.615" alt="">
     </span>
     <span>
       <b>AnCLI</b>
@@ -936,10 +943,10 @@ body.ime-open .topbar { backdrop-filter: none; -webkit-backdrop-filter: none; ba
           <!-- 面板 5：关于 -->
           <div class="settings-panel" id="panel-about">
             <div class="about-hero">
-              <img src="logo.png?v=1.2.613" class="about-logo" alt="AnCLI Logo">
+              <img src="logo.png?v=1.2.615" class="about-logo" alt="AnCLI Logo">
               <div class="about-brand">
                 <span class="about-name">AnCLI</span>
-                <span class="about-badge" id="aboutVer">v1.2.614-beta</span>
+                <span class="about-badge" id="aboutVer">v1.2.615-beta</span>
               </div>
               <p class="about-desc" data-i18n="aboutDesc">统一的 Android 命令行与 AI Agent 环境管理器</p>
             </div>
@@ -1098,22 +1105,6 @@ body.ime-open .topbar { backdrop-filter: none; -webkit-backdrop-filter: none; ba
   </div>
 </div>
 
-<div class="overlay" id="installOverlay" aria-hidden="true">
-  <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="instTitle">
-    <div class="dlg-head">
-      <h3 id="instTitle">安装应用</h3>
-    </div>
-    <div class="dlg-body">
-      <div class="note" id="instDesc" style="line-height:1.5;"></div>
-      <div id="instCmdNote" class="detail" style="margin-top:10px; font-family:var(--font-mono, monospace); font-size:12px; word-break:break-all; background:var(--card-bg-subtle, rgba(0,0,0,0.04)); padding:8px 10px; border-radius:8px;"></div>
-    </div>
-    <div class="dlg-foot">
-      <button class="btn" type="button" id="instCancel" data-i18n="cancel">取消</button>
-      <button class="btn primary" type="button" id="instConfirm">开始安装</button>
-    </div>
-  </div>
-</div>
-
 <div class="overlay" id="uninstallAppOverlay" aria-hidden="true">
   <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="uninstAppTitle">
     <div class="dlg-head">
@@ -1121,7 +1112,7 @@ body.ime-open .topbar { backdrop-filter: none; -webkit-backdrop-filter: none; ba
     </div>
     <div class="dlg-body">
       <div class="note" id="uninstAppDesc" style="line-height:1.5;"></div>
-      <div class="detail" style="margin-top:10px; color:var(--text-subtle); font-size:13px;">
+      <div class="detail" style="margin-top:10px; color:var(--faint); font-size:13px;">
         卸载后用户数据与密钥将继续保留在容器中，只有再次安装时才会用到。
       </div>
     </div>
@@ -1165,6 +1156,8 @@ let ANCLI = 'ancli';
 let currentApps = [];
 let cfgApp = null;
 let selectedProvider = null;
+// 2026-11-16：任务轮询缩短到 450ms，让按钮在命令完成后更快恢复，同时保留桥接调用余量。
+const TASK_POLL_MS = 450;
 
 function findBridge() {
   for (const n of BRIDGE_NAMES) {
@@ -1452,6 +1445,13 @@ async function ancli(args, quiet) {
   return strip(r.stdout || '');
 }
 
+// 2026-11-16：后台检查使用静默桥接，避免把 JSON/网络诊断刷进输出面板，也不改变按钮忙碌态。
+async function execQuiet(cmd) {
+  const r = await execCmd(cmd);
+  if (r.code !== 0) throw new Error('命令失败（exit ' + r.code + '）');
+  return strip(r.stdout || '');
+}
+
 // 后台执行 + 实时输出（每次运行独立日志文件，避免两个任务互相串台）
 async function runBackground(cmd, preface, options) {
   options = options || {};
@@ -1492,7 +1492,7 @@ async function runBackground(cmd, preface, options) {
   }
   let last = 0;
   for (;;) {
-    await sleep(1200);
+    await sleep(TASK_POLL_MS);
     let out;
     try { out = await execCmd('tail -c +' + (last + 1) + ' ' + logFile + ' 2>/dev/null'); }
     catch (e) { continue; }
@@ -1656,7 +1656,7 @@ async function monitorTask(task) {
     last = Number.parseInt(strip(size.stdout || '0').trim(), 10) || 0;
   } catch (e) { /* start from the beginning if the size probe is unavailable */ }
   for (;;) {
-    await sleep(1200);
+    await sleep(TASK_POLL_MS);
     try {
       const out = await execCmd('tail -c +' + (last + 1) + ' ' + shQuote(task.logFile) + ' 2>/dev/null');
       const text = strip(out.stdout || '');
@@ -1973,8 +1973,6 @@ document.querySelectorAll('#langSwitch button').forEach(b => {
   };
 });
 
-let lastRenderTime = 0;
-
 function renderApps(apps) {
   const wrap = document.getElementById('apps');
   const pending = apps.filter(a => a.installed && a.update_available).length;
@@ -2055,7 +2053,6 @@ function renderApps(apps) {
   if (busy > 0) {
     document.querySelectorAll('#apps button[data-act]:not([data-act="toggle-log"])').forEach(b => { b.disabled = true; });
   }
-  lastRenderTime = Date.now();
 }
 
 async function toggleAppLog(id, button) {
@@ -2078,38 +2075,9 @@ async function toggleAppLog(id, button) {
   } catch (e) { pane.textContent = String(e); }
 }
 
-// ---------- 动作 ----------
-let pendingInstallAppId = null;
-
-function promptInstall(id) {
-  const app = currentApps.find(a => a.id === id) || { name: id, id };
-  pendingInstallAppId = id;
-  const overlay = document.getElementById('installOverlay');
-  const title = document.getElementById('instTitle');
-  const desc = document.getElementById('instDesc');
-  const cmdNote = document.getElementById('instCmdNote');
-  title.textContent = (uiLang === 'en' ? 'Install ' : '安装 ') + app.name;
-  desc.innerHTML = uiLang === 'en'
-    ? 'Are you sure you want to install <b>' + esc(app.name) + '</b> into the Ubuntu container?'
-    : '确定要将 <b>' + esc(app.name) + '</b> 安装到 Ubuntu 容器环境中吗？';
-  if (cmdNote) {
-    cmdNote.textContent = '$ ancli install ' + id;
-  }
-  overlay.classList.add('show');
-  overlay.setAttribute('aria-hidden', 'false');
-}
-
-function closeInstallPrompt() {
-  pendingInstallAppId = null;
-  const overlay = document.getElementById('installOverlay');
-  overlay.classList.remove('show');
-  overlay.setAttribute('aria-hidden', 'true');
-}
-
 async function doInstall(id) {
   const app = currentApps.find(a => a.id === id) || { name: id };
-  // 2026-11-13: Start installs directly; browser confirm dialogs can be hidden
-  // by the KernelSU WebUI host and look like a dead install button.
+  // 2026-11-16：安装按钮直接启动后台任务，避免移动端出现二次确认界面。
   toast('开始安装 ' + app.name + '，日志已打开');
   setBusy(true, '开始安装 ' + app.name);
   try { await runBackground(ANCLI + ' install ' + id, await proxyDownloadNote(app)); }
@@ -2238,16 +2206,19 @@ async function doRepair() {
 }
 
 async function maybeAutoCheck() {
-  // 后台静默自动检查更新：完全异步，绝不调用 setBusy 锁定按钮，绝不打扰用户
+  // 2026-11-16：自动检查只占用后台 Promise，不写日志、不改 busy，不阻塞任何按钮。
   if (autoCheckStarted || !supportsCheck) return;
   if (!currentApps.some(a => a.installed)) return;
+  if (busy > 0) {
+    setTimeout(() => { void maybeAutoCheck(); }, 1200);
+    return;
+  }
   autoCheckStarted = true;
   try {
-    await ancli('check', true);
-    await loadApps();
-    await loadStatus();
+    await execQuiet(ANCLI + ' check');
+    await Promise.allSettled([loadApps(), loadStatus()]);
   } catch (e) {
-    // 后台静默处理，网络不好或超时时不弹窗、不报错
+    // 网络不好时保持当前缓存，不弹窗、不污染输出面板。
   }
 }
 
@@ -2734,8 +2705,6 @@ async function performReset() {
 
 /* ================= 事件绑定 ================= */
 document.getElementById('apps').addEventListener('click', e => {
-  // 渲染后 350ms 内忽略点击，防止 DOM 切换时发生幽灵误触
-  if (Date.now() - lastRenderTime < 350) return;
   const btn = e.target.closest('button[data-act]');
   if (!btn) return;
   const host = btn.closest('.app');
@@ -2747,7 +2716,7 @@ document.getElementById('apps').addEventListener('click', e => {
     toast(uiLang === 'en' ? 'Wait for the current task to finish; its log is still available.' : '当前任务仍在运行，可先展开日志查看进度。', 'err');
     return;
   }
-  if (act === 'install') promptInstall(id);
+  if (act === 'install') void doInstall(id);
   else if (act === 'update') doUpdate(id);
   else if (act === 'config') openConfig(id);
   else if (act === 'launch') doLaunch(id);
@@ -2856,12 +2825,12 @@ async function runCheckModuleUpdate() {
       }
 
       resultEl.innerHTML = `
-        <div style="margin-top: 8px; padding: 10px; border-radius: var(--r-card); background: var(--surface-2); border: 1px solid var(--border);">
+        <div style="margin-top: 8px; padding: 10px; border-radius: var(--r); background: var(--surface-2); border: 1px solid var(--border);">
           <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px;">
-            <b style="color: var(--success); font-size: 12px;">🎉 ${escapeHtml(uiText('aboutCheckHasUpdate'))}：${ver}</b>
+            <b style="color: var(--ok); font-size: 12px;">🎉 ${escapeHtml(uiText('aboutCheckHasUpdate'))}：${ver}</b>
             <span style="font-size: 10px; color: var(--muted);">Build ${code}</span>
           </div>
-          ${changelog ? `<pre style="white-space: pre-wrap; font-size: 11px; max-height: 120px; overflow-y: auto; background: var(--surface); padding: 8px; border-radius: 8px; margin: 6px 0; border: 1px solid var(--border); color: var(--text-sec);">${changelog}</pre>` : ''}
+          ${changelog ? `<pre style="white-space: pre-wrap; font-size: 11px; max-height: 120px; overflow-y: auto; background: var(--surface); padding: 8px; border-radius: 8px; margin: 6px 0; border: 1px solid var(--border); color: var(--muted);">${changelog}</pre>` : ''}
           <div style="margin-top: 8px; display: flex; align-items: center; gap: 6px;">
             ${buttonsHtml}
           </div>
@@ -2880,8 +2849,8 @@ async function runCheckModuleUpdate() {
     } else {
       const ver = escapeHtml(data.current_version || '');
       resultEl.innerHTML = `
-        <div style="margin-top: 8px; padding: 8px 12px; border-radius: var(--r-card); background: var(--surface-2); border: 1px solid var(--border); display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--text-sec);">
-          <span style="color: var(--success); font-weight: bold;">✓</span>
+        <div style="margin-top: 8px; padding: 8px 12px; border-radius: var(--r); background: var(--surface-2); border: 1px solid var(--border); display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--muted);">
+          <span style="color: var(--ok); font-weight: bold;">✓</span>
           <span>${escapeHtml(uiText('aboutCheckLatest'))} (${ver})</span>
         </div>`;
     }
@@ -2922,15 +2891,6 @@ document.getElementById('memoryOverlay').addEventListener('click', e => {
 document.getElementById('cfgOverlay').addEventListener('click', e => {
   if (e.target.id === 'cfgOverlay') closeConfig();
 });
-document.getElementById('instCancel').onclick = closeInstallPrompt;
-document.getElementById('instConfirm').onclick = () => {
-  const id = pendingInstallAppId;
-  closeInstallPrompt();
-  if (id) doInstall(id);
-};
-document.getElementById('installOverlay').addEventListener('click', e => {
-  if (e.target.id === 'installOverlay') closeInstallPrompt();
-});
 document.getElementById('uninstAppCancel').onclick = closeUninstallAppPrompt;
 document.getElementById('uninstAppConfirm').onclick = () => {
   const id = pendingUninstallAppId;
@@ -2951,7 +2911,6 @@ document.getElementById('repairOverlay').addEventListener('click', e => {
 document.addEventListener('keydown', e => {
   if (e.key !== 'Escape') return;
   if (document.getElementById('cfgOverlay').classList.contains('show')) closeConfig();
-  else if (document.getElementById('installOverlay').classList.contains('show')) closeInstallPrompt();
   else if (document.getElementById('uninstallAppOverlay').classList.contains('show')) closeUninstallAppPrompt();
   else if (document.getElementById('repairOverlay').classList.contains('show')) closeRepairPrompt();
   else if (document.getElementById('resetOverlay').classList.contains('show')) closeReset();
@@ -3036,7 +2995,8 @@ if (window.matchMedia) {
 }
 
 // ---------- 启动 ----------
-(async function init() {
+// 2026-11-16：先绘制状态和工具卡片，路径探测、配置、日志与更新检查全部后置。
+(function init() {
   setupImeGuard();
   let saved = 'auto';
   try { saved = localStorage.getItem('ancli_theme') || 'auto'; } catch (e) { /* ignore */ }
@@ -3045,27 +3005,26 @@ if (window.matchMedia) {
   try { savedLang = localStorage.getItem('ancli_lang') || 'zh'; } catch (e) { /* ignore */ }
   applyLanguage(savedLang);
 
-  // 1. 快速单次探测 ancli 入口
-  ANCLI = await findAncli();
+  // 首屏只等待两个轻量 JSON 请求，两个请求各自完成后立即更新对应区域。
+  const firstLoad = Promise.allSettled([loadStatus(), loadApps()]);
 
-  // 2. 首屏核心并发加载（状态 + 应用列表 + 本地语言）：单次并发往返完成首屏渲染，达成秒开
-  await Promise.allSettled([
-    loadStatus(),
-    loadApps(),
-    (async () => {
-      try {
-        const cfg = JSON.parse(await ancli('config --json', true));
-        applyLanguage(cfg.lang || savedLang);
-      } catch (e) { /* keep local language */ }
-    })()
-  ]);
+  // 路径探测与远端配置读取不参与首屏完成条件。
+  void (async () => {
+    try {
+      ANCLI = await findAncli();
+      const cfg = JSON.parse(await ancli('config --json', true));
+      applyLanguage(cfg.lang || savedLang);
+    } catch (e) { /* 首屏已可用，保留本地语言和默认命令 */ }
+  })();
 
-  // 3. 次要耗时操作全部延迟到后台静默运行，绝不抢占首屏渲染与用户点击响应
-  setTimeout(() => {
-    void trimTaskLogs();
-    void restoreTasks();
-    void maybeAutoCheck();
-  }, 1000);
+  // 日志维护、任务恢复与官方版本查询延迟到首屏稳定后静默运行。
+  void firstLoad.finally(() => {
+    setTimeout(() => {
+      void trimTaskLogs();
+      void restoreTasks();
+      void maybeAutoCheck();
+    }, 600);
+  });
 })();
 </script>
 </body>
