@@ -49,7 +49,7 @@ CONFIG_FILE    = "/root/.ancli-config.json"
 # 避免 TUI 工具在 "/" 下扫描整个容器及 /data、/sdcard 挂载树。
 DEFAULT_CWD    = "/root"
 # 2026-11-13: `ancli config` 仅接受以下全局配置键；各工具的 API 密钥仍由注册表定义并保存在 secrets/<tool>.env。
-GLOBAL_CONFIG_KEYS = ("default_cwd", "lang", "proxy_mode", "proxy_url", "agent_memory")
+GLOBAL_CONFIG_KEYS = ("default_cwd", "lang", "proxy_mode", "proxy_url", "agent_memory", "update_channel")
 # 运行时动态绑定挂载的 Android 根目录（在 $ROOTFS 磁盘上不存在实体目录，校验存在性时跳过）
 BIND_MOUNT_ROOTS = ("/dev", "/proc", "/sys", "/sdcard", "/storage", "/mnt",
                     "/data", "/apex", "/system", "/linkerconfig")
@@ -224,6 +224,17 @@ def set_agent_memory(value):
     return True, ""
 
 
+def set_update_channel(value):
+    """设置模块更新通道（stable / beta），空或非法返回错误。"""
+    val = (value or "").strip().lower()
+    if val not in ("stable", "beta"):
+        return False, "更新通道必须是 stable (正式主线) 或 beta (Beta 预览)"
+    cfg = load_config()
+    cfg["update_channel"] = val
+    save_config(cfg)
+    return True, ""
+
+
 def settings_command(argv):
     """Handle `ancli config` without an app id (global settings only)."""
     errors = []
@@ -241,6 +252,8 @@ def settings_command(argv):
             ok, err = set_proxy_mode(value)
         elif key == "agent_memory":
             ok, err = set_agent_memory(value)
+        elif key == "update_channel":
+            ok, err = set_update_channel(value)
         else:
             ok, err = False, f"未知配置项：{key}（支持 {', '.join(GLOBAL_CONFIG_KEYS)}）"
         if not ok:
@@ -260,6 +273,7 @@ def settings_command(argv):
             "proxy_url": cfg.get("proxy_url", ""),
             "proxy_mode": cfg.get("proxy_mode", "system"),
             "agent_memory": cfg.get("agent_memory", "unconfigured"),
+            "update_channel": cfg.get("update_channel", "stable"),
             "detected_proxy": detected_proxy,
             "proxy_connected": bool(detected_proxy),
             "supported_keys": list(GLOBAL_CONFIG_KEYS),
@@ -278,6 +292,8 @@ def settings_command(argv):
         print(f"代理地址: {cfg.get('proxy_url') or '未设置'}")
         print(f"当前代理: {detected_proxy or '未连接'}")
         print(f"Agent全局记忆: {cfg.get('agent_memory', '未选择 (默认开启)')}")
+        chan = cfg.get('update_channel', 'stable')
+        print(f"更新通道: {'Beta 预览 (beta)' if chan == 'beta' else '正式主线 (stable)'}")
     for err in errors:
         print(f"\033[91m[X] {err}\033[0m")
     if errors:
@@ -3305,6 +3321,140 @@ def check_updates_json():
     return cache
 
 
+def _get_current_module_version():
+    """读取当前模块版本名称与整型 versionCode。"""
+    v_name = f"v{VERSION}" if not str(VERSION).startswith("v") else str(VERSION)
+    v_code = 25
+    for prop_path in (
+        f"{MOD_DIR}/module.prop",
+        "/data/adb/modules/ancli/module.prop",
+        f"{ANCLI_DIR}/module.prop",
+    ):
+        if os.path.exists(prop_path):
+            try:
+                with open(prop_path, "r", encoding="utf-8", errors="ignore") as fh:
+                    for line in fh:
+                        line = line.strip()
+                        if line.startswith("version="):
+                            v_name = line.split("=", 1)[1].strip()
+                        elif line.startswith("versionCode="):
+                            try:
+                                v_code = int(line.split("=", 1)[1].strip())
+                            except ValueError:
+                                pass
+                break
+            except OSError:
+                pass
+    return v_name, v_code
+
+
+def check_module_update(channel=None):
+    """检查 AnCLI 模块本身的更新。
+    channel 可为 'stable' 或 'beta'，默认读取配置 update_channel。
+    返回结构字典供 CLI 和 WebUI 统一消费。
+    """
+    cfg = load_config()
+    if not channel:
+        channel = cfg.get("update_channel", "stable")
+    channel = (channel or "stable").strip().lower()
+    if channel not in ("stable", "beta"):
+        channel = "stable"
+
+    cur_ver, cur_code = _get_current_module_version()
+    result = {
+        "status": "ok",
+        "channel": channel,
+        "current_version": cur_ver,
+        "current_version_code": cur_code,
+        "has_update": False,
+        "latest_version": cur_ver,
+        "latest_version_code": cur_code,
+        "zip_url": "",
+        "changelog": "",
+        "published_at": "",
+        "html_url": "",
+    }
+
+    try:
+        if channel == "stable":
+            update_data = None
+            try:
+                update_data = _http_json("https://raw.githubusercontent.com/AHLLX/AnCLI/main/update.json", timeout=12)
+            except Exception:
+                pass
+
+            if update_data and isinstance(update_data, dict):
+                remote_code = int(update_data.get("versionCode", 0))
+                remote_ver = str(update_data.get("version", ""))
+                result["latest_version"] = remote_ver
+                result["latest_version_code"] = remote_code
+                result["zip_url"] = update_data.get("zipUrl", "")
+                result["html_url"] = f"https://github.com/AHLLX/AnCLI/releases/tag/{remote_ver}"
+                changelog_url = update_data.get("changelog", "")
+                if remote_code > cur_code:
+                    result["has_update"] = True
+                elif remote_code == cur_code and remote_ver and remote_ver != cur_ver:
+                    result["has_update"] = True
+
+                if result["has_update"] and changelog_url:
+                    try:
+                        result["changelog"] = _http_text(changelog_url, timeout=8)[:2000]
+                    except Exception:
+                        result["changelog"] = f"正式版本 {remote_ver}"
+                else:
+                    result["changelog"] = f"正式版本 {remote_ver}"
+            else:
+                rel = _http_json("https://api.github.com/repos/AHLLX/AnCLI/releases/latest", timeout=12)
+                tag = rel.get("tag_name", "")
+                result["latest_version"] = tag
+                result["html_url"] = rel.get("html_url", "")
+                result["published_at"] = rel.get("published_at", "")
+                result["changelog"] = rel.get("body", "") or f"正式版本 {tag}"
+                for asset in rel.get("assets", []):
+                    name = asset.get("name", "")
+                    if name.endswith(".zip"):
+                        result["zip_url"] = asset.get("browser_download_url", "")
+                        m = re.search(r"ancli-(\d+)-", name)
+                        if m:
+                            result["latest_version_code"] = int(m.group(1))
+                        break
+                if result["latest_version_code"] > cur_code:
+                    result["has_update"] = True
+                elif result["latest_version_code"] == cur_code and tag and tag != cur_ver:
+                    result["has_update"] = True
+
+        else:  # channel == "beta"
+            releases = _http_json("https://api.github.com/repos/AHLLX/AnCLI/releases?per_page=5", timeout=12)
+            if not isinstance(releases, list) or not releases:
+                raise RuntimeError("未获取到 Releases 列表")
+            latest_rel = releases[0]
+            tag = latest_rel.get("tag_name", "")
+            result["latest_version"] = tag
+            result["html_url"] = latest_rel.get("html_url", "")
+            result["published_at"] = latest_rel.get("published_at", "")
+            result["changelog"] = latest_rel.get("body", "") or f"Beta 版本 {tag}"
+            for asset in latest_rel.get("assets", []):
+                name = asset.get("name", "")
+                if name.endswith(".zip"):
+                    result["zip_url"] = asset.get("browser_download_url", "")
+                    m = re.search(r"ancli-(\d+)-", name)
+                    if m:
+                        result["latest_version_code"] = int(m.group(1))
+                    break
+            if result["latest_version_code"] > cur_code:
+                result["has_update"] = True
+            elif result["latest_version_code"] == cur_code and tag and tag != cur_ver:
+                result["has_update"] = True
+            else:
+                result["has_update"] = False
+
+    except Exception as exc:
+        result["status"] = "error"
+        result["error"] = str(exc)
+
+    return result
+
+
 
 def status_json():
     """Container/module status as pure JSON (used by the WebUI)."""
@@ -3634,6 +3784,29 @@ if __name__ == "__main__":
             elif action == "doctor":
                 doctor_json()
                 sys.exit(0)
+            elif action == "check-module":
+                channel = None
+                json_mode = "--json" in sys.argv
+                for arg in sys.argv[2:]:
+                    if arg.startswith("--channel="):
+                        channel = arg.split("=", 1)[1]
+                res = check_module_update(channel)
+                if json_mode:
+                    print(json.dumps(res, ensure_ascii=False))
+                else:
+                    print(f"=== AnCLI 模块更新检查 [{res.get('channel', 'stable')}] ===")
+                    if res.get("status") == "error":
+                        print(f"\033[91m[X] 检查失败: {res.get('error')}\033[0m")
+                        sys.exit(1)
+                    if res.get("has_update"):
+                        print(f"\033[92m[!] 发现新版本: {res.get('latest_version')} (Build {res.get('latest_version_code')})\033[0m")
+                        if res.get("zip_url"):
+                            print(f"下载链接: {res.get('zip_url')}")
+                        if res.get("changelog"):
+                            print(f"\n--- 更新说明 ---\n{res.get('changelog')[:500]}")
+                    else:
+                        print(f"\033[92m[OK] 当前已是最新版本 ({res.get('current_version')})\033[0m")
+                sys.exit(0 if res.get("status") == "ok" else 1)
             elif action == "config" and app_id in ("--help", "-h"):
                 # 2026-11-13: Keep config help offline and independent of the
                 # registry; app-specific keys are listed by `ancli list --json`.

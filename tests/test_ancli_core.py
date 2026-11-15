@@ -1442,8 +1442,9 @@ class TestDefaultWorkingDirectory:
         payload = json.loads(capsys.readouterr().out)
         assert payload["effective_cwd"] == core.DEFAULT_CWD
         assert payload["default_cwd"] == ""
-        assert payload["supported_keys"] == ["default_cwd", "lang", "proxy_mode", "proxy_url", "agent_memory"]
+        assert payload["supported_keys"] == ["default_cwd", "lang", "proxy_mode", "proxy_url", "agent_memory", "update_channel"]
         assert payload["agent_memory"] == "unconfigured"
+        assert payload["update_channel"] == "stable"
         assert "detected_proxy" in payload
         assert "proxy_connected" in payload
 
@@ -1478,6 +1479,59 @@ class TestDefaultWorkingDirectory:
         assert "default_cwd" in wrapper
         assert "configured default directory" in wrapper
         assert "ancli config --set default_cwd=" in wrapper   # discoverable hint
+
+    def test_set_update_channel(self, tmp_path, monkeypatch):
+        self._cfg(tmp_path, monkeypatch)
+        ok, err = core.set_update_channel("beta")
+        assert ok
+        assert core.load_config()["update_channel"] == "beta"
+
+        ok, err = core.set_update_channel("stable")
+        assert ok
+        assert core.load_config()["update_channel"] == "stable"
+
+        ok, err = core.set_update_channel("invalid_channel")
+        assert not ok
+        assert "更新通道" in err
+
+    def test_check_module_update_stable_channel(self, monkeypatch):
+        monkeypatch.setattr(core, "_http_json", lambda url, timeout=12: {
+            "version": "v1.2.614",
+            "versionCode": 26,
+            "zipUrl": "https://example.com/ancli.zip",
+            "changelog": "https://example.com/cl.md"
+        })
+        monkeypatch.setattr(core, "_http_text", lambda url, timeout=8: "Changelog line")
+        monkeypatch.setattr(core, "_get_current_module_version", lambda: ("v1.2.613-beta", 25))
+
+        res = core.check_module_update("stable")
+        assert res["status"] == "ok"
+        assert res["channel"] == "stable"
+        assert res["has_update"] is True
+        assert res["latest_version"] == "v1.2.614"
+        assert res["latest_version_code"] == 26
+        assert res["zip_url"] == "https://example.com/ancli.zip"
+
+    def test_check_module_update_beta_channel(self, monkeypatch):
+        monkeypatch.setattr(core, "_http_json", lambda url, timeout=12: [{
+            "tag_name": "v1.2.614-beta",
+            "html_url": "https://github.com/AHLLX/AnCLI/releases/tag/v1.2.614-beta",
+            "body": "Beta notes",
+            "published_at": "2026-11-15T00:00:00Z",
+            "assets": [{
+                "name": "ancli-26-v1.2.614-beta.zip",
+                "browser_download_url": "https://example.com/beta.zip"
+            }]
+        }])
+        monkeypatch.setattr(core, "_get_current_module_version", lambda: ("v1.2.613-beta", 25))
+
+        res = core.check_module_update("beta")
+        assert res["status"] == "ok"
+        assert res["channel"] == "beta"
+        assert res["has_update"] is True
+        assert res["latest_version"] == "v1.2.614-beta"
+        assert res["latest_version_code"] == 26
+        assert res["zip_url"] == "https://example.com/beta.zip"
 
 
 class TestAgentMemory:
