@@ -4,7 +4,7 @@
 
 - **WebUI startup speedup & zero-blocking concurrent loading**: Redesign WebUI initialization from sequential serial IPC to single-round parallel fetching (`Promise.allSettled` for status, app list, and config), offloading task history restoration, log trimming, and auto version checks to delayed background routines. WebUI now launches and responds in ~300ms without blocking.
 - **WebUI install confirmation modal & ghost-click debounce**: Introduce an explicit installation confirmation dialog and 350ms post-render click debounce, preventing cumulative layout shift (CLS) from accidentally triggering application downloads during touch interactions.
-- **Rootfs ready state detection fix**: Ensure `rootfs_ready` evaluates `/bin/bash` directly inside PRoot guest environments as well as on the host, preventing the status badge from incorrectly showing "missing".
+- **Custom uninstall & repair confirmation dialogs**: Replace native browser `window.confirm()` with custom-styled modal dialogs (`uninstallAppOverlay` and `repairOverlay`). Prevents host WebView environments (e.g. KernelSU / APatch webviews that omit `WebChromeClient.onJsConfirm`) from silently discarding confirm calls and causing buttons to appear dead without any reaction or dialog.
 
 ## v1.2.613-beta (2026-11-15)
 

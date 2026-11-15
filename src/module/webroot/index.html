@@ -1114,6 +1114,41 @@ body.ime-open .topbar { backdrop-filter: none; -webkit-backdrop-filter: none; ba
   </div>
 </div>
 
+<div class="overlay" id="uninstallAppOverlay" aria-hidden="true">
+  <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="uninstAppTitle">
+    <div class="dlg-head">
+      <h3 id="uninstAppTitle">卸载应用</h3>
+    </div>
+    <div class="dlg-body">
+      <div class="note" id="uninstAppDesc" style="line-height:1.5;"></div>
+      <div class="detail" style="margin-top:10px; color:var(--text-subtle); font-size:13px;">
+        卸载后用户数据与密钥将继续保留在容器中，只有再次安装时才会用到。
+      </div>
+    </div>
+    <div class="dlg-foot">
+      <button class="btn" type="button" id="uninstAppCancel" data-i18n="cancel">取消</button>
+      <button class="btn danger" type="button" id="uninstAppConfirm">确认卸载</button>
+    </div>
+  </div>
+</div>
+
+<div class="overlay" id="repairOverlay" aria-hidden="true">
+  <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="repairTitle">
+    <div class="dlg-head">
+      <h3 id="repairTitle">运行环境修复</h3>
+    </div>
+    <div class="dlg-body">
+      <div class="note" style="line-height:1.5;">
+        将重新配置容器 DNS、修复权限与包装器，统一全局 Skills 规范，并刷新双注入兼容环境。是否立即开始修复？
+      </div>
+    </div>
+    <div class="dlg-foot">
+      <button class="btn" type="button" id="repairCancel" data-i18n="cancel">取消</button>
+      <button class="btn primary" type="button" id="repairConfirm">开始修复</button>
+    </div>
+  </div>
+</div>
+
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
 <script>
@@ -2091,9 +2126,31 @@ async function doUpdate(id) {
   finally { await trimTaskLogs(); setBusy(false); await loadApps(); await loadStatus(); }
 }
 
+let pendingUninstallAppId = null;
+
+function promptUninstall(id) {
+  const app = currentApps.find(a => a.id === id) || { name: id, id };
+  pendingUninstallAppId = id;
+  const overlay = document.getElementById('uninstallAppOverlay');
+  const title = document.getElementById('uninstAppTitle');
+  const desc = document.getElementById('uninstAppDesc');
+  title.textContent = (uiLang === 'en' ? 'Uninstall ' : '卸载 ') + app.name;
+  desc.innerHTML = uiLang === 'en'
+    ? 'Are you sure you want to uninstall <b>' + esc(app.name) + '</b> from the container?'
+    : '确定要从容器中卸载 <b>' + esc(app.name) + '</b> 吗？';
+  overlay.classList.add('show');
+  overlay.setAttribute('aria-hidden', 'false');
+}
+
+function closeUninstallAppPrompt() {
+  pendingUninstallAppId = null;
+  const overlay = document.getElementById('uninstallAppOverlay');
+  overlay.classList.remove('show');
+  overlay.setAttribute('aria-hidden', 'true');
+}
+
 async function doUninstall(id) {
   const app = currentApps.find(a => a.id === id) || { name: id };
-  if (!confirm('卸载 ' + app.name + '？\n（用户数据与密钥会保留，只有再安装时才会用到）')) return;
   setBusy(true, '开始卸载 ' + app.name);
   try { await runBackground(ANCLI + ' uninstall ' + id, '卸载任务已开始，日志已打开'); }
   catch (e) { /* 已在输出面板记录 */ }
@@ -2162,8 +2219,19 @@ async function doCheck() {
   }
 }
 
+function promptRepair() {
+  const overlay = document.getElementById('repairOverlay');
+  overlay.classList.add('show');
+  overlay.setAttribute('aria-hidden', 'false');
+}
+
+function closeRepairPrompt() {
+  const overlay = document.getElementById('repairOverlay');
+  overlay.classList.remove('show');
+  overlay.setAttribute('aria-hidden', 'true');
+}
+
 async function doRepair() {
-  if (!confirm('运行环境修复？\n会重写 DNS、权限、wrapper，并统一全局 skills 目录。')) return;
   setBusy(true, '修复环境中…');
   try { await runBackground(ANCLI + ' repair'); }
   finally { await trimTaskLogs(); setBusy(false); await loadStatus(); await loadApps(); }
@@ -2684,7 +2752,7 @@ document.getElementById('apps').addEventListener('click', e => {
   else if (act === 'config') openConfig(id);
   else if (act === 'launch') doLaunch(id);
   else if (act === 'copy-command') copyCommand(id);
-  else if (act === 'uninstall') doUninstall(id);
+  else if (act === 'uninstall') promptUninstall(id);
 });
 
 document.getElementById('btnCheck').onclick = doCheck;
@@ -2693,7 +2761,7 @@ document.getElementById('btnRefresh').onclick = async () => {
   try { await loadStatus(); await loadApps(); }
   finally { setBusy(false); }
 };
-document.getElementById('btnRepair').onclick = doRepair;
+document.getElementById('btnRepair').onclick = promptRepair;
 
 document.getElementById('cfgCancel').onclick = closeConfig;
 document.getElementById('cfgClose').onclick = closeConfig;
@@ -2863,10 +2931,29 @@ document.getElementById('instConfirm').onclick = () => {
 document.getElementById('installOverlay').addEventListener('click', e => {
   if (e.target.id === 'installOverlay') closeInstallPrompt();
 });
+document.getElementById('uninstAppCancel').onclick = closeUninstallAppPrompt;
+document.getElementById('uninstAppConfirm').onclick = () => {
+  const id = pendingUninstallAppId;
+  closeUninstallAppPrompt();
+  if (id) void doUninstall(id);
+};
+document.getElementById('uninstallAppOverlay').addEventListener('click', e => {
+  if (e.target.id === 'uninstallAppOverlay') closeUninstallAppPrompt();
+});
+document.getElementById('repairCancel').onclick = closeRepairPrompt;
+document.getElementById('repairConfirm').onclick = () => {
+  closeRepairPrompt();
+  void doRepair();
+};
+document.getElementById('repairOverlay').addEventListener('click', e => {
+  if (e.target.id === 'repairOverlay') closeRepairPrompt();
+});
 document.addEventListener('keydown', e => {
   if (e.key !== 'Escape') return;
   if (document.getElementById('cfgOverlay').classList.contains('show')) closeConfig();
   else if (document.getElementById('installOverlay').classList.contains('show')) closeInstallPrompt();
+  else if (document.getElementById('uninstallAppOverlay').classList.contains('show')) closeUninstallAppPrompt();
+  else if (document.getElementById('repairOverlay').classList.contains('show')) closeRepairPrompt();
   else if (document.getElementById('resetOverlay').classList.contains('show')) closeReset();
   else if (document.getElementById('uninstallOverlay').classList.contains('show')) closeUninstall();
   else if (document.getElementById('setOverlay').classList.contains('show')) closeSettings();
