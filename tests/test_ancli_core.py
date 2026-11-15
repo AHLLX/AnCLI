@@ -1311,7 +1311,7 @@ class TestBrowserHandoff:
         core.generate_proot_wrapper("dsh", {}, [])
 
         wrapper = (tmp_path / "ancli" / "bin" / "dsh").read_text(encoding="utf-8")
-        assert "/usr/bin/env PATH=/usr/local/bin:/usr/bin:/bin SHELL=/bin/bash BROWSER=/usr/local/bin/xdg-open dsh" in wrapper
+        assert "/usr/bin/env PATH=/usr/local/bin:/usr/bin:/bin:/data/adb/ksu/bin:/data/adb/ap/bin:/system/bin SHELL=/bin/bash BROWSER=/usr/local/bin/xdg-open dsh" in wrapper
 
     def test_wrapper_prefers_a_full_browser_over_the_chooser(self, tmp_path, monkeypatch):
         """No default browser => `am start` raises "Open with"; a WebView-based pick
@@ -1428,6 +1428,25 @@ class TestDefaultWorkingDirectory:
         assert payload["effective_cwd"] == core.DEFAULT_CWD
         assert payload["default_cwd"] == ""
         assert payload["supported_keys"] == ["default_cwd", "lang", "proxy_mode", "proxy_url"]
+        assert "detected_proxy" in payload
+        assert "proxy_connected" in payload
+
+    def test_set_proxy_url_supports_ip_port_and_url(self, tmp_path, monkeypatch):
+        self._cfg(tmp_path, monkeypatch)
+        ok, err = core.set_proxy_url("192.168.1.10:7890")
+        assert ok
+        assert core.load_config()["proxy_url"] == "http://192.168.1.10:7890"
+
+        ok, err = core.set_proxy_url("http://10.0.0.2:8080")
+        assert ok
+        assert core.load_config()["proxy_url"] == "http://10.0.0.2:8080"
+
+        ok, err = core.set_proxy_url("")
+        assert ok
+        assert core.load_config()["proxy_url"] == ""
+
+        ok, err = core.set_proxy_url("not_a_valid_port")
+        assert not ok
 
     def test_proot_wrapper_uses_the_configured_directory(self, tmp_path, monkeypatch):
         monkeypatch.setattr(core, "ANCLI_DIR", str(tmp_path / "ancli"))
@@ -1830,3 +1849,48 @@ class TestReviewRegressions:
         assert core.RUNTIME_CONTEXT_PENDING_MARKER in context.read_text(encoding="utf-8")
         assert core.RUNTIME_CONTEXT_FINALIZED_MARKER not in context.read_text(encoding="utf-8")
         assert (rootfs / "usr" / "local" / "bin" / "xdg-open").exists()
+
+    def test_deploy_guest_ancli_creates_script_and_symlinks(self, tmp_path, monkeypatch):
+        rootfs = tmp_path / "rootfs"
+        (rootfs / "usr" / "local" / "bin").mkdir(parents=True)
+        (rootfs / "usr" / "bin").mkdir(parents=True)
+        (rootfs / "bin").mkdir(parents=True)
+        monkeypatch.setattr(core, "ROOTFS", str(rootfs))
+        monkeypatch.setattr(core, "ANCLI_DIR", str(tmp_path / "ancli"))
+
+        ok = core._deploy_guest_ancli(verbose=False)
+        assert ok is True
+        ancli_bin = rootfs / "usr" / "local" / "bin" / "ancli"
+        assert ancli_bin.exists()
+        content = ancli_bin.read_text(encoding="utf-8")
+        assert "exec python3 /data/local/tmp/ancli/bin/ancli-core.py" in content
+        assert (rootfs / "usr" / "bin" / "ancli").is_symlink()
+        assert (rootfs / "bin" / "ancli").is_symlink()
+
+    def test_deploy_agy_host_bash_compat_includes_system_bin_and_ksu_ap(self, tmp_path, monkeypatch):
+        ancli_dir = tmp_path / "ancli"
+        ancli_dir.mkdir(parents=True)
+        bin_dir = ancli_dir / "bin"
+        bin_dir.mkdir(parents=True)
+        compat_file = ancli_dir / "bash-host-compat"
+        compat_file.write_text("#!/system/bin/sh\n# AnCLI AGY host bash compatibility\nexec /system/bin/sh \"$@\"\n")
+
+        mod_dir = tmp_path / "modules" / "ancli"
+        sys_bin = mod_dir / "system" / "bin"
+        sys_bin.mkdir(parents=True)
+        ksu_bin = tmp_path / "ksu" / "bin"
+        ksu_bin.mkdir(parents=True)
+        ap_bin = tmp_path / "ap" / "bin"
+        ap_bin.mkdir(parents=True)
+
+        monkeypatch.setattr(core, "ANCLI_DIR", str(ancli_dir))
+        monkeypatch.setattr(core, "MOD_DIR", str(mod_dir))
+        monkeypatch.setattr(core, "KSU_BIN", str(ksu_bin))
+        monkeypatch.setattr(core, "AP_BIN", str(ap_bin))
+
+        deployed = [os.path.normpath(p) for p in core._deploy_agy_host_bash_compat(verbose=False)]
+        assert os.path.normpath(str(sys_bin / "bash")) in deployed
+        assert os.path.normpath(str(ksu_bin / "bash")) in deployed
+        assert os.path.normpath(str(ap_bin / "bash")) in deployed
+        assert (sys_bin / "bash").exists()
+        assert "AnCLI AGY host bash compatibility" in (sys_bin / "bash").read_text(encoding="utf-8")

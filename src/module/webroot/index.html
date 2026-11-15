@@ -250,26 +250,41 @@ body.ime-open .topbar { backdrop-filter: none; -webkit-backdrop-filter: none; ba
 
 /* ============================ 配置弹窗 ============================ */
 .overlay {
-  position: fixed; inset: 0; z-index: 40; display: grid; place-items: end center;
-  padding: 0; background: rgba(12, 14, 18, .42);
-  opacity: 0; visibility: hidden; transition: opacity .18s, visibility .18s;
-  backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px);
+  position: fixed; inset: 0; z-index: 40;
+  display: flex; align-items: center; justify-content: center;
+  padding: 20px 14px; background: rgba(12, 14, 18, .48);
+  opacity: 0; visibility: hidden; transition: opacity .2s ease, visibility .2s ease;
+  backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px);
+  box-sizing: border-box; overflow-y: auto;
 }
 .overlay.show { opacity: 1; visibility: visible; }
 .dialog {
-  width: min(560px, 100%); max-height: min(88vh, 760px); display: flex; flex-direction: column;
-  background: var(--surface); border: 1px solid var(--border); border-bottom: 0;
-  border-radius: var(--r-lg) var(--r-lg) 0 0; box-shadow: var(--shadow);
-  transform: translateY(14px); transition: transform .2s ease;
+  width: min(480px, calc(100vw - 28px)); max-width: 100%; max-height: min(84vh, 520px);
+  display: flex; flex-direction: column;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--r-lg); box-shadow: var(--shadow);
+  transform: scale(0.96) translateY(8px);
+  transition: transform .22s cubic-bezier(0.16, 1, 0.3, 1), opacity .22s ease;
+  min-width: 0; overflow: hidden; box-sizing: border-box; flex-shrink: 0;
 }
-.overlay.show .dialog { transform: none; }
-.dlg-head { display: flex; align-items: center; justify-content: space-between; gap: 10px;
-  padding: 13px 12px 12px 16px; border-bottom: 1px solid var(--border); }
+.overlay.show .dialog { transform: scale(1) translateY(0); }
+.dlg-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 12px 16px; border-bottom: 1px solid var(--border); flex-shrink: 0;
+  border-radius: var(--r-lg) var(--r-lg) 0 0;
+}
 .dlg-head h3 { font-size: 14.5px; font-weight: 620; }
-.dlg-body { padding: 14px 16px 6px; overflow: auto; }
-.dlg-foot { display: flex; gap: 8px; justify-content: flex-end; padding: 12px 16px calc(12px + env(safe-area-inset-bottom));
-  border-top: 1px solid var(--border); background: var(--surface); }
-.dlg-foot .btn { min-width: 88px; }
+.dlg-body {
+  padding: 12px 14px 6px; overflow-y: auto; overflow-x: hidden;
+  min-width: 0; min-height: 0; flex: 1 1 auto; display: flex; flex-direction: column;
+}
+.dlg-foot {
+  display: flex; gap: 8px; justify-content: flex-end;
+  padding: 10px 16px;
+  border-top: 1px solid var(--border); background: var(--surface); flex-shrink: 0;
+  border-radius: 0 0 var(--r-lg) var(--r-lg);
+}
+.dlg-foot .btn { min-width: 84px; }
 .note { color: var(--muted); font-size: 12px; margin-bottom: 12px; }
 .note a { color: var(--accent); }
 .note b { color: var(--text); }
@@ -365,6 +380,190 @@ body.ime-open .topbar { backdrop-filter: none; -webkit-backdrop-filter: none; ba
 .adv[open] summary::before { transform: rotate(90deg); }
 .adv .field + .field { margin-top: 13px; }
 
+/* ============================ 设置弹窗 Tab 与滑动动画 ============================ */
+.settings-tabs {
+  display: flex;
+  background: var(--surface-2);
+  padding: 3px;
+  border-radius: var(--r-md);
+  margin-bottom: 12px;
+  gap: 3px;
+  flex-shrink: 0;
+  width: 100%;
+  box-sizing: border-box;
+}
+.settings-tabs .tab-btn {
+  flex: 1 1 0;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font: 12px/1.4 inherit;
+  font-weight: 600;
+  padding: 6px 2px;
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  transition: all .15s ease;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.settings-tabs .tab-btn:hover {
+  color: var(--text);
+}
+.settings-tabs .tab-btn.active {
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: 0 1px 2px rgba(0,0,0,0.06);
+}
+
+/* 保持弹窗高度不变，设置固定高度的平滑滑动视口，适配手机屏幕 */
+.settings-viewport {
+  position: relative;
+  width: 100%;
+  max-width: 100%;
+  height: clamp(200px, 42vh, 310px);
+  overflow: hidden;
+  min-width: 0;
+  min-height: 0;
+  box-sizing: border-box;
+  flex-shrink: 0;
+}
+.settings-slider {
+  display: flex;
+  width: 400%;
+  max-width: 400%;
+  height: 100%;
+  transition: transform 0.28s cubic-bezier(0.25, 1, 0.5, 1);
+  will-change: transform;
+}
+.settings-panel {
+  flex: 0 0 25%;
+  width: 25%;
+  max-width: 25%;
+  min-width: 0;
+  height: 100%;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 2px 2px 8px;
+  box-sizing: border-box;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* 针对矮屏手机或横屏模式自适应视口高度，确保底下的圆角和按钮完整显示 */
+@media (max-height: 600px) {
+  .dialog { max-height: 92vh; }
+  .settings-viewport { height: clamp(160px, 38vh, 220px); }
+}
+
+/* 统一条目行样式：标题居左、选择框紧随条目后边 */
+.setting-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 9px 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  margin-bottom: 8px;
+  transition: border-color .15s ease;
+  min-width: 0;
+  box-sizing: border-box;
+}
+.setting-item:hover {
+  border-color: var(--accent);
+}
+.setting-item-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+.setting-item-text {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+.setting-item-text b {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.setting-item-text small {
+  display: block;
+  margin-top: 1px;
+  color: var(--faint);
+  font-size: 11px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.setting-select {
+  flex: 0 0 auto;
+  width: auto;
+  min-width: 76px;
+  max-width: 120px;
+  padding: 6px 24px 6px 8px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  background-image: linear-gradient(45deg, transparent 50%, var(--faint) 50%), linear-gradient(135deg, var(--faint) 50%, transparent 50%);
+  background-position: calc(100% - 14px) calc(50% - 2px), calc(100% - 9px) calc(50% - 2px);
+  background-size: 4px 4px, 4px 4px;
+  background-repeat: no-repeat;
+  text-align: right;
+  appearance: none;
+  -webkit-appearance: none;
+}
+.setting-select:focus {
+  outline: 0;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-soft);
+}
+
+.field-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.proxy-badge {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: var(--r-pill);
+  background: var(--surface-2);
+  color: var(--muted);
+  border: 1px solid var(--border);
+  max-width: 65%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.proxy-badge.connected {
+  background: var(--accent-soft);
+  color: var(--accent);
+  border-color: transparent;
+}
+.proxy-badge.disconnected {
+  background: var(--surface-2);
+  color: var(--faint);
+}
+.proxy-input {
+  margin-top: 8px;
+}
+
 /* ============================ 浮动提示 ============================ */
 .toast {
   position: fixed; left: 50%; bottom: calc(22px + env(safe-area-inset-bottom)); z-index: 60;
@@ -421,9 +620,10 @@ body.ime-open .topbar { backdrop-filter: none; -webkit-backdrop-filter: none; ba
   .console-head .spacer { display: none; }
   .console-head .icon-btn:first-of-type { margin-left: auto; }
   .log { max-height: 230px; padding: 9px 10px; font-size: 11px; }
-  .dialog { width: 100%; max-height: 92vh; border-radius: var(--r-lg) var(--r-lg) 0 0; }
+  .dialog { width: min(480px, calc(100vw - 20px)); max-height: min(84vh, 520px); border-radius: var(--r-lg); }
   .dlg-body { padding: 12px 12px 5px; }
-  .dlg-foot { padding-left: 12px; padding-right: 12px; }
+  .dlg-foot { padding-left: 12px; padding-right: 12px; border-radius: 0 0 var(--r-lg) var(--r-lg); }
+  .settings-viewport { height: clamp(190px, 42vh, 300px); max-height: calc(84vh - 140px); }
   .settings-grid { grid-template-columns: 1fr; }
   .settings-status { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
@@ -548,70 +748,120 @@ body.ime-open .topbar { backdrop-filter: none; -webkit-backdrop-filter: none; ba
       </button>
     </div>
     <div class="dlg-body">
-      <div class="settings-grid">
-        <div class="setting-card">
-          <div class="setting-card-head">
-            <span class="setting-icon" aria-hidden="true">文</span>
-            <div><b data-i18n="languageSetting">语言</b><small data-i18n="languageHint">界面文本</small></div>
-          </div>
-          <select id="setLang">
-            <option value="zh">中文</option>
-            <option value="en">English</option>
-          </select>
-        </div>
-        <div class="setting-card">
-          <div class="setting-card-head">
-            <span class="setting-icon" aria-hidden="true">◐</span>
-            <div><b data-i18n="themeSetting">主题</b><small data-i18n="themeHint">页面外观</small></div>
-          </div>
-          <select id="setTheme">
-            <option value="auto">自动</option>
-            <option value="light">浅色</option>
-            <option value="dark">深色</option>
-          </select>
-        </div>
+      <div class="settings-tabs" role="tablist">
+        <button type="button" class="tab-btn active" data-tab="general" role="tab" id="tabGeneral" data-i18n="tabGeneral">常规</button>
+        <button type="button" class="tab-btn" data-tab="proxy" role="tab" id="tabProxy" data-i18n="tabProxy">代理</button>
+        <button type="button" class="tab-btn" data-tab="logs" role="tab" id="tabLogs" data-i18n="tabLogs">日志</button>
+        <button type="button" class="tab-btn" data-tab="reset" role="tab" id="tabReset" data-i18n="tabReset">重置</button>
       </div>
-      <div class="settings-status" aria-live="polite">
-        <div><span data-i18n="backend">运行后端</span><b id="setBackend">—</b></div>
-        <div><span data-i18n="dataChannel">数据通道</span><b id="setDataChannel">—</b></div>
-        <div><span data-i18n="effectiveCwd">生效目录</span><b id="setEffectiveCwd">—</b></div>
-        <div><span data-i18n="proxyStatus">代理状态</span><b id="setProxyStatus">—</b></div>
-      </div>
-      <section class="settings-log">
-        <div class="setting-section-head">
-          <b data-i18n="logHistory">日志历史</b>
-          <span id="setLogUsage">0 B / 10 MB</span>
-        </div>
-        <div class="setting-log-actions">
-          <button class="btn xs" id="btnLogHistoryRefresh" data-i18n="refresh">刷新</button>
-          <button class="btn xs quiet danger" id="btnLogHistoryClear" data-i18n="clearHistory">清理历史</button>
-        </div>
-        <div class="history-list" id="setLogHistory" aria-live="polite"></div>
-        <div class="hint" data-i18n="logHistoryHint">任务日志最多保留 10 MB，不按时间自动删除。</div>
-      </section>
-      <section class="settings-danger">
-        <div class="setting-card-head">
-          <span class="setting-icon" aria-hidden="true">!</span>
-          <div><b data-i18n="factoryReset">完全初始化环境</b><small data-i18n="factoryResetTitle">恢复模块自带的干净 Agent 环境</small></div>
-        </div>
-        <p data-i18n="factoryResetHint">删除已安装应用、密钥、配置、skills、记忆文件和日志，保留 Ubuntu rootfs 与模块本体。操作完成后需要重新安装应用。</p>
-        <button class="btn xs danger" id="btnFactoryReset" data-i18n="factoryResetAction">完全初始化</button>
-      </section>
-      <div class="fields">
-        <div class="field">
-          <label data-i18n="defaultCwd">默认工作目录</label>
-          <input id="setCwd" autocomplete="off" spellcheck="false" placeholder="/sdcard/projects">
-          <div class="hint" id="setCwdHint">从 / 启动工具时使用；必须是容器内存在的绝对路径。留空使用 /root。</div>
-        </div>
-        <div class="field">
-          <label data-i18n="proxy">代理</label>
-          <select id="setProxyMode">
-            <option value="system">系统自动探测</option>
-            <option value="manual">手动指定</option>
-            <option value="direct">直连</option>
-          </select>
-          <input id="setProxyUrl" autocomplete="off" spellcheck="false" placeholder="http://192.168.1.10:7890">
-          <div class="hint" id="setProxyHint">手动指定 HTTP/HTTPS 代理；直连模式清除工具代理变量。</div>
+
+      <div class="settings-viewport">
+        <div class="settings-slider" id="settingsSlider">
+          <!-- 面板 1：常规设置与状态 -->
+          <div class="settings-panel" id="panel-general">
+            <div class="setting-item">
+              <div class="setting-item-left">
+                <span class="setting-icon" aria-hidden="true">文</span>
+                <div class="setting-item-text">
+                  <b data-i18n="languageSetting">语言</b>
+                  <small data-i18n="languageHint">界面文本</small>
+                </div>
+              </div>
+              <select id="setLang" class="setting-select">
+                <option value="zh">中文</option>
+                <option value="en">English</option>
+              </select>
+            </div>
+
+            <div class="setting-item">
+              <div class="setting-item-left">
+                <span class="setting-icon" aria-hidden="true">◐</span>
+                <div class="setting-item-text">
+                  <b data-i18n="themeSetting">主题</b>
+                  <small data-i18n="themeHint">页面外观</small>
+                </div>
+              </div>
+              <select id="setTheme" class="setting-select">
+                <option value="auto">自动</option>
+                <option value="light">浅色</option>
+                <option value="dark">深色</option>
+              </select>
+            </div>
+
+            <div class="fields" style="margin-top: 10px;">
+              <div class="field">
+                <label data-i18n="defaultCwd">默认工作目录</label>
+                <input id="setCwd" autocomplete="off" spellcheck="false" placeholder="/sdcard/projects">
+                <div class="hint" id="setCwdHint" data-i18n="cwdHint">从 / 启动工具时使用；必须是容器内存在的绝对路径。留空使用 /root。</div>
+              </div>
+            </div>
+
+            <div class="settings-status" aria-live="polite" style="margin-top: 10px;">
+              <div><span data-i18n="backend">运行后端</span><b id="setBackend">—</b></div>
+              <div><span data-i18n="dataChannel">数据通道</span><b id="setDataChannel">—</b></div>
+              <div><span data-i18n="effectiveCwd">生效目录</span><b id="setEffectiveCwd">—</b></div>
+              <div><span data-i18n="proxyStatus">代理状态</span><b id="setProxyStatus">—</b></div>
+            </div>
+          </div>
+
+          <!-- 面板 2：代理设置 -->
+          <div class="settings-panel" id="panel-proxy">
+            <div class="field-head" style="margin-bottom: 8px;">
+              <span style="font-size: 12px; font-weight: 600;" data-i18n="proxy">代理</span>
+              <span class="proxy-badge disconnected" id="setProxyCurrentBadge" data-i18n="proxyDisconnected">未连接</span>
+            </div>
+
+            <div class="setting-item">
+              <div class="setting-item-left">
+                <span class="setting-icon" aria-hidden="true">⇄</span>
+                <div class="setting-item-text">
+                  <b data-i18n="proxyMode">代理模式</b>
+                  <small data-i18n="proxyModeHint">网络连接策略</small>
+                </div>
+              </div>
+              <select id="setProxyMode" class="setting-select">
+                <option value="system">系统自动探测</option>
+                <option value="manual">手动指定</option>
+                <option value="direct">直连</option>
+              </select>
+            </div>
+
+            <div class="fields" id="setProxyUrlField" style="margin-top: 8px;">
+              <div class="field">
+                <label data-i18n="manualProxyAddress">代理地址</label>
+                <input id="setProxyUrl" autocomplete="off" spellcheck="false" placeholder="192.168.1.10:7890">
+                <div class="hint" id="setProxyHint" data-i18n="proxyHint">直接填写 IP:端口（如 192.168.1.10:7890）；直连模式清除工具代理。</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 面板 3：日志历史 -->
+          <div class="settings-panel" id="panel-logs">
+            <section class="settings-log" style="margin-bottom: 0;">
+              <div class="setting-section-head">
+                <b data-i18n="logHistory">日志历史</b>
+                <span id="setLogUsage">0 B / 10 MB</span>
+              </div>
+              <div class="setting-log-actions">
+                <button class="btn xs" id="btnLogHistoryRefresh" data-i18n="refresh">刷新</button>
+                <button class="btn xs quiet danger" id="btnLogHistoryClear" data-i18n="clearHistory">清理历史</button>
+              </div>
+              <div class="history-list" id="setLogHistory" aria-live="polite"></div>
+              <div class="hint" data-i18n="logHistoryHint">任务日志最多保留 10 MB，不按时间自动删除。</div>
+            </section>
+          </div>
+
+          <!-- 面板 4：重置环境 -->
+          <div class="settings-panel" id="panel-reset">
+            <section class="settings-danger" style="margin-bottom: 0;">
+              <div class="setting-card-head">
+                <span class="setting-icon" aria-hidden="true">!</span>
+                <div><b data-i18n="factoryReset">完全初始化环境</b><small data-i18n="factoryResetTitle">恢复模块自带的干净 Agent 环境</small></div>
+              </div>
+              <p data-i18n="factoryResetHint">删除已安装应用、密钥、配置、skills、记忆文件和日志，保留 Ubuntu rootfs 与模块本体。操作完成后需要重新安装应用。</p>
+              <button class="btn xs danger" id="btnFactoryReset" data-i18n="factoryResetAction">完全初始化</button>
+            </section>
+          </div>
         </div>
       </div>
     </div>
@@ -1104,15 +1354,21 @@ async function clearHistoryLogs() {
 async function proxyDownloadNote(app) {
   try {
     const cfg = JSON.parse(await ancli('config --json', true));
-    const mode = cfg.proxy_mode || (cfg.proxy_url ? 'manual' : 'system');
-    let note;
-    if (mode === 'manual') note = '下载代理：手动指定 ' + (cfg.proxy_url || '（地址为空，将回退到系统探测）');
-    else if (mode === 'direct') note = '下载代理：直连，不使用 Android 系统代理';
-    else note = '下载代理：Android 系统代理自动探测（由 AnCLI wrapper 注入）';
-    if (app && app.id === 'dsh') note += '。dsh 安装完成后的运行模式仍为直连。';
-    return note;
+    const mode = cfg.proxy_mode || 'system';
+    let proxy = '';
+    if (mode === 'manual' && cfg.proxy_url) {
+      proxy = cfg.proxy_url.replace(/^https?:\/\//i, '').replace(/\/$/, '');
+    } else if (mode === 'system') {
+      proxy = cfg.detected_proxy || '';
+    }
+    if (proxy) {
+      let note = '[AnCLI] 下载代理: ' + proxy;
+      if (app && app.id === 'dsh') note += '。dsh 安装完成后的运行模式仍为直连。';
+      return note;
+    }
+    return '';
   } catch (e) {
-    return '下载代理：无法读取配置，按 wrapper 默认策略执行。';
+    return '';
   }
 }
 
@@ -1252,6 +1508,7 @@ let lastCheck = 0;
 let lastCheckFailed = 0;
 let supportsCheck = false;
 let autoCheckStarted = false;
+let manualCheckRequested = false;
 
 async function loadApps() {
   const wrap = document.getElementById('apps');
@@ -1303,7 +1560,7 @@ function renderCheckInfo() {
   if (!lastCheck) { el.textContent = '尚未检查官方版本'; return; }
   const age = Math.max(0, Math.floor(Date.now() / 1000) - lastCheck);
   let msg = '上次检查 ' + fmtAge(age) + '前';
-  if (lastCheckFailed) msg += ' · ' + lastCheckFailed + ' 项查询失败';
+  if (lastCheckFailed && manualCheckRequested) msg += ' · ' + lastCheckFailed + ' 项查询失败';
   el.textContent = msg;
 }
 
@@ -1311,14 +1568,17 @@ const UI_TEXT = {
   zh: { check: '检查更新', refresh: '刷新', repair: '修复环境', settings: '设置', tools: '工具', output: '输出', proxy: '代理',
     copyAll: '复制全部', clear: '清空输出', follow: '自动滚动到底部', notChecked: '尚未检查', install: '安装', update: '更新',
     config: '配置', uninstall: '卸载', openWeb: '打开 Web UI', copyCommand: '复制命令', running: '运行中', done: '完成', failed: '失败', cancel: '取消', save: '保存', close: '关闭', footer: 'AnCLI · Android CLI 环境管理器',
+    tabGeneral: '常规', tabProxy: '代理', tabLogs: '日志', tabReset: '重置',
     languageSetting: '语言', languageHint: '界面文本', themeSetting: '主题', themeHint: '页面外观', installedCount: '已安装', updatesCount: '可更新',
     backend: '运行后端', dataChannel: '数据通道', effectiveCwd: '生效目录', proxyStatus: '代理状态',
     defaultCwd: '默认工作目录', cwdHint: '从 / 启动工具时使用；必须是容器内存在的绝对路径。留空使用 /root。',
-    proxyHint: '手动指定 HTTP/HTTPS 代理；直连模式清除工具代理变量。',
+    proxyHint: '直接填写 IP:端口（如 192.168.1.10:7890）；直连模式清除工具代理。',
+    proxyMode: '代理模式', proxyModeHint: '网络连接策略', manualProxyAddress: '代理地址',
+    proxyConnected: '已连接', proxyDisconnected: '未连接',
     systemProxy: '系统自动探测', manualProxy: '手动指定', directProxy: '直连',
     autoTheme: '自动', lightTheme: '浅色', darkTheme: '深色',
     prootBackend: 'Ubuntu / PRoot', ready: '就绪', unavailable: '不可用', notMounted: '未挂载', unknown: '未知',
-    settingsSaved: '设置已保存', settingsFailed: '设置保存失败，见输出', savingSettings: '保存设置…', invalidProxy: '请输入有效的 HTTP/HTTPS 代理地址',
+    settingsSaved: '设置已保存', settingsFailed: '设置保存失败，见输出', savingSettings: '保存设置…', invalidProxy: '请输入有效的 IP:端口 或代理地址（如 192.168.1.10:7890）',
     logHistory: '日志历史', logHistoryHint: '任务日志最多保留 10 MB，不按时间自动删除。', clearHistory: '清理历史',
     historyEmpty: '暂无历史任务', historyView: '查看日志', historyRunning: '运行中', historyDone: '已完成', historyFailed: '失败',
     historyCleared: '历史日志已清理', historyNothingToClear: '没有可清理的历史日志', logHistoryLoading: '正在读取日志历史…',
@@ -1330,14 +1590,17 @@ const UI_TEXT = {
   en: { check: 'Check updates', refresh: 'Refresh', repair: 'Repair', settings: 'Settings', tools: 'Tools', output: 'Output', proxy: 'Proxy',
     copyAll: 'Copy all', clear: 'Clear output', follow: 'Follow output', notChecked: 'Not checked', install: 'Install', update: 'Update',
     config: 'Configure', uninstall: 'Uninstall', openWeb: 'Open Web UI', copyCommand: 'Copy command', running: 'Running', done: 'Done', failed: 'Failed', cancel: 'Cancel', save: 'Save', close: 'Close', footer: 'AnCLI · Android CLI environment manager',
+    tabGeneral: 'General', tabProxy: 'Proxy', tabLogs: 'Logs', tabReset: 'Reset',
     languageSetting: 'Language', languageHint: 'Interface text', themeSetting: 'Theme', themeHint: 'Page appearance', installedCount: 'Installed', updatesCount: 'Updates',
     backend: 'Backend', dataChannel: 'Data channel', effectiveCwd: 'Effective directory', proxyStatus: 'Proxy',
     defaultCwd: 'Default working directory', cwdHint: 'Used when a tool starts from /. Use an absolute path inside the container; blank uses /root.',
-    proxyHint: 'Use an HTTP/HTTPS proxy when manual; direct mode clears tool proxy variables.',
+    proxyHint: 'Enter IP:port (e.g. 192.168.1.10:7890); direct mode clears tool proxy variables.',
+    proxyMode: 'Proxy mode', proxyModeHint: 'Network routing policy', manualProxyAddress: 'Proxy address',
+    proxyConnected: 'Connected', proxyDisconnected: 'Not connected',
     systemProxy: 'System detection', manualProxy: 'Manual', directProxy: 'Direct',
     autoTheme: 'Auto', lightTheme: 'Light', darkTheme: 'Dark',
     prootBackend: 'Ubuntu / PRoot', ready: 'Ready', unavailable: 'Unavailable', notMounted: 'Not mounted', unknown: 'Unknown',
-    settingsSaved: 'Settings saved', settingsFailed: 'Could not save settings; see output', savingSettings: 'Saving settings…', invalidProxy: 'Enter a valid HTTP/HTTPS proxy URL',
+    settingsSaved: 'Settings saved', settingsFailed: 'Could not save settings; see output', savingSettings: 'Saving settings…', invalidProxy: 'Enter a valid IP:port or proxy URL (e.g. 192.168.1.10:7890)',
     logHistory: 'Log history', logHistoryHint: 'Task logs are kept up to 10 MB total; no time based expiry.', clearHistory: 'Clear history',
     historyEmpty: 'No task history', historyView: 'View log', historyRunning: 'Running', historyDone: 'Completed', historyFailed: 'Failed',
     historyCleared: 'Task history cleared', historyNothingToClear: 'No completed logs to clear', logHistoryLoading: 'Reading log history…',
@@ -1421,7 +1684,7 @@ function renderApps(apps) {
       } else if (!a.cloud_version || a.cloud_version === 'unknown' || a.cloud_source === 'none') {
         chips.push('<span class="chip plain">官方版本未知</span>');
       }
-      if (a.cloud_error) chips.push('<span class="chip danger">版本查询失败</span>');
+      if (a.cloud_error && manualCheckRequested) chips.push('<span class="chip danger">版本查询失败</span>');
     } else {
       chips.push('<span class="chip plain">未安装</span>');
     }
@@ -1430,7 +1693,7 @@ function renderApps(apps) {
     if (a.installed && a.cloud_version && a.cloud_version !== 'unknown' && a.cloud_source !== 'none') {
       const label = a.cloud_checked ? '官方最新' : '参考版本';
       details.push(label + ' <b>v' + esc(a.cloud_version) + '</b> · ' + esc(srcLabel(a.cloud_source)) +
-                   (a.cloud_error ? ' · 查询失败' : ''));
+                   (a.cloud_error && manualCheckRequested ? ' · 查询失败' : ''));
     }
     const keys = a.configured_keys || [];
     if (keys.length) details.push('已配置 ' + esc(keys.join(' · ')));
@@ -1573,9 +1836,18 @@ async function copyCommand(id) {
 
 async function doCheck() {
   if (!supportsCheck) { toast('当前模块版本不支持版本检查，请先更新 AnCLI 模块', 'err'); return; }
+  manualCheckRequested = true;
   setBusy(true, '查询官方最新版本…');
-  try { await runBackground(ANCLI + ' check'); }
-  finally { await trimTaskLogs(); setBusy(false); await loadApps(); await loadStatus(); }
+  try {
+    await runBackground(ANCLI + ' check');
+  } catch (e) {
+    toast('版本查询失败，请检查网络或代理配置', 'err');
+  } finally {
+    await trimTaskLogs();
+    setBusy(false);
+    await loadApps();
+    await loadStatus();
+  }
 }
 
 async function doRepair() {
@@ -1586,15 +1858,17 @@ async function doRepair() {
 }
 
 async function maybeAutoCheck() {
-  // 2026-11-13: Refresh vendor versions on every WebUI session; the catalog
-  // is local, so this request only checks official app release endpoints.
+  // 后台静默自动检查更新：完全异步，绝不调用 setBusy 锁定按钮，绝不打扰用户
   if (autoCheckStarted || !supportsCheck) return;
   if (!currentApps.some(a => a.installed)) return;
   autoCheckStarted = true;
-  logLine('正在读取已安装工具的官方地址和版本…', 'dim');
-  setBusy(true);
-  try { await runBackground(ANCLI + ' check'); }
-  finally { await trimTaskLogs(); setBusy(false); await loadApps(); }
+  try {
+    await ancli('check', true);
+    await loadApps();
+    await loadStatus();
+  } catch (e) {
+    // 后台静默处理，网络不好或超时时不弹窗、不报错
+  }
 }
 
 // ---------- 服务商预置 ----------
@@ -1774,11 +2048,35 @@ function currentThemeMode() {
   try { return localStorage.getItem('ancli_theme') || 'auto'; } catch (e) { return 'auto'; }
 }
 
+const SETTINGS_TAB_ORDER = ['general', 'proxy', 'logs', 'reset'];
+
+function switchSettingsTab(tabName) {
+  const index = SETTINGS_TAB_ORDER.indexOf(tabName);
+  if (index < 0) return;
+  document.querySelectorAll('.settings-tabs .tab-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.tab === tabName);
+  });
+  const slider = document.getElementById('settingsSlider');
+  if (slider) {
+    slider.style.transform = 'translateX(-' + (index * 25) + '%)';
+  }
+}
+
+function updateProxyInputVisibility() {
+  const mode = document.getElementById('setProxyMode').value;
+  const field = document.getElementById('setProxyUrlField');
+  if (field) {
+    field.style.display = (mode === 'manual') ? 'block' : 'none';
+  }
+}
+
 function setSettingsStatus(cfg, runtime) {
   const backend = document.getElementById('setBackend');
   const dataChannel = document.getElementById('setDataChannel');
   const effectiveCwd = document.getElementById('setEffectiveCwd');
   const proxyStatus = document.getElementById('setProxyStatus');
+  const proxyBadge = document.getElementById('setProxyCurrentBadge');
+
   if (backend) {
     const name = runtime && runtime.execution_backend;
     backend.textContent = name === 'proot-ubuntu' ? uiText('prootBackend') : (name || uiText('unknown'));
@@ -1789,21 +2087,52 @@ function setSettingsStatus(cfg, runtime) {
     dataChannel.style.color = mounted ? 'var(--ok)' : 'var(--warn)';
   }
   if (effectiveCwd) effectiveCwd.textContent = (cfg && cfg.effective_cwd) || '/root';
+
+  let currentProxy = '';
+  const mode = (cfg && cfg.proxy_mode) || 'system';
+  if (mode === 'direct') {
+    currentProxy = '';
+  } else if (mode === 'manual') {
+    const raw = (cfg && cfg.proxy_url) || '';
+    currentProxy = raw.replace(/^https?:\/\//i, '').replace(/\/$/, '');
+  } else {
+    currentProxy = (cfg && cfg.detected_proxy) || (runtime && runtime.detected_proxy) || '';
+  }
+
+  // 1. 设置主界面概览项：有代理显示具体 IP:端口，无代理显示“未连接”
   if (proxyStatus) {
-    const mode = (cfg && cfg.proxy_mode) || 'system';
-    const label = mode === 'manual' ? uiText('manualProxy') : mode === 'direct' ? uiText('directProxy') : uiText('systemProxy');
-    const value = mode === 'manual' && cfg.proxy_url ? label + ' · ' + cfg.proxy_url : label;
-    proxyStatus.textContent = value;
+    if (currentProxy) {
+      proxyStatus.textContent = currentProxy;
+      proxyStatus.style.color = 'var(--text)';
+    } else {
+      proxyStatus.textContent = uiText('proxyDisconnected');
+      proxyStatus.style.color = 'var(--faint)';
+    }
+  }
+
+  // 2. 设置弹窗内代理区标题旁边的状态徽章
+  if (proxyBadge) {
+    if (currentProxy) {
+      proxyBadge.textContent = currentProxy;
+      proxyBadge.className = 'proxy-badge connected';
+      proxyBadge.title = mode === 'manual' ? uiText('manualProxy') : uiText('systemProxy');
+    } else {
+      proxyBadge.textContent = uiText('proxyDisconnected');
+      proxyBadge.className = 'proxy-badge disconnected';
+      proxyBadge.title = mode === 'direct' ? uiText('directProxy') : uiText('proxyDisconnected');
+    }
   }
 }
 
 async function openSettings() {
   const ov = document.getElementById('setOverlay');
+  switchSettingsTab('general');
   document.getElementById('setCwd').value = '';
   document.getElementById('setProxyMode').value = 'system';
   document.getElementById('setProxyUrl').value = '';
   document.getElementById('setLang').value = uiLang;
   document.getElementById('setTheme').value = currentThemeMode();
+  updateProxyInputVisibility();
   setSettingsStatus({ effective_cwd: '/root', proxy_mode: 'system' }, null);
   ov.classList.add('show');
   ov.setAttribute('aria-hidden', 'false');
@@ -1816,9 +2145,11 @@ async function openSettings() {
       ancli('doctor --json', true).then(JSON.parse).catch(() => ancli('status --json', true).then(JSON.parse))
     ]);
     document.getElementById('setCwd').value = cfg.default_cwd || '';
-    document.getElementById('setProxyUrl').value = cfg.proxy_url || '';
+    const cleanUrl = (cfg.proxy_url || '').replace(/^https?:\/\//i, '').replace(/\/$/, '');
+    document.getElementById('setProxyUrl').value = cleanUrl;
     document.getElementById('setProxyMode').value = cfg.proxy_mode || (cfg.proxy_url ? 'manual' : 'system');
     document.getElementById('setLang').value = cfg.lang === 'en' ? 'en' : uiLang;
+    updateProxyInputVisibility();
     setSettingsStatus(cfg, runtime);
   } catch (e) {
     // Keep the local defaults if the bridge is temporarily unavailable.
@@ -1839,24 +2170,34 @@ async function saveSettings() {
   const lang = document.getElementById('setLang').value === 'en' ? 'en' : 'zh';
   const theme = ['auto', 'light', 'dark'].includes(document.getElementById('setTheme').value)
     ? document.getElementById('setTheme').value : 'auto';
+
+  let proxyValue = '';
   if (proxyMode === 'manual' && proxyUrl) {
+    let normalized = proxyUrl;
+    if (!/^[a-zA-Z]+:\/\//.test(normalized)) {
+      normalized = 'http://' + normalized;
+    }
     try {
-      const u = new URL(proxyUrl);
-      if (!['http:', 'https:'].includes(u.protocol) || !u.hostname || !u.port) throw new Error('invalid');
+      const u = new URL(normalized);
+      if (!['http:', 'https:'].includes(u.protocol) || !u.hostname || !u.port || isNaN(Number(u.port)) || Number(u.port) < 1 || Number(u.port) > 65535) {
+        throw new Error('invalid');
+      }
+      proxyValue = normalized;
     } catch (e) {
       toast(uiText('invalidProxy'), 'err');
       return;
     }
   }
+
   closeSettings();
   setBusy(true, uiText('savingSettings'));
   try {
     // 空值 = 恢复内置默认 /root；core 侧会校验绝对路径与目录是否存在
-    const proxyValue = proxyMode === 'manual' ? proxyUrl : '';
     await ancli('config --set default_cwd=' + encodeURIComponent(v) + ' --set lang=' + lang +
       ' --set proxy_mode=' + encodeURIComponent(proxyMode) + ' --set proxy_url=' + encodeURIComponent(proxyValue));
     applyLanguage(lang);
     applyTheme(theme);
+    await loadStatus();
     toast(uiText('settingsSaved'));
   } catch (e) {
     toast(uiText('settingsFailed'), 'err');
@@ -1957,6 +2298,10 @@ document.getElementById('btnSettings').onclick = openSettings;
 document.getElementById('setCancel').onclick = closeSettings;
 document.getElementById('setClose').onclick = closeSettings;
 document.getElementById('setSave').onclick = saveSettings;
+document.querySelectorAll('.settings-tabs .tab-btn').forEach(btn => {
+  btn.onclick = () => switchSettingsTab(btn.dataset.tab);
+});
+document.getElementById('setProxyMode').addEventListener('change', updateProxyInputVisibility);
 document.getElementById('btnFactoryReset').onclick = openReset;
 document.getElementById('resetCancel').onclick = closeReset;
 document.getElementById('resetClose').onclick = closeReset;
@@ -2081,4 +2426,4 @@ if (window.matchMedia) {
 })();
 </script>
 </body>
-</html>\n
+</html>

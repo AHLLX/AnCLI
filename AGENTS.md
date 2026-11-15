@@ -6,18 +6,13 @@ Welcome, fellow AI Assistant. If you are reading this, you have been tasked with
 AnCLI is a unified, systemless environment manager and plugin-based installer designed to bring full Linux command-line tools (like Node.js, Go, or Python-based AI agents) to rooted Android devices.
 Because Android uses the Bionic C library, native Linux binaries often crash. AnCLI solves this by using `proot` to run a pure Ubuntu `glibc` base system transparently on Android.
 
-## Current handoff (2026-11-13, v1.2.610)
+## Current handoff (2026-11-15, v1.2.612)
 
-- Keep the single `proot-ubuntu` backend. The old native execution branch and broad host-mode shims are removed. A narrowly scoped `/data/adb/ksu/bin/bash` or `/data/adb/ap/bin/bash` POSIX compatibility entrypoint is allowed only for AGY's host-side `bash -c` launcher and must never start a second PRoot.
-- Keep terminal menu labels short. Put command details in `ancli --help`, structured output, and logs.
-- The WebUI settings dialog is the visual editor for `lang`, `default_cwd`, `proxy_mode`, and `proxy_url`. It also shows the active backend, Android data channel, effective directory, and proxy mode.
-- WebUI task logs are stored as `.webui_*.log` plus metadata under `/data/local/tmp/ancli`. Keep the newest completed task logs up to 10 MB total, do not expire them by age, and expose the history in Settings so a reopened page can select and read old output. Running task logs are never removed by retention.
-- Settings also provides a destructive factory reset. It requires `RESET`, deletes installed app payloads, secrets, global config, Agent memory, shared skills, generated root-home files, and all WebUI logs, then regenerates the module template context. Preserve the Ubuntu rootfs and immutable module payload; do not add compatibility loading for pre-reset legacy logs. The optional reinstall mode records app IDs before clearing state and reinstalls them afterward without restoring secrets or proxy settings.
-- The WebUI theme is stored locally in the page; the language is persisted through AnCLI global config. Do not add a second settings store.
-- `ancli reset --yes` is the offline factory-reset path used by the WebUI. It keeps the rootfs and module payload, clears app state and user data inside the container, deletes all WebUI logs, and regenerates the bundled runtime context. Keep the explicit flag. The optional `--reinstall` mode reads the bundled registry after cleanup so the pre-reset app list can be installed again; it never restores old secrets, proxy settings, or app config.
-- `dsh` keeps direct-network mode in the registry. Other tools use the wrapper's system or manually configured proxy. Download actions show the selected proxy path before starting.
-- Agent wrappers record the launching terminal parent PID and kernel start time. A watchdog stops the PRoot child when that parent disappears, so swiping away or force-stopping the terminal does not leave a live Agent behind; merely backgrounding the terminal keeps the Agent running. The `ancli reset` launcher also kills known Agent/PRoot processes before removing their files.
-- Release `v1.2.610` uses `versionCode=22`; the KernelSU official catalog workflow publishes the immutable asset `ancli-22-v1.2.610.zip`.
+- Keep the single `proot-ubuntu` backend. The guest environment provides native `/usr/local/bin/ancli` for Agents and terminal users. Host bash compatibility is deployed to `$MODPATH/system/bin/bash` (Path A) and `/data/adb/ksu/bin/bash` / `/data/adb/ap/bin/bash` (Path B).
+- Container wrapper PATH includes `/system/bin` at fallback priority (`/usr/local/bin:/usr/bin:/bin:/data/adb/ksu/bin:/data/adb/ap/bin:/system/bin`), exposing Android safe read-only tools like `getprop` without colliding with GNU utilities.
+- PRoot container commands must never invoke Linux User Namespace / Seccomp sandboxes due to Android kernel constraints; unprivileged sandboxing causes `EINVAL` (invalid argument).
+- WebUI version checks are non-blocking and silent in background. Modal dialogs are centered across mobile viewports with full border radius and responsive viewport height.
+- Release `v1.2.612` uses `versionCode=24`; the KernelSU official catalog workflow publishes the immutable asset `ancli-24-v1.2.612.zip`.
 
 ## 2. Core Architecture
 You must understand these three pillars before writing any code:

@@ -37,7 +37,7 @@ MOD_DIR = "/data/adb/modules/ancli"
 KSU_BIN = "/data/adb/ksu/bin"
 AP_BIN  = "/data/adb/ap/bin"
 
-VERSION = "1.2.611"
+VERSION = "1.2.612"
 
 # 2026-11-13: 应用目录随模块固化打包；官方版本检查直接读取各应用自身的 `latest` 字段，
 # 不再从网络拉取第二份 AnCLI 注册表。
@@ -135,12 +135,15 @@ def set_lang(value):
 
 
 def set_proxy_url(value):
-    """Persist a manual HTTP proxy URL, or clear it to use system detection."""
+    """持久化手动代理地址（格式支持 IP:端口 或 http(s)://IP:端口），置空则回退至系统探测。"""
     value = (value or "").strip()
     if value:
+        # 支持用户直接填写 IP:端口（如 192.168.1.10:7890），自动补全协议前缀
+        if not re.match(r'^[a-zA-Z]+://', value):
+            value = f"http://{value}"
         parsed = urllib.parse.urlparse(value)
         if parsed.scheme not in ("http", "https") or not parsed.hostname:
-            return False, "代理地址必须是 http://host:port 或 https://host:port"
+            return False, "代理地址格式错误，请输入 IP:端口 或 http://IP:端口"
         if parsed.username or parsed.password or "\n" in value or "\x00" in value:
             return False, "代理地址不能包含认证信息或控制字符"
         if parsed.port is None or not (1 <= parsed.port <= 65535):
@@ -149,6 +152,49 @@ def set_proxy_url(value):
     cfg["proxy_url"] = value
     save_config(cfg)
     return True, ""
+
+
+def _get_detected_proxy():
+    """返回当前检测到的代理地址（格式为 'IP:端口'），未连接或未检测到时返回空字符串。"""
+    cfg = load_config()
+    mode = cfg.get("proxy_mode", "system")
+    if mode == "direct":
+        return ""
+    if mode == "manual":
+        raw = (cfg.get("proxy_url") or "").strip()
+        if raw:
+            if not re.match(r'^[a-zA-Z]+://', raw):
+                raw = f"http://{raw}"
+            p = urllib.parse.urlparse(raw)
+            if p.hostname and p.port:
+                return f"{p.hostname}:{p.port}"
+        return ""
+
+    # mode == "system": 优先从宿主机 ancli_env.sh 探测并写入的缓存读取
+    cache_files = (f"{ANCLI_DIR}/.proxy_cache", f"{ANCLI_DIR}/.proxy_cache_last")
+    for c_path in cache_files:
+        try:
+            if os.path.exists(c_path):
+                with open(c_path, "r", encoding="utf-8", errors="ignore") as f:
+                    line = f.readline().strip()
+                if line:
+                    parts = line.split()
+                    if len(parts) >= 2 and parts[0] and parts[1].isdigit():
+                        return f"{parts[0]}:{parts[1]}"
+        except OSError:
+            pass
+
+    # 尝试从进程环境变量回退提取
+    for env_key in ("http_proxy", "all_proxy", "HTTP_PROXY", "ALL_PROXY"):
+        val = os.environ.get(env_key)
+        if val:
+            val = val.strip()
+            if not re.match(r'^[a-zA-Z]+://', val):
+                val = f"http://{val}"
+            p = urllib.parse.urlparse(val)
+            if p.hostname and p.port:
+                return f"{p.hostname}:{p.port}"
+    return ""
 
 
 def set_proxy_mode(value):
@@ -187,6 +233,7 @@ def settings_command(argv):
         # Refresh the guest-global context after a configuration change. JSON
         # callers receive the result as data; human callers get the progress line.
         memory = setup_runtime_context(verbose="--json" not in argv)
+    detected_proxy = _get_detected_proxy()
     if "--json" in argv:
         payload = {
             "lang": cfg.get("lang", "zh"),
@@ -194,6 +241,8 @@ def settings_command(argv):
             "effective_cwd": cfg.get("default_cwd") or DEFAULT_CWD,
             "proxy_url": cfg.get("proxy_url", ""),
             "proxy_mode": cfg.get("proxy_mode", "system"),
+            "detected_proxy": detected_proxy,
+            "proxy_connected": bool(detected_proxy),
             "supported_keys": list(GLOBAL_CONFIG_KEYS),
         }
         if memory is not None:
@@ -208,6 +257,7 @@ def settings_command(argv):
         print(f"语言: {cfg.get('lang', 'zh')}")
         print(f"代理模式: {cfg.get('proxy_mode', 'system')}")
         print(f"代理地址: {cfg.get('proxy_url') or '未设置'}")
+        print(f"当前代理: {detected_proxy or '未连接'}")
     for err in errors:
         print(f"\033[91m[X] {err}\033[0m")
     if errors:
@@ -818,7 +868,7 @@ ANCLI_WATCHDOG_PID=$!
 {ANCLI_DIR}/bin/proot -r {ROOTFS} -b /dev -b /proc -b /sys -b {ANCLI_DIR} \\
 $ANCLI_BIND_ARGS \\
 -b {ANCLI_DIR}/hosts:/etc/hosts -b /data/adb $SHM_BIND \\
--w "$PROOT_CWD" /usr/bin/env PATH=/usr/local/bin:/usr/bin:/bin SHELL=/bin/bash BROWSER=/usr/local/bin/xdg-open {executable} "$@"
+-w "$PROOT_CWD" /usr/bin/env PATH=/usr/local/bin:/usr/bin:/bin:/data/adb/ksu/bin:/data/adb/ap/bin:/system/bin SHELL=/bin/bash BROWSER=/usr/local/bin/xdg-open {executable} "$@"
 _ancli_rc=$?
 kill "$ANCLI_WATCHDOG_PID" 2>/dev/null || true
 wait "$ANCLI_WATCHDOG_PID" 2>/dev/null || true
@@ -937,9 +987,13 @@ def _deploy_agy_host_bash_compat(verbose=True):
             fh.write(content)
         os.chmod(tmp_file, 0o755)
 
-        for instant_bin in (KSU_BIN, AP_BIN):
+        mod_sys_bin = f"{MOD_DIR}/system/bin"
+        for instant_bin in (mod_sys_bin, KSU_BIN, AP_BIN):
             if not os.path.isdir(instant_bin):
-                continue
+                try:
+                    os.makedirs(instant_bin, exist_ok=True)
+                except OSError:
+                    continue
             target = f"{instant_bin}/bash"
             replace = not os.path.lexists(target)
             if not replace:
@@ -957,11 +1011,19 @@ def _deploy_agy_host_bash_compat(verbose=True):
                 if verbose:
                     print(f"\033[90m[i] Preserved existing host bash: {target}\033[0m")
                 continue
-            rc = os.system(
-                f"cp -f {shlex.quote(tmp_file)} {shlex.quote(target)} "
-                f">/dev/null 2>&1 && chmod 755 {shlex.quote(target)} >/dev/null 2>&1"
-            )
-            if rc == 0:
+            copied = False
+            try:
+                shutil.copy2(tmp_file, target)
+                os.chmod(target, 0o755)
+                copied = True
+            except OSError:
+                rc = os.system(
+                    f"cp -f {shlex.quote(tmp_file)} {shlex.quote(target)} "
+                    f">/dev/null 2>&1 && chmod 755 {shlex.quote(target)} >/dev/null 2>&1"
+                )
+                copied = (rc == 0)
+
+            if copied:
                 deployed.append(target)
                 if verbose:
                     print(f"\033[92m[OK] AGY host bash compatibility: {target}\033[0m")
@@ -1446,9 +1508,9 @@ def _runtime_context_probe():
         },
         "host_compatibility": {
             "bash": {
-                "paths": [f"{KSU_BIN}/bash", f"{AP_BIN}/bash"],
+                "paths": [f"{MOD_DIR}/system/bin/bash", f"{KSU_BIN}/bash", f"{AP_BIN}/bash"],
                 "installed": any(
-                    os.path.isfile(f"{path}/bash") for path in (KSU_BIN, AP_BIN)
+                    os.path.isfile(f"{path}/bash") for path in (f"{MOD_DIR}/system/bin", KSU_BIN, AP_BIN)
                 ),
             },
         },
@@ -1680,6 +1742,7 @@ def setup_runtime_context(verbose=True, refresh=False):
         os.replace(tmp_file, target_file)
         result["status"] = "refreshed" if exists else "created"
         result["compatibility"] = _sync_runtime_context_compat(target_file, refresh=refresh)
+        _deploy_guest_ancli(verbose=False)
         if verbose:
             label = "已更新" if exists else "已创建"
             print(f"\033[92m[OK] {label}默认 Agent 记忆文件：{target_file}\033[0m")
@@ -1923,12 +1986,109 @@ def repair_env(registry):
     except Exception as e:
         print(f"\033[91m[X] Failed to restore binary permissions: {e}\033[0m")
 
-    # 3.1 Deploy xdg-open browser redirect wrapper inside container
+    # 3.1 Deploy xdg-open browser redirect wrapper and guest ancli entrypoint inside container
     _deploy_xdg_open()
     print("\033[92m[OK] Browser redirect wrapper deployed (/usr/local/bin/xdg-open).\033[0m")
+    _deploy_guest_ancli()
 
     # 3.2 Re-apply the dsh WebUI cookie patch (npm overwrites it on every update)
     patch_dsh_web_cookie()
+
+    # 3.3 自动修复历史版本常见环境隐患：
+    # a. Git dubious ownership：在 /etc/gitconfig 中全局注入 safe.directory = *
+    try:
+        gitconfig_path = f"{ROOTFS}/etc/gitconfig"
+        existing_gitconfig = ""
+        if os.path.exists(gitconfig_path):
+            with open(gitconfig_path, "r", encoding="utf-8", errors="ignore") as f:
+                existing_gitconfig = f.read()
+        if "safe.directory" not in existing_gitconfig:
+            with open(gitconfig_path, "a", encoding="utf-8") as f:
+                if existing_gitconfig and not existing_gitconfig.endswith("\n"):
+                    f.write("\n")
+                f.write("[safe]\n\tdirectory = *\n")
+            print("\033[92m[OK] Git dubious ownership 修复：已配置 safe.directory = *\033[0m")
+    except Exception as e:
+        print(f"\033[93m[!] 配置 Git safe.directory 失败: {e}\033[0m")
+
+    # b. 解锁 Python PEP 668 并配置国内 PyPI 镜像
+    try:
+        for ext_m in [
+            f"{ROOTFS}/usr/lib/python3.12/EXTERNALLY-MANAGED",
+            f"{ROOTFS}/usr/lib/python3.11/EXTERNALLY-MANAGED",
+        ]:
+            if os.path.exists(ext_m):
+                os.remove(ext_m)
+        pip_conf = f"{ROOTFS}/etc/pip.conf"
+        if not os.path.exists(pip_conf):
+            with open(pip_conf, "w", encoding="utf-8") as f:
+                f.write("[global]\nindex-url = https://pypi.tuna.tsinghua.edu.cn/simple\n")
+        print("\033[92m[OK] Python pip 运行限制解除 (PEP 668 已解锁，镜像已就绪)。\033[0m")
+    except Exception as e:
+        print(f"\033[93m[!] 修复 Python pip 环境失败: {e}\033[0m")
+
+    # c. 确保 npm 全局模块目录完整
+    try:
+        for npm_d in [
+            f"{ROOTFS}/usr/local/bin",
+            f"{ROOTFS}/usr/local/sbin",
+            f"{ROOTFS}/usr/local/lib/node_modules",
+            f"{ROOTFS}/usr/local/share",
+            f"{ROOTFS}/root/.npm/_logs",
+        ]:
+            os.makedirs(npm_d, exist_ok=True)
+            os.chmod(npm_d, 0o755)
+        print("\033[92m[OK] npm 全局安装基础路径已验证并补全。\033[0m")
+    except Exception as e:
+        print(f"\033[93m[!] 验证 npm 全局路径失败: {e}\033[0m")
+
+    # d. 确保共享内存 /dev/shm 权限
+    try:
+        shm_d = f"{ANCLI_DIR}/shm"
+        os.makedirs(shm_d, exist_ok=True)
+        os.chmod(shm_d, 0o1777)
+    except Exception:
+        pass
+
+    # e. 清理历史旧版本遗留的有害宽泛宿主机 shim（如 git/curl）
+    try:
+        for inst_b in (KSU_BIN, AP_BIN):
+            if os.path.isdir(inst_b):
+                for s_name in ("git", "curl"):
+                    s_file = os.path.join(inst_b, s_name)
+                    if os.path.isfile(s_file):
+                        try:
+                            with open(s_file, "r", encoding="utf-8", errors="ignore") as sf:
+                                if "AnCLI proot shim" in sf.read(256):
+                                    os.remove(s_file)
+                                    print(f"\033[92m[OK] 已清理历史遗留宿主机 shim: {s_file}\033[0m")
+                        except Exception:
+                            pass
+        mod_sys_b = f"{MOD_DIR}/system/bin"
+        if os.path.isdir(mod_sys_b):
+            for s_name in ("git", "bash", "curl"):
+                m_shim = os.path.join(mod_sys_b, s_name)
+                if os.path.isfile(m_shim):
+                    try:
+                        with open(m_shim, "r", encoding="utf-8", errors="ignore") as sf:
+                            if "AnCLI proot shim" in sf.read(256):
+                                os.remove(m_shim)
+                    except Exception:
+                        pass
+    except Exception as e:
+        print(f"\033[93m[!] 清理历史 shim 警告: {e}\033[0m")
+
+    # f. 同步更新宿主机主命令 ancli 包装器
+    try:
+        ancli_src = f"{MOD_DIR}/system/bin/ancli"
+        if os.path.isfile(ancli_src):
+            for inst_b in (KSU_BIN, AP_BIN):
+                if os.path.isdir(inst_b):
+                    dst = os.path.join(inst_b, "ancli")
+                    shutil.copy2(ancli_src, dst)
+                    os.chmod(dst, 0o755)
+    except Exception:
+        pass
 
     # 4. Repair missing application wrappers
     installed = load_installed()
@@ -2065,6 +2225,47 @@ exit 0
 
     except Exception:
         pass
+
+
+def _deploy_guest_ancli(verbose=True):
+    """Deploy the container-internal `ancli` entrypoint.
+
+    Allows AI Agents and interactive users inside the PRoot Ubuntu guest
+    to invoke `ancli status`, `ancli doctor`, `ancli agent-init`, etc.
+    directly without `command not found`.
+    """
+    guest_bin = f"{ROOTFS}/usr/local/bin/ancli"
+    script = (
+        "#!/bin/sh\n"
+        'exec python3 /data/local/tmp/ancli/bin/ancli-core.py "$@"\n'
+    )
+    try:
+        os.makedirs(os.path.dirname(guest_bin), exist_ok=True)
+        if os.path.lexists(guest_bin):
+            try:
+                os.remove(guest_bin)
+            except OSError:
+                pass
+        with open(guest_bin, "w", encoding="utf-8", newline="\n") as fh:
+            fh.write(script)
+        os.chmod(guest_bin, 0o755)
+
+        for link_dir in ["/usr/bin", "/bin"]:
+            link_path = f"{ROOTFS}{link_dir}/ancli"
+            try:
+                if os.path.lexists(link_path):
+                    os.remove(link_path)
+                os.symlink("/usr/local/bin/ancli", link_path)
+            except Exception:
+                pass
+
+        if verbose:
+            print("\033[92m[OK] Container ancli entrypoint deployed (/usr/local/bin/ancli).\033[0m")
+        return True
+    except Exception as e:
+        if verbose:
+            print(f"\033[93m[!] Could not deploy container ancli entrypoint: {e}\033[0m")
+        return False
 
 def _record_installed_version(installed, app_id, app, registry=None):
     """Store the version the *tool itself* reports (registry `version_cmd`).
@@ -3050,6 +3251,7 @@ def check_updates_json():
 def status_json():
     """Container/module status as pure JSON (used by the WebUI)."""
     with _stdout_to_stderr():
+        detected_proxy = _get_detected_proxy()
         payload = {
             "ancli_version": VERSION,
             "rootfs_ready": os.path.exists(f"{ROOTFS}/bin/bash"),
@@ -3059,6 +3261,8 @@ def status_json():
             "host_bash_compat": any(
                 os.path.isfile(f"{path}/bash") for path in (KSU_BIN, AP_BIN)
             ),
+            "detected_proxy": detected_proxy,
+            "proxy_connected": bool(detected_proxy),
         }
     print(json.dumps(payload, ensure_ascii=False))
 

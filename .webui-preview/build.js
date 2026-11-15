@@ -49,7 +49,7 @@ const mock = `
     [/find \\/data\\/local\\/tmp\\/ancli -maxdepth/, ''],
     [/tail -c/, ''],
     [/\\[ -f .* \\] && cat/, 'echo -n'],
-    [/config --json/, JSON.stringify({ lang: 'zh', default_cwd: '/sdcard', effective_cwd: '/sdcard' })],
+    [/config --json/, JSON.stringify({ lang: 'zh', default_cwd: '/sdcard', effective_cwd: '/sdcard', proxy_mode: 'system', proxy_url: '', detected_proxy: '192.168.1.10:7890', proxy_connected: true })],
   ];
   function respond(cmd) {
     for (const [re, out] of routes) if (re.test(cmd)) return out;

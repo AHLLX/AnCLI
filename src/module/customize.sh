@@ -182,10 +182,25 @@ cp "$MODPATH/ancli/ancli-core.py" "$BIN_DIR/ancli-core.py"
 cp "$MODPATH/ancli/ancli_env.sh" "$BIN_DIR/ancli_env.sh"
 chmod 755 "$BIN_DIR/ancli-core.py" "$BIN_DIR/ancli_env.sh"
 
-# 部署 AGY 宿主机 POSIX `bash -c` 兼容模板（非原生后端，不覆盖 /system/bin，不启动嵌套 PRoot）
+# 部署 AGY 宿主机 POSIX `bash -c` 兼容模板（Dual-Injection Path A：重启后通过 systemless overlay 生效）
 if [ -f "$MODPATH/ancli/bash-host-compat" ]; then
     cp "$MODPATH/ancli/bash-host-compat" "$ANCLI_DIR/bash-host-compat"
     chmod 755 "$ANCLI_DIR/bash-host-compat"
+    mkdir -p "$MODPATH/system/bin"
+    cp -f "$MODPATH/ancli/bash-host-compat" "$MODPATH/system/bin/bash"
+    chmod 755 "$MODPATH/system/bin/bash"
+fi
+
+# 部署容器内部直达 `ancli` 入口，支持在 PRoot 容器内直接调用 ancli 命令
+if [ -d "$ROOTFS/usr/local/bin" ]; then
+    cat <<'EOF' > "$ROOTFS/usr/local/bin/ancli"
+#!/bin/sh
+exec python3 /data/local/tmp/ancli/bin/ancli-core.py "$@"
+EOF
+    chmod 755 "$ROOTFS/usr/local/bin/ancli"
+    for link_dir in /usr/bin /bin; do
+        [ -d "$ROOTFS$link_dir" ] && ln -sf /usr/local/bin/ancli "$ROOTFS$link_dir/ancli" 2>/dev/null || true
+    done
 fi
 
 # 部署不可变运行时上下文模板（仅作基准模板，实际 /root/.agents/AGENTS.md 由 ancli agent-init/repair 生成）

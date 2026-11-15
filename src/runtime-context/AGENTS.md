@@ -24,7 +24,11 @@ AGY 的全局规则入口可能是 `/root/.gemini/AGENTS.md` 或 `/root/.gemini/
 
 根据探测结果补充本文件的“本设备实测环境”内容，写入真实路径、绑定关系、可用命令、工具版本和操作边界；不要写入 API key、cookie、token、代理地址或其他密钥。完成后执行 `ancli agent-init --finalize`，由 AnCLI 将探测结果写回本文件并删除本节。以后以实测内容为准，仍需在环境变化时重新运行探测。
 
-工具通过宿主 wrapper 进入单层 Ubuntu PRoot。wrapper 会继承 Android 系统代理和 DNS，设置 `TMPDIR=/tmp`、`TERM`、locale、`BROWSER=/usr/local/bin/xdg-open`，并绑定 `/sdcard`、`/storage`、`/mnt`、`/data` 等 Android 路径。AGY 的远程命令执行器可能在进入容器前先调用宿主 `bash -c`；AnCLI 会在 `/data/adb/ksu/bin/bash` 或 `/data/adb/ap/bin/bash` 提供一个仅转发 POSIX 命令到 `/system/bin/sh` 的兼容入口。它不是 GNU Bash，也不是第二套运行后端；需要 Bash 专有语法时仍应在容器内使用 `/bin/bash`。
+工具通过宿主 wrapper 进入单层 Ubuntu PRoot。wrapper 会继承 Android 系统代理和 DNS，设置 `TMPDIR=/tmp`、`TERM`、locale、`BROWSER=/usr/local/bin/xdg-open`，并绑定 `/sdcard`、`/storage`、`/mnt`、`/data` 等 Android 路径。
+- **容器内 ancli 入口**：容器已内置 `/usr/local/bin/ancli`（并在 `/usr/bin/ancli`、`/bin/ancli` 提供软链接），可直接在容器内无前缀调用 `ancli status --json`、`ancli doctor`、`ancli agent-init --finalize`。
+- **容器内 PATH 注入与优先级**：容器环境变量设定为 `PATH=/usr/local/bin:/usr/bin:/bin:/data/adb/ksu/bin:/data/adb/ap/bin:/system/bin`。Ubuntu GNU 工具绝对主导；Root 静态工具与 shims 次之；`/system/bin` 兜底，允许在容器内直接调用 `getprop` 等 Android 原生只读检测命令。
+- **PRoot 命令执行规范与沙箱约束**：Android 内核限制下，PRoot 基于 ptrace 用户态虚拟化，不支持 Linux User Namespace / Seccomp 沙箱隔离层（调用此类沙箱如 `clone(CLONE_NEWUSER...)` 会直接报错 `invalid argument`）。在容器内执行工具命令时，禁止启用沙箱（Sandbox）模式，须使用直通/非沙箱模式。
+- **宿主 bash 兼容入口（Dual-Injection）**：AGY 的远程命令执行器可能在进入容器前先调用宿主 `bash -c`；AnCLI 会在 `/data/adb/modules/ancli/system/bin/bash`（Path A）以及 `/data/adb/ksu/bin/bash`、`/data/adb/ap/bin/bash`（Path B）提供仅转发 POSIX 命令到 `/system/bin/sh` 的兼容入口，宿主外部进程默认命中。它不是 GNU Bash，也不是第二套运行后端；需要 Bash 专有语法时仍应在容器内使用 `/bin/bash`。
 
 ## 设备观察（版本和路径可能变化）
 

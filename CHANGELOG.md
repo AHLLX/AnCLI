@@ -1,3 +1,14 @@
+## v1.2.612 (2026-11-15)
+
+### Agent PRoot environment & mobile WebUI enhancements
+
+- Deploy `/usr/local/bin/ancli` inside the PRoot container during installation and repair so Agents can invoke `ancli doctor`, `status`, and `agent-init` directly without `command not found`.
+- Extend AGY host bash compatibility deployment to `$MODPATH/system/bin/bash` (Dual-Injection Path A) so remote runners find bash in default `/system/bin` PATH.
+- Inject `/system/bin` into guest container wrappers at fallback priority (`/usr/local/bin:/usr/bin:/bin:/data/adb/ksu/bin:/data/adb/ap/bin:/system/bin`), exposing safe host tools like `getprop` without overriding GNU binaries.
+- Update `AGENTS.md` runtime memory template with PRoot sandbox limitations (prohibiting unprivileged user namespace / seccomp sandboxing), guest ancli entrypoint, and PATH priorities.
+- WebUI: make version check completely asynchronous and non-blocking in background, silencing errors during startup and only showing failure badges when manually triggered.
+- WebUI: center settings modal on mobile screens, fix bottom border-radius clipping under narrow viewport media queries, and add responsive viewport height.
+
 ## v1.2.611 (2026-11-14)
 
 ### Environment script optimization & code documentation

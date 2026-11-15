@@ -87,12 +87,13 @@ if [ ! -f "$ANCLI_DIR/hosts" ]; then
 fi
 chmod 644 "$ANCLI_DIR/hosts" 2>/dev/null || true
 
-# 5.1 部署 AGY 宿主机 `bash -c` POSIX 兼容入口到 KSU/AP 动态目录：
-#     仅当目标不存在或带有 AnCLI 标记时才写入，绝不覆盖用户自装的真实 bash，也不触碰 /system/bin。
+# 5.1 部署 AGY 宿主机 `bash -c` POSIX 兼容入口（Dual-Injection）：
+#     仅当目标不存在或带有 AnCLI 标记时才写入，绝不覆盖用户自装的真实 bash。
 if [ -f "$MODULE_DIR/ancli/bash-host-compat" ]; then
-    for INSTANT_BIN in /data/adb/ksu/bin /data/adb/ap/bin; do
-        [ -d "$INSTANT_BIN" ] || continue
-        host_bash="$INSTANT_BIN/bash"
+    mkdir -p "$MODULE_DIR/system/bin" 2>/dev/null || true
+    for TARGET_BIN in "$MODULE_DIR/system/bin" /data/adb/ksu/bin /data/adb/ap/bin; do
+        [ -d "$TARGET_BIN" ] || continue
+        host_bash="$TARGET_BIN/bash"
         replace_host_bash=0
         if [ ! -e "$host_bash" ]; then
             replace_host_bash=1
