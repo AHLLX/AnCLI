@@ -2,12 +2,13 @@
 <!-- template maintained 2026-11-13 -->
 # AnCLI Runtime Context
 
-这份文件由 AnCLI 写入容器全局路径 `/root/.agents/AGENTS.md`。它记录运行环境、路径和操作边界，属于设备运行时上下文，不是项目开发规则文件。旧版手机记忆只能作为历史参考，不能覆盖当前命令和路径探测结果。不要把 API key、cookie、token 或其他密钥写入这里。
+这份文件由 AnCLI 写入容器全局路径 `/root/.agents/AGENTS.md`。Codex CLI 通过 `/root/.codex/AGENTS.md` 读取同一份内容，Antigravity 通过 `/root/.gemini/AGENTS.md` 或 `/root/.gemini/GEMINI.md` 读取同一份内容；这些入口均由 AnCLI 建立为指向规范文件的软链接。它记录运行环境、路径和操作边界，属于设备运行时上下文，不是项目开发规则文件。旧版手机记忆只能作为历史参考，不能覆盖当前命令和路径探测结果。不要把 API key、cookie、token 或其他密钥写入这里。
 
 ## 当前环境
 
 - AnCLI 版本：`{{ANCLI_VERSION}}`
-- 默认工作目录：`{{DEFAULT_CWD}}`
+- 配置的默认工作目录：`{{DEFAULT_CWD}}`
+- 裸 `/` 或不可映射目录的 TUI 回退目录：`/root/.ancli-work`
 - Ubuntu/PRoot 根目录（宿主路径）：`{{ROOTFS}}`
 - AnCLI 数据目录：`{{ANCLI_DIR}}`
 - Android 真实 `/data` 通道：`{{ANDROID_DATA_MNT}}`（可用性用 `ancli status --json` 查看）
@@ -15,7 +16,7 @@
 - 当前已安装工具：`{{INSTALLED_APPS}}`
 - 已保存的配置变量名（不含值）：`{{CONFIGURED_ENV}}`
 
-AGY 的全局规则入口可能是 `/root/.gemini/AGENTS.md` 或 `/root/.gemini/GEMINI.md`。AnCLI 将两个名称都链接到本文件；通用入口仍是 `/root/.agents/AGENTS.md`。如果某个 Agent 报告没有加载记忆，先检查它自己的官方发现路径和 `readlink -f` 结果。
+Codex 的全局规则入口是 `/root/.codex/AGENTS.md`；AGY 的全局规则入口可能是 `/root/.gemini/AGENTS.md` 或 `/root/.gemini/GEMINI.md`。AnCLI 将这些入口都链接到本文件；规范源仍是 `/root/.agents/AGENTS.md`。如果某个 Agent 报告没有加载记忆，先检查它自己的官方发现路径和 `readlink -f` 结果。进入具体仓库后，仓库根目录到当前目录之间的项目级 `AGENTS.md` 仍按工具规则优先于全局入口。
 
 <!-- ancli:first-run:pending -->
 ## 首次环境确认（按需执行）
@@ -58,14 +59,14 @@ AGY 的全局规则入口可能是 `/root/.gemini/AGENTS.md` 或 `/root/.gemini/
 ## dsh 与交互工具
 
 - `dsh web` 使用命令输出的完整带 token URL；只想打印地址时使用 `dsh web --no-open`。token URL 属于当前会话入口，不要把完整地址写进 `AGENTS.md`、skill、脚本或提交记录，也不要把不带 token 的 `127.0.0.1:3080` 当作已认证地址。
-- 从 `/` 启动交互式 Node/TUI 工具会触发全树扫描或路径解析问题。进入项目目录后再运行；如果调用的是 AnCLI wrapper，先确认它已按默认工作目录回退到 `/root` 或配置目录。
+- 从 `/` 启动交互式 Node/TUI 工具时，AnCLI wrapper 会优先使用 `default_cwd`；未配置时使用小型 `/root/.ancli-work`，避免扫描包含大量 Codex 缓存和会话的 `/root`。进入项目目录后再运行时，wrapper 保留当前目录，不会改成默认目录。
 - 任何工具的配置、认证和环境变量都只记录变量名和文件位置，不复制值；需要变更时用 `ancli config` 或工具自己的配置命令。
 
 ## 工作指导
 
 1. 开始任务前先运行 `pwd`、`ancli doctor --json`、`ancli status --json` 和 `ancli list --json`，确认当前目录、rootfs、应用数据通道和工具状态。
 2. 把 `/root` 当作容器私有 HOME；把 `/sdcard`、`/storage/emulated/0` 当作手机共享存储；把 `/mnt/ancli-data/data/<包名>` 当作跨 App 读取真实 `/data` 的入口。
-3. 从 `/` 启动工具时使用上面的默认工作目录；要修改它，运行 `ancli config --set default_cwd=/绝对路径`。留空会恢复 `/root`。
+3. 从 `/` 或不可映射目录启动工具时使用上面的默认工作目录；要修改它，运行 `ancli config --set default_cwd=/绝对路径`。留空会恢复内置回退目录 `/root/.ancli-work`。
 4. 使用 `ancli config <app_id>` 或管理器 WebUI 配置 API key、代理和 endpoint。不要把密钥写入 `AGENTS.md`、skills、wrapper、shell 历史或提交内容。
 5. 查看官方版本时运行 `ancli check`；只读脚本或 WebUI 使用 `ancli list --json`。`installed_version` 必须来自工具自己的 `version_cmd`，不能手写成 AnCLI 版本。
 6. 共享 Agent skills 放在 `{{SHARED_SKILL_DIR}}/<name>/SKILL.md`，运行 `ancli skills` 修复共享目录和各工具链接。多步骤流程写成 skill；稳定事实和约束留在本文件或项目自己的 `AGENTS.md`。

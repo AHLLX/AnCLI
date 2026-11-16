@@ -26,27 +26,29 @@ case "$_ancli_default_cwd" in
 esac
 
 # 2. 解析当前宿主机 PWD 在 PRoot 容器中的映射路径；
-#    若处于未挂载的宿主机路径（如 /cache），回退至 /root
+#    若处于未挂载的宿主机路径（如 /cache），回退至小型 TUI 工作目录
+ANCLI_TUI_CWD=/root/.ancli-work
+mkdir -p "/data/local/tmp/ancli/rootfs$ANCLI_TUI_CWD" 2>/dev/null || true
 PROOT_CWD="$PWD"
 case "$PROOT_CWD" in
     /|/dev*|/proc*|/sys*|/sdcard*|/storage*|/mnt*|/data*|/apex*|/system*|/linkerconfig*)
         ;;
     *)
         if [ ! -d "/data/local/tmp/ancli/rootfs$PROOT_CWD" ]; then
-            PROOT_CWD=/root
+            PROOT_CWD="$ANCLI_TUI_CWD"
         fi
         ;;
 esac
-# 若从根目录 "/" 启动（例如管理器 WebUI 或无目录上下文的 su 会话），优先跳转到配置的 default_cwd，否则进入 /root；
+# 若从根目录 "/" 启动（例如管理器 WebUI 或无目录上下文的 su 会话），优先跳转到配置的 default_cwd，否则进入小型 TUI 工作目录；
 # 保持静默切换，避免向任务日志或 --json 输出混入提示文本。
 if [ "$PROOT_CWD" = "/" ]; then
     if [ -n "$_ancli_default_cwd" ]; then
         PROOT_CWD="$_ancli_default_cwd"
     else
-        PROOT_CWD=/root
+        PROOT_CWD="$ANCLI_TUI_CWD"
     fi
 fi
-: "${PROOT_CWD:=/root}"
+: "${PROOT_CWD:=$ANCLI_TUI_CWD}"
 
 # 3. `ancli reset` 宿主机预清理（仅 root）：
 #    在进入 PRoot 删除文件前，先向存活的 Agent 与 PRoot 进程发送 SIGTERM/SIGKILL，

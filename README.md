@@ -8,7 +8,7 @@
 
 AnCLI 是一个为已 Root 安卓设备打造的统一、免系统修改（Systemless）的命令行环境管理器与插件式安装器。当前所有受支持的工具统一运行在一个 Ubuntu glibc PRoot 容器中，同时提供受控的 Android 路径映射、代理处理、浏览器跳转和 Root 管理器 wrapper。
 
-当前运行后端只有 `proot-ubuntu`。Android 的 `/system` 继续保持只读，工具通过模块 systemless wrapper 与 KernelSU/APatch 动态路径暴露；容器内 Agent 的全局运行时记忆固定在 `/root/.agents/AGENTS.md`。
+当前运行后端只有 `proot-ubuntu`。Android 的 `/system` 继续保持只读，工具通过模块 systemless wrapper 与 KernelSU/APatch 动态路径暴露；容器内 Agent 的运行时上下文规范源固定在 `/root/.agents/AGENTS.md`，Codex 与 Antigravity 通过各自的兼容入口读取它。
 
 ## 功能特性
 
@@ -34,7 +34,7 @@ AnCLI 是一个为已 Root 安卓设备打造的统一、免系统修改（Syste
 
 - [AGENTS.md](AGENTS.md) 是本地开发、模块维护、设备验证和发布流程的项目交接入口。修改核心脚本、registry、wrapper 或发布资产前先阅读它。
 - `src/runtime-context/AGENTS.md` 是手机容器内 Agent 使用的模板，安装后渲染到 `/root/.agents/AGENTS.md`，与项目开发指导文件分开维护。
-- Antigravity CLI 的全局规则入口可能是 `/root/.gemini/AGENTS.md` 或 `/root/.gemini/GEMINI.md`，AnCLI 会把两个名称都链接到同一份容器运行时记忆。
+- Codex CLI 的全局入口是 `/root/.codex/AGENTS.md`；Antigravity CLI 的全局规则入口可能是 `/root/.gemini/AGENTS.md` 或 `/root/.gemini/GEMINI.md`。AnCLI 会把这些名称都链接到同一份容器运行时记忆。
 
 ## 界面效果
 
@@ -131,7 +131,7 @@ ancli --version                # 显示版本号
 
 | 配置键 | 可用值 | 作用 |
 | :--- | :--- | :--- |
-| `default_cwd` | 绝对路径或空值 | 从 `/` 启动工具时使用的目录；留空恢复 `/root`。 |
+| `default_cwd` | 绝对路径或空值 | 从 `/` 或不可映射目录启动工具时使用的目录；留空使用 `/root/.ancli-work`。 |
 | `lang` | `zh`、`en` | AnCLI 命令输出和 WebUI 的语言偏好。 |
 | `proxy_mode` | `system`、`manual`、`direct` | 使用 Android 系统探测、手动代理或直连。 |
 | `proxy_url` | `http://host:port` 或 `https://host:port` | 手动代理地址，仅在 `manual` 模式使用。 |
@@ -245,28 +245,29 @@ skill 存在容器的 `/root` 下，模块升级不会丢；想跟着项目走�
 
 ### 默认工作目录（从 `/` 启动时）
 
-Termius 新会话、或 `su` 之后直接敲 `mimo`，宿主 cwd 是 `/`。全屏 TUI 启动时会遍历 cwd，等于扫描整个容器 + 绑进来的 `/data`、`/sdcard`（几十万文件），会卡很久甚至起不来。AnCLI 把这种启动转到一个小目录——默认 `/root`，也可以自己指定：
+Termius 新会话、或 `su` 之后直接敲 `codex`/`mimo`，宿主 cwd 通常是 `/`。Node/TUI 工具会扫描当前工作目录；如果直接使用 `/root`，还会碰到 Codex 缓存、会话和 skills。AnCLI 把这种启动转到小目录——默认 `/root/.ancli-work`，也可以自己指定：
 
 ```bash
 ancli config                                     # 查看当前设置
 ancli config --set default_cwd=/sdcard/projects  # 从 / 启动时落到这里
-ancli config --set default_cwd=                  # 留空 = 恢复内置默认 /root
+ancli config --set default_cwd=                  # 留空 = 恢复内置默认 /root/.ancli-work
 ```
 
 WebUI 里点「设置」也能改（同一份配置，存在容器 `/root/.ancli-config.json`）。设置窗口还可以编辑
 `lang`、`proxy_mode` 和 `proxy_url`；主题偏好保存在当前 WebUI。状态卡片会显示当前 Ubuntu/PRoot
 后端、`/mnt/ancli-data` 数据通道、生效目录和代理模式。
 
-修改 `default_cwd` 不会移动运行时上下文。AnCLI 统一维护容器全局的
-`/root/.agents/AGENTS.md`，需要重建时运行 `ancli agent-init`。
+修改 `default_cwd` 不会移动运行时上下文。AnCLI 统一维护容器规范源
+`/root/.agents/AGENTS.md`，并保持 `/root/.codex/AGENTS.md`、`/root/.gemini/AGENTS.md` 和
+`/root/.gemini/GEMINI.md` 兼容入口，需要重建时运行 `ancli agent-init`。
 
-只影响“从 `/` 启动”这一种情况：先 `cd` 到项目目录再启动时，用的永远是你的 cwd。目录必须是容器里存在的绝对路径，否则 `ancli config` 会直接拒绝并提示。
+只影响“从 `/` 或不可映射目录启动”这一种情况：先 `cd` 到项目目录再启动时，wrapper 会保留你的 cwd，Codex/agy 等工具直接把该项目目录作为工作区；不会套用 `default_cwd` 或 `/root/.ancli-work`。目录必须是容器里可见的绝对路径，否则 `ancli config` 会直接拒绝并提示。
 
 ### 默认 Agent 记忆与环境指导
 
-AnCLI 会在容器全局目录 `/root/.agents/AGENTS.md` 维护一份简短的运行时 `AGENTS.md`。运行
+AnCLI 会在容器规范目录 `/root/.agents/AGENTS.md` 维护一份简短的运行时 `AGENTS.md`，并为 Codex 创建 `/root/.codex/AGENTS.md` 入口，为 Antigravity 创建 `/root/.gemini/AGENTS.md` 与 `/root/.gemini/GEMINI.md` 入口；这些入口都指向同一份文件。运行
 `ancli agent-init` 可以显式生成；`ancli repair`、`ancli skills` 和成功安装工具时也会刷新
-AnCLI 自己生成的文件。默认工作目录只影响工具启动位置，运行时上下文始终位于
+AnCLI 自己生成的文件。默认工作目录只影响工具启动位置，运行时上下文规范源始终位于
 `/root/.agents/AGENTS.md`。
 
 新文件包含首次环境确认协议。第一个读取它的 Agent 必须先探测当前设备，再运行

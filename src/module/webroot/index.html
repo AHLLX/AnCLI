@@ -506,6 +506,18 @@ body.ime-open .topbar { backdrop-filter: none; -webkit-backdrop-filter: none; ba
 #setOverlay .dialog { max-height: min(90vh, 700px); }
 #setOverlay .dlg-body { min-height: 0; }
 
+/* 卸载确认在手机 WebView 中保持可读：警告正文可滚动，按钮不会被挤出视口。 */
+.uninstall-dialog .note {
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+.uninstall-dialog .dlg-body { min-height: 0; }
+@media (max-width: 619px) {
+  .uninstall-dialog { width: min(480px, calc(100vw - 20px)); max-height: min(88vh, 620px); }
+  .uninstall-dialog .dlg-foot { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  .uninstall-dialog .dlg-foot .btn { width: 100%; min-width: 0; }
+}
+
 /* ============================ 关于界面样式 ============================ */
 .about-hero {
   display: flex; flex-direction: column; align-items: center; justify-content: center;
@@ -1013,7 +1025,7 @@ body.ime-open .topbar { backdrop-filter: none; -webkit-backdrop-filter: none; ba
               <img src="logo.png?v=1.2.618" class="about-logo" alt="AnCLI Logo">
               <div class="about-brand">
                 <span class="about-name">AnCLI</span>
-                <span class="about-badge" id="aboutVer">v1.2.622-beta</span>
+                <span class="about-badge" id="aboutVer">v1.2.623-beta</span>
               </div>
               <p class="about-desc" data-i18n="aboutDesc">统一的 Android 命令行与 AI Agent 环境管理器</p>
             </div>
@@ -1115,7 +1127,7 @@ body.ime-open .topbar { backdrop-filter: none; -webkit-backdrop-filter: none; ba
 </div>
 
 <div class="overlay" id="uninstallOverlay" aria-hidden="true">
-  <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="uninstallTitle">
+  <div class="dialog uninstall-dialog" role="dialog" aria-modal="true" aria-labelledby="uninstallTitle">
     <div class="dlg-head">
       <h3 id="uninstallTitle" data-i18n="uninstallModule">彻底卸载模块本体</h3>
       <button class="icon-btn" id="uninstallClose" aria-label="关闭" data-i18n-title="close">
@@ -1123,7 +1135,7 @@ body.ime-open .topbar { backdrop-filter: none; -webkit-backdrop-filter: none; ba
       </button>
     </div>
     <div class="dlg-body">
-      <div class="note" data-i18n="uninstallWarning">⚠️ <b>危险操作！</b>此操作将完全销毁 AnCLI 的一切数据与插件本体：<br>1. 卸载并删除所有已安装的命令行工具与 AI Agent；<br>2. 彻底抹除 Ubuntu 容器系统（/data/local/tmp/ancli）及所有配置、密钥与记忆；<br>3. 卸载 AnCLI 模块本体（/data/adb/modules/ancli）并移除宿主所有注入脚本。<br>操作完成后，请立即重启手机以清理内核文件系统挂载。</div>
+      <div class="note" data-i18n-html="uninstallWarning">⚠️ <b>危险操作！</b>此操作将完全销毁 AnCLI 的一切数据与插件本体：<br>1. 卸载并删除所有已安装的命令行工具与 AI Agent；<br>2. 彻底抹除 Ubuntu 容器系统（/data/local/tmp/ancli）及所有配置、密钥与记忆；<br>3. 卸载 AnCLI 模块本体（/data/adb/modules/ancli）并移除宿主所有注入脚本。<br>操作完成后，请立即重启手机以清理内核文件系统挂载。</div>
       <div class="field">
         <label data-i18n="uninstallConfirmLabel">输入 UNINSTALL 继续</label>
         <input id="uninstallConfirm" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="UNINSTALL">
@@ -2096,6 +2108,9 @@ function applyLanguage(lang) {
     if (label) label.textContent = uiText(el.dataset.i18n);
     else el.textContent = uiText(el.dataset.i18n);
   });
+  document.querySelectorAll('[data-i18n-html]').forEach(el => {
+    el.innerHTML = uiText(el.dataset.i18nHtml);
+  });
   document.querySelectorAll('[data-i18n-title]').forEach(el => { el.title = uiText(el.dataset.i18nTitle); el.setAttribute('aria-label', uiText(el.dataset.i18nTitle)); });
   const proxyMode = document.getElementById('setProxyMode');
   if (proxyMode) {
@@ -2841,11 +2856,25 @@ async function performUninstall() {
   closeSettings();
   setBusy(true, uiText('uninstallStarting'));
 
-  const uninstallCmd = 'sh /data/adb/modules/ancli/uninstall.sh --purge 2>&1 || sh /data/local/tmp/ancli/uninstall.sh --purge 2>&1';
+  // 卸载脚本会删除 /data/local/tmp/ancli，本次任务的日志不能放在该目录内。
+  // 否则脚本执行到 rm -rf 时会把自己的日志、退出码一起删掉，WebUI 会误判
+  // 为备用路径失败，用户也看不到 KernelSU 的 remove 标记是否已经写入。
+  const uninstallTag = Date.now() + '_' + Math.floor(Math.random() * 100000);
+  const uninstallLog = '/data/local/tmp/ancli-uninstall-' + uninstallTag + '.log';
+  const uninstallExit = uninstallLog + '.exit';
+  const uninstallCmd = 'if [ -r /data/adb/modules/ancli/uninstall.sh ]; then sh /data/adb/modules/ancli/uninstall.sh --purge; ' +
+    'elif [ -r /data/local/tmp/ancli/uninstall.sh ]; then sh /data/local/tmp/ancli/uninstall.sh --purge; ' +
+    'else echo "AnCLI uninstall script not found" >&2; exit 127; fi';
   try {
-    await runBackground(uninstallCmd, uiText('uninstallStarting'), { keepLog: true });
+    const quoted = String(uninstallCmd).replace(/'/g, "'\\''");
+    const detached = "nohup sh -c '" + quoted + " > " + shQuote(uninstallLog) +
+      " 2>&1; echo $? > " + shQuote(uninstallExit) + "' </dev/null &";
+    const launch = await execCmd('sh -c ' + shQuote(detached));
+    if (launch.code !== 0) throw new Error('卸载任务启动失败（exit ' + launch.code + '）');
+    // 给脚本一点时间完成模块标记和容器清理；之后 WebUI 通道可能随模块移除而断开。
+    await sleep(1200);
   } catch (e) {
-    // 忽略异常，模块删除后后台通信会中断
+    logLine(String(e), 'err');
   } finally {
     setBusy(false);
     document.body.innerHTML = `

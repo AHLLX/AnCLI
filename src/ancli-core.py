@@ -38,7 +38,7 @@ MOD_DIR = "/data/adb/modules/ancli"
 KSU_BIN = "/data/adb/ksu/bin"
 AP_BIN  = "/data/adb/ap/bin"
 
-VERSION = "1.2.622-beta"
+VERSION = "1.2.623-beta"
 
 # 2026-11-13: 应用目录随模块固化打包；官方版本检查直接读取各应用自身的 `latest` 字段，
 # 不再从网络拉取第二份 AnCLI 注册表。
@@ -47,8 +47,8 @@ SECRETS_DIR    = f"{ANCLI_DIR}/secrets"   # 各工具独立的 API 密钥文件�
 CONFIG_FILE    = "/root/.ancli-config.json"
 
 # 当调用方从根目录 "/" 启动时（如 Termius 或新 su 会话），默认重定向至较小且已知的目录，
-# 避免 TUI 工具在 "/" 下扫描整个容器及 /data、/sdcard 挂载树。
-DEFAULT_CWD    = "/root"
+# 避免 Node/TUI 工具扫描包含大量 Codex 缓存、会话和 skills 的 /root。
+DEFAULT_CWD    = "/root/.ancli-work"
 # 2026-11-13: `ancli config` 仅接受以下全局配置键；各工具的 API 密钥仍由注册表定义并保存在 secrets/<tool>.env。
 GLOBAL_CONFIG_KEYS = ("default_cwd", "lang", "proxy_mode", "proxy_url", "agent_memory", "update_channel")
 # 运行时动态绑定挂载的 Android 根目录（在 $ROOTFS 磁盘上不存在实体目录，校验存在性时跳过）
@@ -753,10 +753,12 @@ case "$_ancli_default_cwd" in
 *) [ -d "{ROOTFS}$_ancli_default_cwd" ] || _ancli_default_cwd="" ;;
 esac
 
-# 4. Resolve PRoot working directory: fall back to the container HOME when
+# 4. Resolve PRoot working directory: fall back to the small TUI directory when
 #    PWD is not visible inside the rootfs (e.g. an unbound host path like
 #    /cache), which would otherwise make proot exit with 'unable to change
 #    the current working directory'.
+ANCLI_TUI_CWD=/root/.ancli-work
+mkdir -p "{ROOTFS}$ANCLI_TUI_CWD" 2>/dev/null || true
 PROOT_CWD="$PWD"
 case "$PROOT_CWD" in
 /|/dev*|/proc*|/sys*|/sdcard*|/storage*|/mnt*|/data*|/apex*|/system*|/linkerconfig*)
@@ -766,23 +768,26 @@ case "$PROOT_CWD" in
         if [ -n "$_ancli_default_cwd" ]; then
             PROOT_CWD="$_ancli_default_cwd"
         else
-            PROOT_CWD=/root
+            PROOT_CWD="$ANCLI_TUI_CWD"
         fi
     fi
     ;;
 esac
-# Launching from / (or an unmapped path) means TUI tools (mimo/claude/opencode/...)
-# scan the whole container filesystem at startup — rootfs plus the /data and
-# /sdcard bindings (hundreds of thousands of files) — which hangs the TUI.
-# Start in the configured default directory when there is one, else container HOME.
+# Launching from / (or an unmapped path) means TUI tools (codex/mimo/claude/...
+#) scan the working tree at startup. Do not use /root as the implicit fallback:
+# it contains the Codex cache, sessions and skills and can be hundreds of MB.
+# Use a small stable directory so a bare `su` -> `codex` starts promptly while
+# preserving the user's explicit project directory and configured default_cwd.
+# Start in the configured default directory when there is one, else the small
+# TUI directory.
 if [ "$PROOT_CWD" = "/" ]; then
 if [ -n "$_ancli_default_cwd" ]; then
     PROOT_CWD="$_ancli_default_cwd"
 else
-    PROOT_CWD=/root
+    PROOT_CWD="$ANCLI_TUI_CWD"
 fi
 fi
-: "${{PROOT_CWD:=/root}}"
+: "${{PROOT_CWD:=$ANCLI_TUI_CWD}}"
 # 5. Provide /dev/shm: Android's /dev has no shm, and Node/Bun workers plus
 #    some libraries require shared memory. Bound only when the dir is usable.
 SHM_BIND=""
@@ -861,9 +866,31 @@ fi
 _ancli_saved_tty=""
 if [ -t 0 ]; then _ancli_saved_tty=$(stty -g 2>/dev/null) || _ancli_saved_tty=""; fi
 ancli_restore_tty() {{
-[ -n "$_ancli_saved_tty" ] && stty "$_ancli_saved_tty" 2>/dev/null
+# Restore line discipline and visual state even when the TUI exits by signal.
+# Some Android terminal apps keep the alternate screen/hidden cursor otherwise,
+# making it look as if the shell did not return.
+if [ -n "$_ancli_saved_tty" ]; then
+    stty "$_ancli_saved_tty" 2>/dev/null || stty sane 2>/dev/null || true
+else
+    stty sane 2>/dev/null || true
+fi
+printf '\033[?25h\033[?1049l\033[0m\r\n' 2>/dev/null || true
 return 0
 }}
+# A terminal app may deliver HUP/TERM to the wrapper after the Codex task is
+# disconnected, while the foreground PRoot child remains in the same process
+# group. Forward the signal to that group so the child cannot be orphaned and
+# leave the caller's shell waiting on a dead TUI session.
+ancli_signal_exit() {{
+_ancli_signal="$1"
+trap - INT TERM HUP
+ancli_restore_tty
+kill -"$_ancli_signal" -$$ 2>/dev/null || true
+exit 128
+}}
+trap 'ancli_signal_exit INT' INT
+trap 'ancli_signal_exit TERM' TERM
+trap 'ancli_signal_exit HUP' HUP
 trap 'ancli_restore_tty' EXIT
 
 # 8. Android app-data channel: an app-launched shell lives in that app's mount
@@ -1420,11 +1447,16 @@ def _runtime_context_target():
 
 def _runtime_context_compat_targets():
     """Return vendor-specific discovery paths backed by the canonical context."""
+    codex_dir = os.path.join(ROOTFS, "root", ".codex")
     gemini_dir = os.path.join(ROOTFS, "root", ".gemini")
-    # 2026-11-13: Antigravity builds in the field have used both names. Keep
-    # both documented global entries pointed at the same AnCLI context so a
-    # clean install and an upgraded container load identical guidance.
+    # Codex CLI discovers ~/.codex/AGENTS.md as its global project context.
+    # Keep it backed by the same canonical file as the other Agent clients.
+    # Antigravity builds in the field have used both .gemini names, so retain
+    # both links as well. A user-owned regular file is preserved by
+    # _sync_runtime_context_compat unless --refresh explicitly permits replacing
+    # an AnCLI-generated file.
     return [
+        os.path.join(codex_dir, "AGENTS.md"),
         os.path.join(gemini_dir, "AGENTS.md"),
         os.path.join(gemini_dir, "GEMINI.md"),
     ]

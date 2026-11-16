@@ -1,3 +1,11 @@
+## v1.2.623-beta (2026-11-16)
+
+### Codex 退出与运行时上下文修复
+
+- 修复 Codex TUI 断开后 wrapper、PRoot 和前台 Codex 子进程残留，导致终端无法返回 shell 的问题。收到 INT、TERM 或 HUP 时先恢复终端状态，再结束整个前台进程组。
+- 为 Codex 建立 `/root/.codex/AGENTS.md` 全局上下文入口，并与 AnCLI 规范运行时上下文保持软链接；同时保留 Antigravity 的 `.gemini` 兼容入口。
+- 保留用户已有的全局规则文件，项目目录中的 `AGENTS.md` 继续按工具规则优先加载。
+
 ## v1.2.622-beta (2026-11-16)
 
 ### WebUI 模块安装任务修复

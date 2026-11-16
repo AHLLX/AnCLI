@@ -6,9 +6,9 @@ Welcome, fellow AI Assistant. If you are reading this, you have been tasked with
 AnCLI is a unified, systemless environment manager and plugin-based installer designed to bring full Linux command-line tools (like Node.js, Go, or Python-based AI agents) to rooted Android devices.
 Because Android uses the Bionic C library, native Linux binaries often crash. AnCLI solves this by using `proot` to run a pure Ubuntu `glibc` base system transparently on Android.
 
-## 当前交接（2026-11-16，v1.2.622-beta）
+## 当前交接（2026-11-16，v1.2.623-beta）
 
-- `v1.2.622-beta` 发布源提交为 `4d0c6c4`，当前主分支最新文档提交为 `706da72`，`versionCode=34`。对应的不可变发布包是 `ancli-34-v1.2.622-beta.zip`；发布工作流已构建并验证通过。
+- `v1.2.623-beta` 使用 `versionCode=35`，对应的不可变发布包是 `ancli-35-v1.2.623-beta.zip`；该 beta 包包含 Codex 退出清理和 Codex 全局上下文入口修复。
 - 保持单一 `proot-ubuntu` 后端。容器内提供原生 `/usr/local/bin/ancli`，宿主 bash 兼容入口仍使用 `$MODPATH/system/bin/bash`（Path A）和 `/data/adb/ksu/bin/bash`、`/data/adb/ap/bin/bash`（Path B）。
 - 容器 wrapper 的 PATH 仍为 `/usr/local/bin:/usr/bin:/bin:/data/adb/ksu/bin:/data/adb/ap/bin:/system/bin`，`/system/bin` 只能作为 Android 安全只读工具的回退路径。
 - PRoot 容器命令不能启用 Linux User Namespace 或 Seccomp sandbox；Android 内核下会产生 `EINVAL`。不要引入嵌套 PRoot。
@@ -112,7 +112,7 @@ When debugging paths or writing cleanup logic, refer to this exact physical mapp
 - **Magisk Module**: `/data/adb/modules/ancli/`
 - **App-data channel**: `/mnt/ancli-data` (host bind of the real `/data`, visible in the container as `/mnt/ancli-data/data/<pkg>`)
 - **Global settings (2026-11-13)**: `/root/.ancli-config.json` accepts `lang`, `default_cwd`, `proxy_mode` (`system|manual|direct`) and `proxy_url`. `ancli config` with no app id prints/updates them; `ancli config --json` reports the supported keys. Wrappers read `default_cwd` and proxy settings at launch, so changing them needs no wrapper regeneration. The WebUI's Settings dialog is the visual editor for the same file and shows the backend, data channel, effective directory, and proxy mode.
-- **Runtime context**: `ancli agent-init` renders the bundled `src/runtime-context/AGENTS.md` template into the guest-wide `/root/.agents/AGENTS.md`; the fresh file requires the first Agent session to probe the device and run `ancli agent-init --finalize`, which writes measured paths and capabilities back and removes the prompt. `ancli reset --yes` restores that pending template. `ancli repair`, `ancli skills`, and successful installs ensure it too. It links both `/root/.gemini/AGENTS.md` and `/root/.gemini/GEMINI.md` for Antigravity, because deployed builds use either filename. Existing project `AGENTS.md` files are kept. The generated global `AGENTS.md` contains environment paths and guidance, never secret values.
+- **Runtime context**: `ancli agent-init` renders the bundled `src/runtime-context/AGENTS.md` template into the guest-wide `/root/.agents/AGENTS.md`; the fresh file requires the first Agent session to probe the device and run `ancli agent-init --finalize`, which writes measured paths and capabilities back and removes the prompt. `ancli reset --yes` restores that pending template. `ancli repair`, `ancli skills`, and successful installs ensure it too. It links `/root/.codex/AGENTS.md` for Codex CLI and both `/root/.gemini/AGENTS.md` and `/root/.gemini/GEMINI.md` for Antigravity, because deployed builds use those documented global filenames. Existing project `AGENTS.md` files are kept and remain higher-priority project context when a tool searches a repository. The generated global `AGENTS.md` contains environment paths and guidance, never secret values.
 - **AGY host command compatibility**: Android normally has `/system/bin/sh` but no host-side `bash`. The module may install a marked POSIX forwarding script at `/data/adb/ksu/bin/bash` and `/data/adb/ap/bin/bash` so AGY's remote `bash -c` probe can start. It supports only POSIX syntax, preserves a real user-provided bash, never overlays `/system/bin`, and never re-enters PRoot. `ancli doctor --json` reports `host_compatibility.bash`; `ancli repair` restores the entrypoint when it is missing.
 
 **Why `/data/data` can look empty.** An `su` started from an app (Termius, an SSH-server app) runs in
