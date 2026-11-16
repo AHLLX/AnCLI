@@ -8,7 +8,7 @@ Because Android uses the Bionic C library, native Linux binaries often crash. An
 
 ## 当前交接（2026-11-16，v1.2.622-beta）
 
-- 当前主分支提交为 `4d0c6c4`，标签为 `v1.2.622-beta`，`versionCode=34`。对应的不可变发布包是 `ancli-34-v1.2.622-beta.zip`；发布工作流已构建并验证通过。
+- `v1.2.622-beta` 发布源提交为 `4d0c6c4`，当前主分支最新文档提交为 `706da72`，`versionCode=34`。对应的不可变发布包是 `ancli-34-v1.2.622-beta.zip`；发布工作流已构建并验证通过。
 - 保持单一 `proot-ubuntu` 后端。容器内提供原生 `/usr/local/bin/ancli`，宿主 bash 兼容入口仍使用 `$MODPATH/system/bin/bash`（Path A）和 `/data/adb/ksu/bin/bash`、`/data/adb/ap/bin/bash`（Path B）。
 - 容器 wrapper 的 PATH 仍为 `/usr/local/bin:/usr/bin:/bin:/data/adb/ksu/bin:/data/adb/ap/bin:/system/bin`，`/system/bin` 只能作为 Android 安全只读工具的回退路径。
 - PRoot 容器命令不能启用 Linux User Namespace 或 Seccomp sandbox；Android 内核下会产生 `EINVAL`。不要引入嵌套 PRoot。
