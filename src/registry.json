@@ -1,5 +1,5 @@
 {
-  "version": "1.2.620-beta",
+  "version": "1.2.621-beta",
   "apps": {
     "aider": {
       "name": "Aider",
@@ -146,6 +146,31 @@
         "note": "Requires Node ^22.19 || >=24; the container's apt Node is 18, so install_cmd unpacks the official Node LTS tarball (.tar.gz — no xz, no apt, no GPG keyring) into /usr/local and installs with that npm. Bump the pinned Node version + this note together. The wrapper uses direct network mode for dsh so disabling the Android proxy does not leave a stale cached proxy in its environment. Keeps its config in /root/.dsh, which module upgrades preserve."
       },
       "version": "0.1.7-rc.2"
+    },
+    "codex-cli": {
+      "name": "Codex CLI",
+      "description": "OpenAI's coding agent for the terminal",
+      "author": "OpenAI",
+      "install_mode": "proot",
+      "install_cmd": "npm install -g @openai/codex",
+      "update_cmd": "npm install -g @openai/codex@latest",
+      "uninstall_cmd": "npm uninstall -g @openai/codex",
+      "executable": "codex",
+      "env_vars": [],
+      "optional_env_vars": [
+        "OPENAI_API_KEY",
+        "OPENAI_BASE_URL",
+        "HTTP_PROXY",
+        "HTTPS_PROXY",
+        "ALL_PROXY"
+      ],
+      "version_cmd": "codex --version",
+      "latest": {
+        "source": "npm",
+        "package": "@openai/codex",
+        "note": "Official OpenAI Codex CLI package. npm selects the Linux arm64 optional runtime inside the Android PRoot guest."
+      },
+      "version": "0.169.0"
     }
   }
 }

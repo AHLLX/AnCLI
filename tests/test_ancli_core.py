@@ -391,6 +391,7 @@ class TestWebUIJsonAPI:
 # ---------------------------------------------------------------------------
 # Registry auth-config policy: only tools whose official docs confirm env-var
 # auth keep env_vars. (Claude Code: ANTHROPIC_API_KEY skips its login prompt.)
+# 2026-11-16：Codex CLI supports OPENAI_API_KEY/OPENAI_BASE_URL for headless auth.
 # ---------------------------------------------------------------------------
 
 def test_registry_env_vars_only_claude_code():
@@ -406,6 +407,7 @@ def test_registry_env_vars_only_claude_code():
         'claude-code': {'ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN',
                         'ANTHROPIC_BASE_URL', 'ANTHROPIC_MODEL'},
         'dsh': {'DEEPSEEK_API_KEY', 'DEEPSEEK_BASE_URL'},
+        'codex-cli': {'OPENAI_API_KEY', 'OPENAI_BASE_URL'},
     }
     for aid, app in reg['apps'].items():
         exposed = set(app.get('env_vars') or []) | set(app.get('optional_env_vars') or [])

@@ -1,3 +1,12 @@
+## v1.2.621-beta (2026-11-16)
+
+### Codex CLI 支持
+
+- 新增 OpenAI Codex CLI registry 条目，使用官方 npm 包 `@openai/codex`。
+- 支持安装、更新、卸载、真实版本探针和 npm 官方版本检查。
+- 暴露 `OPENAI_API_KEY`、`OPENAI_BASE_URL` 与 HTTP/HTTPS/ALL 代理配置项。
+- 应用卡片加入随模块打包的 OpenAI 官方图标，资源加载失败时回退到字母徽章。
+
 ## v1.2.620-beta (2026-11-16)
 
 ### WebUI 渠道更新提示
