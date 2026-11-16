@@ -1013,7 +1013,7 @@ body.ime-open .topbar { backdrop-filter: none; -webkit-backdrop-filter: none; ba
               <img src="logo.png?v=1.2.618" class="about-logo" alt="AnCLI Logo">
               <div class="about-brand">
                 <span class="about-name">AnCLI</span>
-                <span class="about-badge" id="aboutVer">v1.2.618-beta</span>
+                <span class="about-badge" id="aboutVer">v1.2.622-beta</span>
               </div>
               <p class="about-desc" data-i18n="aboutDesc">统一的 Android 命令行与 AI Agent 环境管理器</p>
             </div>
@@ -1599,8 +1599,14 @@ async function runBackground(cmd, preface, options) {
     const actualCmd = options.keepLog && /^\s*ancli\s+/.test(cmd)
       ? cmd + ' --keep-log=' + shQuote(logFile)
       : cmd;
-    const shell = actualCmd + ' > ' + shQuote(logFile) + ' 2>&1; echo $? > ' + shQuote(exitFile);
-    const r = await execCmd('sh -c ' + shQuote(shell) + ' &');
+    // 2026-11-16：KernelSU WebUI 的 exec 返回后会回收未脱离的后台子进程。
+    // 安装模块时如果只追加 `&`，通常只留下 meta 文件，没有日志和退出码，
+    // 页面随后把任务误报为“下载失败”。用 nohup 让子 shell 脱离桥接会话，
+    // 并由同一个 shell 写入日志和退出码，下载和安装都能稳定完成。
+    const quotedActual = String(actualCmd).replace(/'/g, "'\\''");
+    const detached = "nohup sh -c '" + quotedActual + " > " + shQuote(logFile) +
+      " 2>&1; echo $? > " + shQuote(exitFile) + "' </dev/null &";
+    const r = await execCmd('sh -c ' + shQuote(detached));
     if (r.code !== 0 && !r.stdout && !r.stderr) {
       logLine('后台任务启动失败（exit ' + r.code + '）', 'err');
       task.status = 'failed'; renderTaskTabs();

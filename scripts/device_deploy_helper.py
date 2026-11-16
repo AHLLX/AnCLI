@@ -91,11 +91,16 @@ icons_src = f"{STAGE}/ancli-app-icons"
 icons_dst = "/data/adb/modules/ancli/webroot/assets/app-icons"
 if os.path.isdir(icons_src):
     try:
-        os.makedirs(icons_dst, exist_ok=True)
-        for name in os.listdir(icons_src):
-            src = os.path.join(icons_src, name)
-            dst = os.path.join(icons_dst, name)
-            if os.path.isfile(src):
+        # 2026-11-16：adb push 目录在目标不存在时会多套一层 app-icons/；
+        # 兼容平铺目录和这个嵌套目录，确保新图标不会只留在临时目录里。
+        nested = os.path.join(icons_src, "app-icons")
+        source_root = nested if os.path.isdir(nested) else icons_src
+        for root, _dirs, files in os.walk(source_root):
+            for name in files:
+                src = os.path.join(root, name)
+                rel = os.path.relpath(src, source_root)
+                dst = os.path.join(icons_dst, rel)
+                os.makedirs(os.path.dirname(dst), exist_ok=True)
                 shutil.copyfile(src, dst)
                 os.chmod(dst, 0o644)
                 print(f"OK    {dst} ({os.path.getsize(dst)} bytes)")

@@ -8,7 +8,7 @@ DEVICES = [
     ("6spro", "192.168.1.207:36657"),
 ]
 
-ZIP_NAME = "ancli-33-v1.2.621-beta.zip"
+ZIP_NAME = "ancli-34-v1.2.622-beta.zip"
 
 def run_adb(device_serial, cmd):
     full_cmd = ["adb", "-s", device_serial] + cmd
