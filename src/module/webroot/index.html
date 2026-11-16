@@ -75,13 +75,17 @@ body {
 
 /* ============================ 顶栏 ============================ */
 .topbar {
-  position: sticky; top: 0; z-index: 20;
+  position: sticky; top: 8px; z-index: 20;
   display: flex; align-items: center; justify-content: space-between; gap: 10px;
   padding: calc(10px + env(safe-area-inset-top)) 16px 10px;
   background: color-mix(in srgb, var(--surface) 86%, transparent);
   backdrop-filter: blur(12px) saturate(1.4);
   -webkit-backdrop-filter: blur(12px) saturate(1.4);
-  border-bottom: 1px solid var(--border);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
+  margin: 8px 12px 0;
 }
 body.ime-open .topbar { backdrop-filter: none; -webkit-backdrop-filter: none; background: var(--surface); }
 .brand { display: flex; align-items: center; gap: 9px; min-width: 0; }
@@ -190,15 +194,6 @@ body.ime-open .topbar { backdrop-filter: none; -webkit-backdrop-filter: none; ba
 .app-icon span { position: relative; z-index: 1; text-shadow: 0 1px 2px rgba(0,0,0,.18); }
 .app[data-state="idle"] .app-icon { box-shadow: inset 0 1px 0 rgba(255,255,255,.24), 0 2px 6px rgba(12, 14, 18, .08); }
 .app[data-state="broken"] .app-icon { filter: saturate(.72); }
-.mono {
-  width: 34px; height: 34px; border-radius: 11px; display: grid; place-items: center;
-  font: 650 14px/1 inherit; color: var(--muted);
-  background: var(--surface-2); border: 1px solid var(--border);
-}
-.app[data-state="installed"] .mono { color: var(--ok); background: var(--ok-soft); border-color: transparent; }
-.app[data-state="update"] .mono { color: var(--accent); background: var(--accent-soft); border-color: transparent; }
-.app[data-state="broken"] .mono { color: var(--danger); background: var(--danger-soft); border-color: transparent; }
-
 .app-main { min-width: 0; }
 .app-title { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
 .app-title .name { font-size: 14.5px; font-weight: 620; letter-spacing: .01em; }
@@ -239,6 +234,7 @@ body.ime-open .topbar { backdrop-filter: none; -webkit-backdrop-filter: none; ba
 .console-head {
   display: flex; align-items: center; gap: 8px;
   padding: 9px 10px 9px 13px; border-bottom: 1px solid var(--border); background: var(--surface);
+  border-radius: var(--r-lg) var(--r-lg) 0 0;
 }
 .console-head b { font-size: 12.5px; font-weight: 620; }
 .log-tabs { display: flex; gap: 6px; overflow-x: auto; padding: 8px 10px 0; background: var(--console-bg); }
@@ -445,8 +441,8 @@ body.ime-open .topbar { backdrop-filter: none; -webkit-backdrop-filter: none; ba
   position: relative;
   width: 100%;
   max-width: 100%;
-  height: clamp(150px, 36vh, 300px);
-  max-height: calc(84vh - 160px);
+  height: clamp(220px, 48vh, 430px);
+  max-height: calc(90vh - 160px);
   overflow: hidden;
   min-width: 0;
   min-height: 120px;
@@ -458,7 +454,7 @@ body.ime-open .topbar { backdrop-filter: none; -webkit-backdrop-filter: none; ba
   width: 500%;
   max-width: 500%;
   height: 100%;
-  transition: transform 0.22s cubic-bezier(0.22, 1, 0.36, 1);
+  transition: transform 0.28s cubic-bezier(0.22, 1, 0.36, 1);
   will-change: transform;
 }
 .settings-panel {
@@ -472,7 +468,12 @@ body.ime-open .topbar { backdrop-filter: none; -webkit-backdrop-filter: none; ba
   padding: 2px 2px 8px;
   box-sizing: border-box;
   -webkit-overflow-scrolling: touch;
+  scrollbar-gutter: stable;
 }
+
+/* 2026-11-16：设置弹窗单独提高可用高度，避免 Tab 内容被底部按钮压缩。 */
+#setOverlay .dialog { max-height: min(90vh, 700px); }
+#setOverlay .dlg-body { min-height: 0; }
 
 /* ============================ 关于界面样式 ============================ */
 .about-hero {
@@ -532,7 +533,8 @@ body.ime-open .topbar { backdrop-filter: none; -webkit-backdrop-filter: none; ba
 /* 针对矮屏手机或横屏模式自适应视口高度，确保底下的圆角和按钮完整显示 */
 @media (max-height: 600px) {
   .dialog { max-height: 94vh; }
-  .settings-viewport { height: clamp(130px, 32vh, 200px); max-height: calc(94vh - 145px); }
+  #setOverlay .dialog { max-height: 94vh; }
+  .settings-viewport { height: clamp(180px, 48vh, 320px); max-height: calc(94vh - 145px); }
 }
 
 /* 统一条目行样式：标题居左、选择框紧随条目后边 */
@@ -672,6 +674,7 @@ body.ime-open .topbar { backdrop-filter: none; -webkit-backdrop-filter: none; ba
     align-items: center;
     gap: 8px 10px;
     padding: calc(9px + env(safe-area-inset-top)) 10px 9px;
+    margin: 8px 8px 0;
   }
   .topbar > * { min-width: 0; }
   .brand { grid-area: brand; }
@@ -687,7 +690,7 @@ body.ime-open .topbar { backdrop-filter: none; -webkit-backdrop-filter: none; ba
   .actions .btn { width: 100%; min-width: 0; padding: 9px 8px; }
   #btnRepair { grid-column: 1 / -1; }
   .app { grid-template-columns: 32px minmax(0, 1fr); gap: 9px; padding: 12px 11px; }
-  .app-icon, .mono { width: 32px; height: 32px; }
+  .app-icon { width: 32px; height: 32px; }
   .app-title .name { font-size: 14px; }
   .desc { font-size: 11.5px; overflow-wrap: anywhere; }
   .app-actions { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; margin-top: 8px; }
@@ -701,7 +704,8 @@ body.ime-open .topbar { backdrop-filter: none; -webkit-backdrop-filter: none; ba
   .dialog { width: min(480px, calc(100vw - 20px)); max-height: min(86vh, 520px); border-radius: var(--r-lg); }
   .dlg-body { padding: 11px 12px 4px; }
   .dlg-foot { padding: 9px 12px; border-radius: 0 0 var(--r-lg) var(--r-lg); }
-  .settings-viewport { height: clamp(140px, 35vh, 280px); max-height: calc(86vh - 150px); }
+  #setOverlay .dialog { max-height: min(92vh, 760px); }
+  .settings-viewport { height: clamp(210px, 56vh, 520px); max-height: calc(92vh - 150px); }
   .settings-grid { grid-template-columns: 1fr; }
   .settings-status { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
@@ -724,7 +728,7 @@ body.ime-open .topbar { backdrop-filter: none; -webkit-backdrop-filter: none; ba
 <header class="topbar">
   <div class="brand">
     <span class="mark" aria-hidden="true">
-      <img src="logo.png?v=1.2.617" alt="">
+      <img src="logo.png?v=1.2.618" alt="">
     </span>
     <span>
       <b>AnCLI</b>
@@ -968,10 +972,10 @@ body.ime-open .topbar { backdrop-filter: none; -webkit-backdrop-filter: none; ba
           <!-- 面板 5：关于 -->
           <div class="settings-panel" id="panel-about">
             <div class="about-hero">
-              <img src="logo.png?v=1.2.617" class="about-logo" alt="AnCLI Logo">
+              <img src="logo.png?v=1.2.618" class="about-logo" alt="AnCLI Logo">
               <div class="about-brand">
                 <span class="about-name">AnCLI</span>
-                <span class="about-badge" id="aboutVer">v1.2.617-beta</span>
+                <span class="about-badge" id="aboutVer">v1.2.618-beta</span>
               </div>
               <p class="about-desc" data-i18n="aboutDesc">统一的 Android 命令行与 AI Agent 环境管理器</p>
             </div>
@@ -1553,7 +1557,10 @@ async function runBackground(cmd, preface, options) {
   const deadline = Number(options.timeoutMs) > 0 ? Date.now() + Number(options.timeoutMs) : 0;
   try { await execCmd('printf ' + shQuote(JSON.stringify(task)) + ' > ' + shQuote(metaFile)); } catch (e) { /* log file remains usable */ }
   try {
-    const actualCmd = options.keepLog ? cmd + ' --keep-log=' + shQuote(logFile) : cmd;
+    // 2026-11-16：只有 AnCLI 自身支持 --keep-log，shell 安装器不能追加该参数。
+    const actualCmd = options.keepLog && /^\s*ancli\s+/.test(cmd)
+      ? cmd + ' --keep-log=' + shQuote(logFile)
+      : cmd;
     const shell = actualCmd + ' > ' + shQuote(logFile) + ' 2>&1; echo $? > ' + shQuote(exitFile);
     const r = await execCmd('sh -c ' + shQuote(shell) + ' &');
     if (r.code !== 0 && !r.stdout && !r.stderr) {
@@ -1722,6 +1729,14 @@ async function restoreTasks() {
         if (!task.id || !task.logFile || taskTabs.has(task.id)) continue;
         const exitCode = (parts[1] || '').trim();
         task.status = exitCode === '' ? 'running' : (exitCode === '0' ? 'done' : 'failed');
+        // 2026-11-16：WebUI 被系统杀掉后，旧任务可能只剩 meta 文件。
+        // 超过 5 分钟没有 exit 标记就视为失联，避免重启页面后永久轮询并锁住桥接队列。
+        const startedAt = Number(String(task.id || '').split('_', 1)[0]);
+        if (task.status === 'running' && startedAt && Date.now() - startedAt > 5 * 60 * 1000) {
+          task.status = 'failed';
+          task.recoveryNote = '后台任务已失联，请重新执行。';
+          task.output = (task.output || []).concat(task.recoveryNote);
+        }
         taskTabs.set(task.id, task);
         if (task.scope) expandedAppLogs.add(task.scope);
       } catch (e) { /* ignore single malformed entry */ }
@@ -1735,11 +1750,19 @@ async function restoreTasks() {
 
 async function monitorTask(task) {
   let last = 0;
+  const startedAt = Number(String(task.id || '').split('_', 1)[0]);
+  const recoveryDeadline = startedAt ? startedAt + 5 * 60 * 1000 : 0;
   try {
     const size = await execCmd('wc -c < ' + shQuote(task.logFile) + ' 2>/dev/null || echo 0');
     last = Number.parseInt(strip(size.stdout || '0').trim(), 10) || 0;
   } catch (e) { /* start from the beginning if the size probe is unavailable */ }
   for (;;) {
+    if (recoveryDeadline && Date.now() > recoveryDeadline) {
+      task.status = 'failed';
+      task.output = (task.output || []).concat('后台任务已失联，请重新执行。');
+      renderTaskTabs();
+      break;
+    }
     await sleep(TASK_POLL_MS);
     try {
       const out = await execCmd('tail -c +' + (last + 1) + ' ' + shQuote(task.logFile) + ' 2>/dev/null');
@@ -2081,7 +2104,8 @@ function appIconMarkup(app) {
   const theme = APP_ICON_THEMES[id] || { label: String(app && app.name || id || '?').trim().charAt(0).toUpperCase(), bg: '#64748b', fg: '#f8fafc' };
   const label = esc(theme.label || '?');
   const name = esc(app && app.name || id || '应用');
-  return '<div class="app-icon" role="img" aria-label="' + name + ' Logo" title="' + name + '"><span>' + label + '</span></div>';
+  const style = ' style="--app-icon-bg:' + esc(theme.bg) + ';--app-icon-fg:' + esc(theme.fg) + ';"';
+  return '<div class="app-icon"' + style + ' role="img" aria-label="' + name + ' Logo" title="' + name + '"><span>' + label + '</span></div>';
 }
 
 function renderApps(apps) {
@@ -2934,12 +2958,16 @@ async function installDownloadedModule(path, button, messageEl) {
   button.textContent = uiText('aboutInstallStarting');
   messageEl.textContent = uiText('aboutInstallStarting');
   setBusy(true, uiText('aboutInstallStarting'));
+  // 2026-11-16：安装命令必须保持为完整 shell 语句，不能使用 keepLog。
+  // runBackground 的 keepLog 会在命令尾部追加参数，追加到 `fi` 后会让 shell
+  // 语法失效，表现为任务只有 meta 文件、没有 exit 文件，按钮一直卡住。
   const installCmd =
-    'if [ -x /data/adb/ksu/bin/ksud ]; then /data/adb/ksu/bin/ksud module install ' + shQuote(path) +
+    'if [ -x /data/adb/ksud ]; then /data/adb/ksud module install ' + shQuote(path) +
     '; elif [ -x /data/adb/ap/bin/ksud ]; then /data/adb/ap/bin/ksud module install ' + shQuote(path) +
+    '; elif [ -x /data/adb/ksu/bin/ksud ]; then /data/adb/ksu/bin/ksud module install ' + shQuote(path) +
     '; else echo "ksud 不可用" >&2; exit 127; fi';
   try {
-    const task = await runBackground(installCmd, '', { keepLog: true, timeoutMs: 180000 });
+    const task = await runBackground(installCmd, '', { timeoutMs: 180000 });
     if (task.status === 'done') {
       messageEl.textContent = uiText('aboutInstallDone');
       button.textContent = uiText('aboutInstallDone');
