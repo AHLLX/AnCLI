@@ -175,6 +175,21 @@ body.ime-open .topbar { backdrop-filter: none; -webkit-backdrop-filter: none; ba
 }
 .app[data-state="update"] { border-color: var(--accent-line); box-shadow: var(--shadow); }
 .app[data-state="update"]::before { content: ""; position: absolute; inset: 0 auto 0 0; width: 3px; background: var(--accent); }
+.app-icon {
+  width: 34px; height: 34px; border-radius: 11px; display: grid; place-items: center;
+  position: relative; overflow: hidden;
+  font: 750 14px/1 inherit; color: var(--app-icon-fg, var(--muted));
+  background: var(--app-icon-bg, var(--surface-2));
+  border: 1px solid rgba(255,255,255,.22);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.24), 0 3px 8px rgba(12, 14, 18, .12);
+}
+.app-icon::after {
+  content: ""; position: absolute; width: 24px; height: 24px; right: -9px; bottom: -11px;
+  border-radius: 50%; background: rgba(255,255,255,.18);
+}
+.app-icon span { position: relative; z-index: 1; text-shadow: 0 1px 2px rgba(0,0,0,.18); }
+.app[data-state="idle"] .app-icon { box-shadow: inset 0 1px 0 rgba(255,255,255,.24), 0 2px 6px rgba(12, 14, 18, .08); }
+.app[data-state="broken"] .app-icon { filter: saturate(.72); }
 .mono {
   width: 34px; height: 34px; border-radius: 11px; display: grid; place-items: center;
   font: 650 14px/1 inherit; color: var(--muted);
@@ -672,7 +687,7 @@ body.ime-open .topbar { backdrop-filter: none; -webkit-backdrop-filter: none; ba
   .actions .btn { width: 100%; min-width: 0; padding: 9px 8px; }
   #btnRepair { grid-column: 1 / -1; }
   .app { grid-template-columns: 32px minmax(0, 1fr); gap: 9px; padding: 12px 11px; }
-  .mono { width: 32px; height: 32px; }
+  .app-icon, .mono { width: 32px; height: 32px; }
   .app-title .name { font-size: 14px; }
   .desc { font-size: 11.5px; overflow-wrap: anywhere; }
   .app-actions { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; margin-top: 8px; }
@@ -709,7 +724,7 @@ body.ime-open .topbar { backdrop-filter: none; -webkit-backdrop-filter: none; ba
 <header class="topbar">
   <div class="brand">
     <span class="mark" aria-hidden="true">
-      <img src="logo.png?v=1.2.616" alt="">
+      <img src="logo.png?v=1.2.617" alt="">
     </span>
     <span>
       <b>AnCLI</b>
@@ -953,10 +968,10 @@ body.ime-open .topbar { backdrop-filter: none; -webkit-backdrop-filter: none; ba
           <!-- 面板 5：关于 -->
           <div class="settings-panel" id="panel-about">
             <div class="about-hero">
-              <img src="logo.png?v=1.2.616" class="about-logo" alt="AnCLI Logo">
+              <img src="logo.png?v=1.2.617" class="about-logo" alt="AnCLI Logo">
               <div class="about-brand">
                 <span class="about-name">AnCLI</span>
-                <span class="about-badge" id="aboutVer">v1.2.616-beta</span>
+                <span class="about-badge" id="aboutVer">v1.2.617-beta</span>
               </div>
               <p class="about-desc" data-i18n="aboutDesc">统一的 Android 命令行与 AI Agent 环境管理器</p>
             </div>
@@ -2049,6 +2064,26 @@ document.querySelectorAll('#langSwitch button').forEach(b => {
   };
 });
 
+// 2026-11-16：应用卡片使用本地品牌色徽章，避免依赖远程图标服务导致首屏空白。
+// 这里使用简洁字母标识而不是下载第三方图片，保证离线可用、加载快速且不改变工具运行逻辑。
+const APP_ICON_THEMES = Object.freeze({
+  aider: { label: 'A', bg: '#e86f3d', fg: '#fff8f2' },
+  mimo: { label: 'M', bg: '#1687d9', fg: '#f3faff' },
+  agy: { label: 'A', bg: '#7655d6', fg: '#faf8ff' },
+  'claude-code': { label: 'C', bg: '#c66a2b', fg: '#fff9f2' },
+  opencode: { label: 'O', bg: '#0f8278', fg: '#effffc' },
+  grok: { label: 'G', bg: '#20242b', fg: '#ffffff' },
+  dsh: { label: 'D', bg: '#2d63bd', fg: '#f4f8ff' }
+});
+
+function appIconMarkup(app) {
+  const id = String(app && app.id || '').toLowerCase();
+  const theme = APP_ICON_THEMES[id] || { label: String(app && app.name || id || '?').trim().charAt(0).toUpperCase(), bg: '#64748b', fg: '#f8fafc' };
+  const label = esc(theme.label || '?');
+  const name = esc(app && app.name || id || '应用');
+  return '<div class="app-icon" role="img" aria-label="' + name + ' Logo" title="' + name + '"><span>' + label + '</span></div>';
+}
+
 function renderApps(apps) {
   const wrap = document.getElementById('apps');
   const pending = apps.filter(a => a.installed && a.update_available).length;
@@ -2110,10 +2145,8 @@ function renderApps(apps) {
       btns.push('<button class="btn xs danger" data-act="uninstall">' + esc(uiText('uninstall')) + '</button>');
     }
 
-    const who = a.id || a.name || '?';
-    const initial = esc(String(a.name || who).trim().charAt(0).toUpperCase());
     return '<div class="app" data-state="' + state + '" data-id="' + esc(a.id) + '">' +
-             '<div class="mono" aria-hidden="true">' + initial + '</div>' +
+             appIconMarkup(a) +
              '<div class="app-main">' +
                '<div class="app-title"><span class="name">' + esc(a.name) + '</span>' + chips.join('') + '</div>' +
                (a.description ? '<div class="desc">' + esc(a.description) + '</div>' : '') +
