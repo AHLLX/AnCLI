@@ -6,13 +6,14 @@ Welcome, fellow AI Assistant. If you are reading this, you have been tasked with
 AnCLI is a unified, systemless environment manager and plugin-based installer designed to bring full Linux command-line tools (like Node.js, Go, or Python-based AI agents) to rooted Android devices.
 Because Android uses the Bionic C library, native Linux binaries often crash. AnCLI solves this by using `proot` to run a pure Ubuntu `glibc` base system transparently on Android.
 
-## 当前交接（2026-11-16，v1.2.621-beta）
+## 当前交接（2026-11-16，v1.2.622-beta）
 
-- 当前主分支提交为 `68e1de3`，标签为 `v1.2.621-beta`，`versionCode=33`。对应的不可变发布包是 `ancli-33-v1.2.621-beta.zip`；发布工作流已经验证通过。
+- 当前主分支提交为 `4d0c6c4`，标签为 `v1.2.622-beta`，`versionCode=34`。对应的不可变发布包是 `ancli-34-v1.2.622-beta.zip`；发布工作流已构建并验证通过。
 - 保持单一 `proot-ubuntu` 后端。容器内提供原生 `/usr/local/bin/ancli`，宿主 bash 兼容入口仍使用 `$MODPATH/system/bin/bash`（Path A）和 `/data/adb/ksu/bin/bash`、`/data/adb/ap/bin/bash`（Path B）。
 - 容器 wrapper 的 PATH 仍为 `/usr/local/bin:/usr/bin:/bin:/data/adb/ksu/bin:/data/adb/ap/bin:/system/bin`，`/system/bin` 只能作为 Android 安全只读工具的回退路径。
 - PRoot 容器命令不能启用 Linux User Namespace 或 Seccomp sandbox；Android 内核下会产生 `EINVAL`。不要引入嵌套 PRoot。
 - WebUI 的渠道检查、首页更新箭头和应用版本检查均为后台异步流程；检查无更新要明确提示，有更新要显示版本、简介、下载进度和安装按钮。设置弹窗需保持手机、平板可滚动，顶部深色容器和弹窗使用完整圆角。
+- WebUI 长任务必须通过 `nohup` 脱离 KernelSU WebUI exec 会话，并由后台 shell 写入 `.log` 和 `.exit`；只追加 `&` 会导致模块安装只留下 `.meta`，页面误报“下载失败”。
 - 应用目录当前包含 `codex-cli`，使用官方 npm 包 `@openai/codex`，并随模块打包 OpenAI 图标；图标损坏或缺失时必须回退到字母徽章。
 - `update.json` 目前仍指向稳定版 `v1.2.612`。Beta 版本通过 GitHub tag/release 直接测试，除非明确要切换稳定渠道，否则不要把 beta 写入稳定 manifest。
 
@@ -46,7 +47,7 @@ adb -s $serial push src/runtime-context/AGENTS.md /data/local/tmp/ancli-runtime-
 adb -s $serial push src/module/module.prop /data/local/tmp/ancli-module.prop.new
 adb -s $serial push src/module/service.sh /data/local/tmp/service.sh.new
 adb -s $serial push src/module/webroot/index.html /data/local/tmp/ancli-webui.html.new
-adb -s $serial push src/module/webroot/assets/app-icons /data/local/tmp/ancli-app-icons
+adb -s $serial push src/module/webroot/assets/app-icons/. /data/local/tmp/ancli-app-icons
 
 $helper = Get-Content -Raw scripts/device_deploy_helper.py
 $proot = '/data/local/tmp/ancli/bin/proot -r /data/local/tmp/ancli/rootfs -b /data/local/tmp -b /data/adb/modules/ancli -b /data/adb/ksu -b /data/adb/ap /usr/bin/env PATH=/usr/local/bin:/usr/bin:/bin python3 -'
