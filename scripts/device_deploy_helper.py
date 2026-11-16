@@ -86,4 +86,20 @@ if os.path.exists(webui_src):
     except Exception as e:
         print(f"FAIL  {webui_dst}: {e}")
 
+# 2026-11-16：WebUI 官方图标随页面一起热部署，失败时页面仍有字母徽章回退。
+icons_src = f"{STAGE}/ancli-app-icons"
+icons_dst = "/data/adb/modules/ancli/webroot/assets/app-icons"
+if os.path.isdir(icons_src):
+    try:
+        os.makedirs(icons_dst, exist_ok=True)
+        for name in os.listdir(icons_src):
+            src = os.path.join(icons_src, name)
+            dst = os.path.join(icons_dst, name)
+            if os.path.isfile(src):
+                shutil.copyfile(src, dst)
+                os.chmod(dst, 0o644)
+                print(f"OK    {dst} ({os.path.getsize(dst)} bytes)")
+    except Exception as e:
+        print(f"FAIL  {icons_dst}: {e}")
+
 sys.exit(0)

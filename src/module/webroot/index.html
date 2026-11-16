@@ -187,11 +187,18 @@ body.ime-open .topbar { backdrop-filter: none; -webkit-backdrop-filter: none; ba
   border: 1px solid rgba(255,255,255,.22);
   box-shadow: inset 0 1px 0 rgba(255,255,255,.24), 0 3px 8px rgba(12, 14, 18, .12);
 }
+.app-icon-image {
+  position: relative; z-index: 2; display: block;
+  width: 100%; height: 100%; object-fit: cover; border-radius: inherit;
+  background: #fff;
+}
+.app-icon[data-icon-id="opencode"] .app-icon-image { object-fit: contain; padding: 5px; }
 .app-icon::after {
   content: ""; position: absolute; width: 24px; height: 24px; right: -9px; bottom: -11px;
   border-radius: 50%; background: rgba(255,255,255,.18);
 }
 .app-icon span { position: relative; z-index: 1; text-shadow: 0 1px 2px rgba(0,0,0,.18); }
+.app-icon-image[hidden], .app-icon-fallback[hidden] { display: none; }
 .app[data-state="idle"] .app-icon { box-shadow: inset 0 1px 0 rgba(255,255,255,.24), 0 2px 6px rgba(12, 14, 18, .08); }
 .app[data-state="broken"] .app-icon { filter: saturate(.72); }
 .app-main { min-width: 0; }
@@ -2087,16 +2094,23 @@ document.querySelectorAll('#langSwitch button').forEach(b => {
   };
 });
 
-// 2026-11-16：应用卡片使用本地品牌色徽章，避免依赖远程图标服务导致首屏空白。
-// 这里使用简洁字母标识而不是下载第三方图片，保证离线可用、加载快速且不改变工具运行逻辑。
+// 2026-11-16：应用卡片优先使用官方本地图标，避免远程图标服务拖慢首屏。
+// 每个资源随模块发布；资源损坏、缺失或加载失败时回退到本地字母徽章。
 const APP_ICON_THEMES = Object.freeze({
-  aider: { label: 'A', bg: '#e86f3d', fg: '#fff8f2' },
-  mimo: { label: 'M', bg: '#1687d9', fg: '#f3faff' },
-  agy: { label: 'A', bg: '#7655d6', fg: '#faf8ff' },
-  'claude-code': { label: 'C', bg: '#c66a2b', fg: '#fff9f2' },
-  opencode: { label: 'O', bg: '#0f8278', fg: '#effffc' },
-  grok: { label: 'G', bg: '#20242b', fg: '#ffffff' },
-  dsh: { label: 'D', bg: '#2d63bd', fg: '#f4f8ff' }
+  // 官方来源：github.com/Aider-AI.png
+  aider: { label: 'A', asset: 'aider.png', bg: '#e86f3d', fg: '#fff8f2' },
+  // 官方来源：mimo.mi.com/static/favicon.5c3d18dc51d9cbea.png
+  mimo: { label: 'M', asset: 'mimo.jpg', bg: '#1687d9', fg: '#f3faff' },
+  // 官方来源：antigravity.google/assets/image/antigravity-logo.png
+  agy: { label: 'A', asset: 'agy.png', bg: '#7655d6', fg: '#faf8ff' },
+  // 官方来源：claude.ai/images/claude_app_icon.png
+  'claude-code': { label: 'C', asset: 'claude.png', bg: '#c66a2b', fg: '#fff9f2' },
+  // 官方来源：opencode.ai/brand/files/opencode-logo-light.svg
+  opencode: { label: 'O', asset: 'opencode.svg', bg: '#0f8278', fg: '#effffc' },
+  // 官方来源：grok.com/images/favicon.svg
+  grok: { label: 'G', asset: 'grok.svg', bg: '#20242b', fg: '#ffffff' },
+  // 官方来源：www.deepseek.com/favicon.ico
+  dsh: { label: 'D', asset: 'dsh.ico', bg: '#2d63bd', fg: '#f4f8ff' }
 });
 
 function appIconMarkup(app) {
@@ -2105,7 +2119,10 @@ function appIconMarkup(app) {
   const label = esc(theme.label || '?');
   const name = esc(app && app.name || id || '应用');
   const style = ' style="--app-icon-bg:' + esc(theme.bg) + ';--app-icon-fg:' + esc(theme.fg) + ';"';
-  return '<div class="app-icon"' + style + ' role="img" aria-label="' + name + ' Logo" title="' + name + '"><span>' + label + '</span></div>';
+  const asset = theme.asset ? './assets/app-icons/' + theme.asset : '';
+  const image = asset ? '<img class="app-icon-image" src="' + esc(asset) + '" alt="" loading="lazy" decoding="async" onerror="this.hidden=true;this.nextElementSibling.hidden=false;">' : '';
+  const fallback = '<span class="app-icon-fallback"' + (asset ? ' hidden' : '') + '>' + label + '</span>';
+  return '<div class="app-icon" data-icon-id="' + esc(id || 'fallback') + '"' + style + ' role="img" aria-label="' + name + ' Logo" title="' + name + '">' + image + fallback + '</div>';
 }
 
 function renderApps(apps) {

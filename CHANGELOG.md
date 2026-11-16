@@ -1,3 +1,11 @@
+## v1.2.619-beta (2026-11-16)
+
+### WebUI 官方应用图标
+
+- 应用卡片优先显示随模块打包的官方品牌图标，首屏不再依赖远程图片服务。
+- 图标资源加载失败、文件缺失或离线时，自动回退到原有的本地字母徽章。
+- 覆盖 Aider、MiMo、Antigravity、Claude Code、OpenCode、Grok 和 DeepSeek Harness。
+
 ## v1.2.618-beta (2026-11-16)
 
 ### WebUI 安装任务与设置界面修复
