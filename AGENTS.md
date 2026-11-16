@@ -6,13 +6,52 @@ Welcome, fellow AI Assistant. If you are reading this, you have been tasked with
 AnCLI is a unified, systemless environment manager and plugin-based installer designed to bring full Linux command-line tools (like Node.js, Go, or Python-based AI agents) to rooted Android devices.
 Because Android uses the Bionic C library, native Linux binaries often crash. AnCLI solves this by using `proot` to run a pure Ubuntu `glibc` base system transparently on Android.
 
-## Current handoff (2026-11-15, v1.2.612)
+## 当前交接（2026-11-16，v1.2.621-beta）
 
-- Keep the single `proot-ubuntu` backend. The guest environment provides native `/usr/local/bin/ancli` for Agents and terminal users. Host bash compatibility is deployed to `$MODPATH/system/bin/bash` (Path A) and `/data/adb/ksu/bin/bash` / `/data/adb/ap/bin/bash` (Path B).
-- Container wrapper PATH includes `/system/bin` at fallback priority (`/usr/local/bin:/usr/bin:/bin:/data/adb/ksu/bin:/data/adb/ap/bin:/system/bin`), exposing Android safe read-only tools like `getprop` without colliding with GNU utilities.
-- PRoot container commands must never invoke Linux User Namespace / Seccomp sandboxes due to Android kernel constraints; unprivileged sandboxing causes `EINVAL` (invalid argument).
-- WebUI version checks are non-blocking and silent in background. Modal dialogs are centered across mobile viewports with full border radius and responsive viewport height.
-- Release `v1.2.612` uses `versionCode=24`; the KernelSU official catalog workflow publishes the immutable asset `ancli-24-v1.2.612.zip`.
+- 当前主分支提交为 `68e1de3`，标签为 `v1.2.621-beta`，`versionCode=33`。对应的不可变发布包是 `ancli-33-v1.2.621-beta.zip`；发布工作流已经验证通过。
+- 保持单一 `proot-ubuntu` 后端。容器内提供原生 `/usr/local/bin/ancli`，宿主 bash 兼容入口仍使用 `$MODPATH/system/bin/bash`（Path A）和 `/data/adb/ksu/bin/bash`、`/data/adb/ap/bin/bash`（Path B）。
+- 容器 wrapper 的 PATH 仍为 `/usr/local/bin:/usr/bin:/bin:/data/adb/ksu/bin:/data/adb/ap/bin:/system/bin`，`/system/bin` 只能作为 Android 安全只读工具的回退路径。
+- PRoot 容器命令不能启用 Linux User Namespace 或 Seccomp sandbox；Android 内核下会产生 `EINVAL`。不要引入嵌套 PRoot。
+- WebUI 的渠道检查、首页更新箭头和应用版本检查均为后台异步流程；检查无更新要明确提示，有更新要显示版本、简介、下载进度和安装按钮。设置弹窗需保持手机、平板可滚动，顶部深色容器和弹窗使用完整圆角。
+- 应用目录当前包含 `codex-cli`，使用官方 npm 包 `@openai/codex`，并随模块打包 OpenAI 图标；图标损坏或缺失时必须回退到字母徽章。
+- `update.json` 目前仍指向稳定版 `v1.2.612`。Beta 版本通过 GitHub tag/release 直接测试，除非明确要切换稳定渠道，否则不要把 beta 写入稳定 manifest。
+
+## 默认实施流程（每次改动都按这个顺序）
+
+1. **先确认范围和状态**：阅读本文件，运行 `git status --short`、`git log -3 --oneline --decorate`，确认没有把旧的设备补丁、截图、下载包或私密配置带入提交。
+2. **只改源码目录**：核心逻辑改 `src/ancli-core.py`，应用目录改 `src/registry.json`，脚本改 `scripts/`，模块页面改 `src/module/webroot/`。`src/module/ancli/` 是构建同步目录，由 `scripts/build_module.py` 生成，不要手工维护。
+3. **先做离线检查**：注册表用 `python -m json.tool src/registry.json` 校验；Shell 用 `sh -n`；Python 用 `python -m pytest tests/ -q`；WebUI 改动要提取 `<script>` 后执行 `node --check`，并按 `.webui-preview/README.md` 渲染手机和平板尺寸截图。
+4. **再构建包**：运行 `python scripts/build_module.py`，确认 ZIP 根目录直接包含 `module.prop`，并确认版本号、版本码和资产文件名一致。
+5. **有明确设备授权时再验证**：先运行 `adb devices -l` 识别当前序列号，不能假定上一台手机仍在线。只读验证优先使用 `ancli --version`、`ancli list --json`、`ancli status --json`；不要手动启动 TUI 版本探针。
+6. **需要热补丁时走容器**：将文件推送到 `/data/local/tmp/*.new` 后，通过 `scripts/device_deploy_helper.py` 在 AnCLI 容器内替换运行文件。不要用单条 `su -c` 直接写 `/data/local/tmp/ancli` 或 `/data/adb/modules/ancli`。
+7. **最后再提交发布**：检查 `git diff --check` 和 `git diff --stat`，只暂存本次相关文件；提交、打 tag、推送后等待 KernelSU workflow 完成，再检查 GitHub Release 资产。不要把未验证的设备结果写成已刷写或已安装。
+
+### 当前设备验证模板
+
+```powershell
+# 设备序列号必须来自本次输出；平板更换后不要复用旧手机序列号。
+adb devices -l
+$serial = '<serial>' # 替换为本次 adb devices -l 输出中的设备序列号
+
+# 只读检查，每个 su -c 单独执行，避免 KernelSU 只解析第一段 PATH 的限制。
+adb -s $serial shell su -c '/data/adb/ksu/bin/ancli --version'
+adb -s $serial shell su -c '/data/adb/ksu/bin/ancli list --json'
+adb -s $serial shell su -c '/data/adb/ksu/bin/ancli status --json'
+
+# 热补丁：先按 helper 文件名推送，再把 helper 通过 PRoot 容器执行。
+adb -s $serial push src/ancli-core.py /data/local/tmp/ancli-core.py.new
+adb -s $serial push src/registry.json /data/local/tmp/ancli-registry.new
+adb -s $serial push src/module/ancli_env.sh /data/local/tmp/ancli-env.sh.new
+adb -s $serial push src/runtime-context/AGENTS.md /data/local/tmp/ancli-runtime-context.md.new
+adb -s $serial push src/module/module.prop /data/local/tmp/ancli-module.prop.new
+adb -s $serial push src/module/service.sh /data/local/tmp/service.sh.new
+adb -s $serial push src/module/webroot/index.html /data/local/tmp/ancli-webui.html.new
+adb -s $serial push src/module/webroot/assets/app-icons /data/local/tmp/ancli-app-icons
+
+$helper = Get-Content -Raw scripts/device_deploy_helper.py
+$proot = '/data/local/tmp/ancli/bin/proot -r /data/local/tmp/ancli/rootfs -b /data/local/tmp -b /data/adb/modules/ancli -b /data/adb/ksu -b /data/adb/ap /usr/bin/env PATH=/usr/local/bin:/usr/bin:/bin python3 -'
+$helper | & adb -s $serial shell su -c $proot
+```
 
 ## 2. Core Architecture
 You must understand these three pillars before writing any code:
@@ -91,6 +130,9 @@ To add support for a new CLI tool, do not modify `ancli-core.py`. Instead, add a
 ```json
 "app_id": {
   "name": "Human Readable Name",
+  "description": "Short description shown in WebUI",
+  "author": "Vendor or project",
+  "install_mode": "proot",
   "install_cmd": "npm install -g something",
   "update_cmd": "npm update -g something",
   "uninstall_cmd": "npm uninstall -g something",
@@ -103,6 +145,8 @@ To add support for a new CLI tool, do not modify `ancli-core.py`. Instead, add a
 }
 ```
 *Note: If `env_vars` is provided, `ancli-core.py` will automatically prompt the user for them and inject them into the wrapper via `export KEY="VALUE"`.*
+
+All entries must also expose the generic proxy trio (`HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`) in `optional_env_vars` or `env_vars`. Add provider keys only when the vendor documents them. For example, `codex-cli` uses `@openai/codex` with `OPENAI_API_KEY` and `OPENAI_BASE_URL`; do not copy those keys to unrelated apps. Keep the app id stable because it is persisted in `installed.json` and rendered by the WebUI.
 
 **Prefer tarball / npm / pip installs over `apt` inside the container.** The rootfs ships with a half-configured `systemd` (its postinst cannot run under proot: "Failed to resolve group 'systemd-journal'"), so `dpkg --configure -a` aborts with a proot assertion, and `apt-get` also fails archive signature checks unless every call carries `-o Acquire::AllowInsecureRepositories=true -o Acquire::AllowUnauthenticated=true --allow-unauthenticated` (see `customize.sh`). A chain that relies on `apt-get … && npm …` therefore dies at the first step and silently falls through to whatever `||` alternative follows. Download the vendor tarball (`.tar.gz`, not `.tar.xz` — `xz` is absent) or install from npm/pip instead.
 
@@ -133,12 +177,13 @@ the bundled docs. Aider-style tools with no skill system use `CONVENTIONS.md` / 
 - There is **no Android emulator** for this project — and an emulator could not verify this module anyway (it needs a rooted real device).
 - Only use `adb` when a device is actually attached (`adb devices` lists one). Even then, stick to read-only inspection (`ls`, `cat`, `settings get`, `logcat`) unless the user explicitly asks you to flash/test.
 - **NEVER** claim the module was flashed or verified when it was not, and never flash/uninstall on your own. Fall back to `sh -n` syntax checks, `python -m pytest tests/`, and static reasoning.
-- Update detection has two runnable checks: `python -m pytest tests/` (offline unit suite) and `python scripts/smoke_update_check.py` (optional live-upstream check for registry latest sources). Device state comes from `ancli list --json` on the target phone.
-- **Hot-patching a running module must go through the container.** A `su -c` one-liner cannot write `/data/local/tmp/ancli/*` or `/data/adb/modules/ancli/*` on this device (denied even with SELinux permissive — the KernelSU `su` mount namespace is the restriction), while the proot child writes the same files fine. Use `scripts/device_deploy_helper.py`, piped into the container with `... python3 -`, to replace `bin/ancli-core.py`, either registry copy, `bin/ancli_env.sh`, `module.prop`, `service.sh` or `webroot/index.html`, and to clean stale files. Restore SELinux (`setenforce 1`) if you temporarily relaxed it.
+- Update detection has two runnable checks: `python -m pytest tests/` (offline unit suite) and `python scripts/smoke_update_check.py` (optional live-upstream check for registry latest sources). Device state comes from `ancli list --json` on the currently attached phone or tablet.
+- **Hot-patching a running module must go through the container.** A `su -c` one-liner cannot write `/data/local/tmp/ancli/*` or `/data/adb/modules/ancli/*` on this device (denied even with SELinux permissive — the KernelSU `su` mount namespace is the restriction), while the proot child writes the same files fine. Use `scripts/device_deploy_helper.py`, piped into the container with `... python3 -`, to replace `bin/ancli-core.py`, both registry copies, `bin/ancli_env.sh`, runtime context, `module.prop`, `service.sh`, `webroot/index.html` and `webroot/assets/app-icons/`. Restore SELinux (`setenforce 1`) if you temporarily relaxed it.
 - **KernelSU's `su -c` resolves only the *first* command via `/data/adb/ksu/bin`.** `echo $PATH` shows no ksu entry, yet `su -c 'dsh --version'` works while `su -c 'dsh --version; claude --version'` fails with "inaccessible or not found" for the second command. Verify tools one per `su -c` invocation (or use absolute paths); do not conclude a wrapper is missing from a chained command. The manager's WebUI exec bridge is unaffected.
 - **Never probe a TUI agent by hand.** `su -c 'mimo --version'` ignores the flag, opens the interactive UI and blocks forever (looks like a hung device; it cost a real debugging round). Use `ancli list --json` / `ancli check`, which probe inside the container with `PROBE_TIMEOUT` and never inherit the terminal.
 - **After flashing the module, run `ancli repair`.** The flash replaces the module directory with the ZIP contents, so `system/bin/<tool>` loses every wrapper `ancli install` had added (the tools keep working through `/data/adb/ksu/bin`, but dual-injection is incomplete until repair regenerates them). The same repair re-applies the dsh cookie patch. Also expect a harmless `cp: can't create …/bin/proot: Text file busy` in the flash log when a proot process is alive: the running binary is the same version and the reboot settles it.
 - **The WebUI can be rendered and reviewed without a device.** `.webui-preview/build.js` stubs `window.ksu` with `list --json` / `status --json` payloads captured from the device and writes `preview-*.html`; screenshot them with `chrome --headless --virtual-time-budget=4000 --window-size=412,900 --screenshot=… file:///…`. Without `--virtual-time-budget` the shot stops mid-load (skeleton cards); the harness disables CSS transitions because virtual time does not advance them (see `.webui-preview/README.md`). After any `webroot/index.html` change: render locally, then deploy through `scripts/device_deploy_helper.py` and open the page in the manager.
+- **平板/手机实机截图要记录尺寸。** 连接设备后可用 `adb -s <serial> exec-out screencap -p > .webui-preview/shot-device.png` 保存当前页面；至少检查窄手机宽度和横向/竖向平板布局。截图只用于本地验证，不要提交到仓库。
 - **WebUI JSON calls must stay quiet and parseable.** `status --json` is dispatched *before* catalog and official-version work so diagnostics cannot break `JSON.parse`. Internal payload calls go through `ancli(cmd, true)` so the output panel shows user actions rather than raw JSON.
 
 ## 8. Network Proxy & VPN Constraints (CRITICAL)
@@ -156,17 +201,17 @@ the bundled docs. Aider-style tools with no skill system use `CONVENTIONS.md` / 
 - **The Solution**: Do not choose binds from `$PWD`. Generate wrappers with the complete common-tree list and include each path when it exists in the current namespace: `/sdcard`, `/storage`, `/mnt`, `/data`, `/apex`, `/linkerconfig`, and `/system`. This keeps symlink targets available without emitting a fatal-looking warning for an absent `/sdcard` alias.
 
 ## 10. Version & Release Checklist (CRITICAL)
-Releases are consumed by Magisk/KernelSU/APatch managers through `update.json`, so **every version number lives in three places and must move together**:
+Stable releases are consumed by Magisk/KernelSU/APatch managers through `update.json`. Beta releases are published as immutable GitHub tags for direct testing and intentionally leave the stable manifest unchanged. In both cases, the module source and ZIP name must agree:
 
 | Where | Field | Must match |
 | :--- | :--- | :--- |
 | `src/module/module.prop` | `version` / `versionCode` | source of truth; `versionCode` must always increase |
-| `update.json` | `version` / `versionCode` / `zipUrl` / `changelog` | same version, and `zipUrl` must point at the **exact** asset name of the new Release |
+| `update.json` | stable channel only: `version` / `versionCode` / `zipUrl` / `changelog` | stable `zipUrl` must point at the **exact** asset name of the stable Release; do not overwrite it for beta testing |
 | GitHub Release asset | `<id>-<versionCode>-<version>.zip` | file name must equal the basename in `zipUrl` (case included) |
 
-Use a three-part version with an unrestricted numeric patch segment. `v1.2.610` is the current small release after `v1.2.609`. Keep `versionCode` as a separate monotonically increasing integer for KernelSU and Magisk comparisons. `python scripts/prepare_release.py v1.2.610 22` synchronizes the five version sources and the official KernelSU asset name.
+Use a three-part version with an unrestricted numeric patch segment. A beta tag adds the `-beta` suffix, for example `v1.2.621-beta`; `versionCode` remains a separate monotonically increasing integer for KernelSU and Magisk comparisons. `scripts/prepare_release.py` accepts only stable `vX.Y.Z` syntax, so beta releases use the manual procedure below.
 
-Release procedure (copy-paste, in order):
+### Stable release procedure
 
 ```bash
 # 1) add an `## Unreleased — ...` section to CHANGELOG.md
@@ -175,15 +220,42 @@ python scripts/prepare_release.py vX.Y.Z N
 # 3) build the flashable zip (module.prop must be at the ZIP root)
 python scripts/build_module.py
 unzip -l <id>-N-vX.Y.Z.zip | head
-# 4) run local checks, then commit, tag and push; the pinned workflow publishes the release
+# 4) run local checks, review scope, then commit, tag and push
 python scripts/extract_release_notes.py vX.Y.Z .release-notes.md
 python -m pytest tests/ -q
-git add -A && git commit -m "release: vX.Y.Z (versionCode N)"
+git diff --check
+git status --short
+git add CHANGELOG.md src/module/module.prop src/ancli-core.py src/registry.json update.json scripts/deploy_remote_devices.py
+git commit -m "release: vX.Y.Z (versionCode N)"
 git tag -a vX.Y.Z -m "vX.Y.Z"
 git push origin main && git push origin vX.Y.Z
-# 5) inspect the KernelSU Check Run and the immutable Release asset
-# 6) confirm the manager-visible manifest is live and points to the new asset
+# 5) wait for the KernelSU workflow and inspect the immutable Release asset
+# 6) confirm the manager-visible stable manifest points to the new asset
 curl -sL https://raw.githubusercontent.com/AHLLX/AnCLI/main/update.json
+```
+
+### Beta release procedure
+
+```bash
+# 1) add a dated `## vX.Y.Z-beta (YYYY-MM-DD)` section to CHANGELOG.md
+# 2) update these beta source-of-truth files together; leave update.json unchanged
+#    src/module/module.prop: version=vX.Y.Z-beta, versionCode=N
+#    src/ancli-core.py: VERSION = "X.Y.Z-beta"
+#    src/registry.json: top-level version = "X.Y.Z-beta"
+#    scripts/deploy_remote_devices.py: ZIP_NAME = "ancli-N-vX.Y.Z-beta.zip"
+# 3) build and run the same local checks as a stable release
+python scripts/build_module.py
+python -m pytest tests/ -q
+git diff --check
+git status --short
+# 4) stage only reviewed files, then tag and push
+git add CHANGELOG.md src/module/module.prop src/ancli-core.py src/registry.json scripts/deploy_remote_devices.py src/module/webroot
+git commit -m "release: vX.Y.Z-beta (versionCode N)"
+git tag -a vX.Y.Z-beta -m "vX.Y.Z-beta"
+git push origin main && git push origin vX.Y.Z-beta
+# 5) wait for the KernelSU workflow; the workflow builds the exact beta asset
+gh run list --limit 3 --json databaseId,status,conclusion,headBranch,headSha,workflowName,createdAt
+gh release view vX.Y.Z-beta --json tagName,url,isDraft,isPrerelease,assets
 ```
 
 Release rules:
@@ -191,8 +263,8 @@ Release rules:
 - **Never reuse or decrease `versionCode`**: managers compare it to decide there is an update.
 - **Never edit or replace an immutable Release**: fix a bad build with a new tag and a higher `versionCode`.
 - **Keep the KernelSU workflow pinned**: it performs the same ZIP validation as the official catalog and fails if the published Release is not immutable.
-- **Release notes must be version-specific**: use `scripts/extract_release_notes.py`; do not publish the entire historical `CHANGELOG.md` as one Release body.
+- **Release notes must be version-specific**: use `scripts/extract_release_notes.py`; do not publish the entire historical `CHANGELOG.md` as one Release body. The workflow accepts the beta tag because its section is already headed with the full `-beta` version.
 - **Never ship a zip whose root is not the module root** (no extra folder around `module.prop`), and keep the module directory name equal to `id` in `module.prop`.
 - **Upgrade must not lose user data**: `uninstall.sh` preserves `/data/local/tmp/ancli/rootfs` and `installed.json` (see section 4.5). Re-check that rule before every release that touches install/uninstall logic.
-- **Pre-release checks you can actually run here**: `sh -n` on every `src/module/*.sh`, `python -m pytest tests/`, and a manual read of the diff for `/system` writes (must not exist — see section 3 dual-injection).
-- **On a real device only** (when `adb devices` shows one, and only with the user's go-ahead): flash the zip, then verify `su -c "ls -la /data/adb/modules/ancli"`, `su -c "ancli --version"` (or the tool's own `--version`), a reboot that keeps the command available, and that a manager uninstall leaves `/data/local/tmp/ancli/rootfs` intact.
+- **Pre-release checks you can actually run here**: `sh -n` on every `src/module/*.sh`, `python -m pytest tests/ -q`, `python -m json.tool src/registry.json`, `python scripts/build_module.py`, WebUI `node --check`, and a manual read of the diff for `/system` writes (must not exist — see section 3 dual-injection).
+- **On a real device only** (when `adb devices -l` shows one, and only with the user's go-ahead): identify the current serial, hot-patch through the container helper when needed, then verify `ancli --version`, `ancli list --json`, and `ancli status --json`. Flashing, rebooting, uninstalling, or installing a new CLI requires explicit user scope; never claim those actions from a hot-patch or read-only probe.
