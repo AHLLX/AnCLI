@@ -102,30 +102,30 @@ profile_name() {
 
 profile_size() {
     case "$1" in
-        minimal) echo 480 ;;
-        standard) echo 900 ;;
-        developer) echo 1120 ;;
-        full) echo 1480 ;;
+        minimal) echo 0 ;;
+        standard) echo 0 ;;
+        developer) echo 0 ;;
+        full) echo 0 ;;
         *) echo 0 ;;
     esac
 }
 
 profile_packages() {
     case "$1" in
-        minimal) echo "ca-certificates curl python3 python3-pip git" ;;
-        standard) echo "ca-certificates curl python3 python3-pip git nodejs npm openjdk-17-jre-headless binutils" ;;
-        developer) echo "ca-certificates curl python3 python3-pip git nodejs npm openjdk-17-jre-headless binutils zip unzip build-essential" ;;
-        full) echo "ca-certificates curl python3 python3-pip git nodejs npm openjdk-17-jre-headless binutils zip unzip build-essential fcitx5 fcitx5-chinese-addons" ;;
+        minimal) echo "ca-certificates curl python3 python3-pip git nodejs npm" ;;
+        standard) echo "ca-certificates curl python3 python3-pip git nodejs npm zip unzip" ;;
+        developer) echo "ca-certificates curl python3 python3-pip git nodejs npm zip unzip build-essential binutils openjdk-17-jre-headless" ;;
+        full) echo "ca-certificates curl python3 python3-pip git nodejs npm zip unzip build-essential binutils openjdk-17-jre-headless jq ripgrep less file procps dnsutils openssh-client tmux vim-tiny fcitx5 fcitx5-chinese-addons" ;;
         *) return 1 ;;
     esac
 }
 
 profile_description() {
     case "$1" in
-        minimal) echo "Python、Git、curl、证书；适合轻量脚本和基础 CLI。" ;;
-        standard) echo "最小环境加 Node.js/npm、Java 17、binutils；适合常用 Agent。" ;;
-        developer) echo "标准环境加 zip/unzip 和 build-essential；适合 Android 与二进制分析。" ;;
-        full) echo "开发环境加 CJK 输入法组件；工具最全，占用空间最高。" ;;
+        minimal) echo "Python、pip、Node.js、npm、Git、curl 与证书，用于 Agent 基础安装。" ;;
+        standard) echo "最小环境加 ZIP 与 unzip 归档工具。" ;;
+        developer) echo "标准环境加编译工具、binutils 和 Java 17。" ;;
+        full) echo "开发环境加 JSON、搜索、终端、网络诊断及中文输入组件。" ;;
         *) echo "" ;;
     esac
 }
@@ -173,6 +173,8 @@ write_config() {
     default_cwd="${6:-$(json_value default_cwd)}"
     agent_mem="${7:-$(json_value agent_memory)}"
     [ -n "$agent_mem" ] || agent_mem="unconfigured"
+    _write_mirror="${8:-$(json_value mirror)}"
+    case "$_write_mirror" in tuna|ustc|official) ;; *) _write_mirror=tuna ;; esac
 
     tmp="$CONFIG.tmp.$$"
     cat > "$tmp" <<EOF
@@ -184,6 +186,7 @@ write_config() {
   "lang": "$lang",
   "default_cwd": "$default_cwd",
   "agent_memory": "$agent_mem",
+  "mirror": "$_write_mirror",
   "estimated_size_mb": $(profile_size "$profile")
 }
 EOF
@@ -237,13 +240,14 @@ status_json() {
     network="$(json_value network_mode)"
     [ -n "$network" ] || network="system"
     proxy_url="$(json_value proxy_url)"
+    _status_mirror="$(json_value mirror)"; [ -n "$_status_mirror" ] || _status_mirror=tuna
     apply_network_mode "$network"
 
     ready=false
     rootfs_arch="none"
     if [ -f "$ROOTFS/bin/bash" ]; then
-        ready=true
         rootfs_arch="$(get_rootfs_arch "$ROOTFS")"
+        [ -f "$ROOTFS/usr/bin/python3" ] && ready=true
     fi
     host_arch="$(detect_host_arch)"
     proot_deployed=false
@@ -263,12 +267,12 @@ status_json() {
         [ -n "$agent_mem" ] || agent_mem="unconfigured"
     fi
 
-    printf '{"status":"ok","ancli_version":"%s","execution_backend":"proot-ubuntu","rootfs_ready":%s,"proot_deployed":%s,"host_arch":"%s","rootfs_arch":"%s","installed_count":0,"android_data":false,"agent_memory":"%s","profile":"%s","profile_name":"%s","profile_description":"%s","profile_packages":"%s","estimated_size_mb":%s,"install_mode":"%s","network_mode":"%s","proxy_url":"%s","config":"%s"}\n' \
+    printf '{"status":"ok","ancli_version":"%s","execution_backend":"proot-ubuntu","rootfs_ready":%s,"proot_deployed":%s,"host_arch":"%s","rootfs_arch":"%s","installed_count":0,"android_data":false,"agent_memory":"%s","profile":"%s","profile_name":"%s","profile_description":"%s","profile_packages":"%s","estimated_size_mb":%s,"install_mode":"%s","network_mode":"%s","proxy_url":"%s","mirror":"%s","config":"%s"}\n' \
         "$(json_escape "$version")" "$ready" "$proot_deployed" "$(json_escape "$host_arch")" "$(json_escape "$rootfs_arch")" \
         "$(json_escape "$agent_mem")" "$(json_escape "$profile")" "$(json_escape "$(profile_name "$profile")")" \
         "$(json_escape "$(profile_description "$profile")")" "$(json_escape "$(profile_packages "$profile")")" \
         "$(profile_size "$profile")" "$(json_escape "$mode")" "$(json_escape "$network")" "$(json_escape "$proxy_url")" \
-        "$(json_escape "$CONFIG")"
+        "$(json_escape "$_status_mirror")" "$(json_escape "$CONFIG")"
 }
 
 list_json() {
@@ -373,7 +377,7 @@ EOF
     return 0
 }
 
-install_container() {
+install_container() (
     host_arch=$(detect_host_arch)
     if [ "$host_arch" = "unknown" ]; then
         say "[X] 不支持的宿主 CPU 架构：$(uname -m 2>/dev/null)"
@@ -382,13 +386,25 @@ install_container() {
 
     profile="$(json_value profile)"
     [ -n "$profile" ] || profile="standard"
+    _selected_mirror="$(json_value mirror)"; [ -n "$_selected_mirror" ] || _selected_mirror=tuna
+    for arg in "$@"; do
+        case "$arg" in --profile=*) profile="${arg#*=}" ;; --mirror=*) _selected_mirror="${arg#*=}" ;; *) say "[X] 未知安装参数：$arg"; return 2 ;; esac
+    done
     valid_profile "$profile" || { say "[X] 无效容器规格：$profile"; return 2; }
     network="$(json_value network_mode)"
     [ -n "$network" ] || network="system"
     proxy_url="$(json_value proxy_url)"
-    apply_network_mode "$network"
+    [ -f "$ANCLI_DIR/install-network.sh" ] && [ -f "$ANCLI_DIR/install-transaction.sh" ] || { say "[X] 容器安装辅助脚本缺失，请更新模块"; return 1; }
+    . "$ANCLI_DIR/install-network.sh"
+    . "$ANCLI_DIR/install-transaction.sh"
+    [ -f "$ANCLI_DIR/container-mirror.sh" ] || { say "[X] 容器下载站点配置缺失"; return 1; }
+    . "$ANCLI_DIR/container-mirror.sh"
+    ancli_mirror_valid "$_selected_mirror" || { say "[X] 无效下载站点"; return 2; }
+    ( write_config "$(json_value profile)" "$(json_value install_mode)" "$network" "$proxy_url" "$(json_value lang)" "$(json_value default_cwd)" "$(json_value agent_memory)" "$_selected_mirror" ) || return 1
+    say ">> 容器下载站点：$_selected_mirror"
+    ancli_install_network "$network" "$proxy_url" || return 1
 
-    mkdir -p "$ROOTFS" "$BIN_DIR" "$ANCLI_DIR/shm" || return 1
+    mkdir -p "$BIN_DIR" "$ANCLI_DIR/shm" || return 1
     chmod 1777 "$ANCLI_DIR/shm" 2>/dev/null || true
 
     ensure_proot_deployed || { say "[X] PRoot 部署失败，无法安装容器"; return 1; }
@@ -401,8 +417,11 @@ install_container() {
         apt_repo_type="ports"
     fi
 
-    primary_path="ubuntu-cdimage/ubuntu-base/releases/24.04/release/ubuntu-base-24.04.5-base-${rootfs_arch}.tar.gz"
-    fallback_path="ubuntu-cdimage/ubuntu-base/releases/24.04/release/ubuntu-base-24.04.4-base-${rootfs_arch}.tar.gz"
+    ancli_cleanup_stale_rootfs || { say "[X] 无法清理上次中断的临时安装目录"; return 1; }
+    if [ ! -f "$ROOTFS/bin/bash" ]; then
+        ancli_begin_rootfs || return 1
+        trap 'ancli_rollback_rootfs' EXIT
+    fi
 
     if [ -f "$ROOTFS/bin/bash" ]; then
         existing_arch="$(get_rootfs_arch "$ROOTFS")"
@@ -413,40 +432,18 @@ install_container() {
         say ">> 现有 Ubuntu Base ($existing_arch) 架构核对正确，跳过基础镜像下载"
     else
         say ">> 检测到宿主架构：$host_arch，将部署 Ubuntu Base ($rootfs_arch)..."
-        tar_path="$ANCLI_DIR/ubuntu-base.tar.gz"
+        tar_path="${ANCLI_ROOTFS_ARCHIVE:-$ANCLI_DIR/ubuntu-base.tar.gz}"
         success=0
-        for _p in "$primary_path" "$fallback_path"; do
-            for mirror in \
-                "https://${UBUNTU_MIRROR}/${_p}" \
-                "https://mirrors.tuna.tsinghua.edu.cn/${_p}" \
-                "https://mirrors.ustc.edu.cn/${_p}" \
-                "https://cdimage.ubuntu.com/${_p}"; do
-                say ">> 正在下载基础系统：$mirror"
-                if download_tarball "$tar_path" "$mirror" && [ -s "$tar_path" ]; then
-                    success=1
-                    break 2
-                fi
-            done
+        for _version in 24.04.5 24.04.4; do
+            _mirror_url=$(ancli_mirror_rootfs_url "$_selected_mirror" "$_version" "$rootfs_arch") || return 1
+            say ">> 正在下载基础系统：$_mirror_url"
+            if download_tarball "$tar_path" "$_mirror_url" && [ -s "$tar_path" ]; then success=1; break; fi
         done
-        [ "$success" -eq 1 ] || { say "[X] 所有 Ubuntu 镜像均下载失败，请检查网络或配置代理"; return 1; }
+        [ "$success" -eq 1 ] || { say "[X] 所选下载站点下载失败，请检查网络或切换站点"; return 1; }
 
         say ">> 解压 Ubuntu 根文件系统..."
         tar -xf "$tar_path" -C "$ROOTFS" || { say "[X] rootfs 解压失败"; return 1; }
         rm -f "$tar_path"
-
-        # 配置 APT 软件源（使用 http 避免初期缺少 ca-certificates 时校验报错）
-        if [ "$apt_repo_type" = "main" ]; then
-            sed -i "s|http://archive.ubuntu.com/ubuntu|http://${UBUNTU_MIRROR}/ubuntu|g" "$ROOTFS/etc/apt/sources.list.d/ubuntu.sources" 2>/dev/null || true
-            sed -i "s|http://security.ubuntu.com/ubuntu|http://${UBUNTU_MIRROR}/ubuntu|g" "$ROOTFS/etc/apt/sources.list.d/ubuntu.sources" 2>/dev/null || true
-            sed -i "s|https://archive.ubuntu.com/ubuntu|http://${UBUNTU_MIRROR}/ubuntu|g" "$ROOTFS/etc/apt/sources.list.d/ubuntu.sources" 2>/dev/null || true
-            sed -i "s|https://security.ubuntu.com/ubuntu|http://${UBUNTU_MIRROR}/ubuntu|g" "$ROOTFS/etc/apt/sources.list.d/ubuntu.sources" 2>/dev/null || true
-            sed -i "s|http://archive.ubuntu.com/ubuntu|http://${UBUNTU_MIRROR}/ubuntu|g" "$ROOTFS/etc/apt/sources.list" 2>/dev/null || true
-            sed -i "s|http://security.ubuntu.com/ubuntu|http://${UBUNTU_MIRROR}/ubuntu|g" "$ROOTFS/etc/apt/sources.list" 2>/dev/null || true
-        else
-            sed -i "s|http://ports.ubuntu.com/ubuntu-ports|http://${UBUNTU_MIRROR}/ubuntu-ports|g" "$ROOTFS/etc/apt/sources.list" 2>/dev/null || true
-            sed -i "s|http://ports.ubuntu.com/ubuntu-ports|http://${UBUNTU_MIRROR}/ubuntu-ports|g" "$ROOTFS/etc/apt/sources.list.d/ubuntu.sources" 2>/dev/null || true
-            sed -i "s|https://ports.ubuntu.com/ubuntu-ports|http://${UBUNTU_MIRROR}/ubuntu-ports|g" "$ROOTFS/etc/apt/sources.list.d/ubuntu.sources" 2>/dev/null || true
-        fi
 
         # 配置容器 resolv.conf
         rm -f "$ROOTFS/etc/resolv.conf"
@@ -460,6 +457,10 @@ install_container() {
             [ "$(wc -l < "$ROOTFS/etc/resolv.conf")" -ge 3 ] && break
         done
     fi
+
+    _apt_url=$(ancli_mirror_apt_url "$_selected_mirror" "$rootfs_arch") || return 1
+    ancli_mirror_configure_apt "$ROOTFS" "$_apt_url" || return 1
+    say ">> Ubuntu 软件包源：$_apt_url"
 
     packages="$(profile_packages "$profile")"
     setup="$ROOTFS/root/ancli-container-setup.sh"
@@ -479,22 +480,31 @@ echo 'APT::Sandbox::User "root";' > /etc/apt/apt.conf.d/01sandbox
 apt-get update -y
 apt-get install -y --no-install-recommends $packages
 apt-get clean
+/bin/sh /data/local/tmp/ancli/node-setup.sh
 rm -f /usr/lib/python3.12/EXTERNALLY-MANAGED /usr/lib/python3.11/EXTERNALLY-MANAGED
 mkdir -p /usr/local/bin /usr/local/sbin /usr/local/lib/node_modules /usr/local/share /root/.npm/_logs /root/.ancli-work
 chmod 755 /usr/local/bin /usr/local/sbin /usr/local/lib /usr/local/lib/node_modules
 EOF
     chmod 755 "$setup"
     proot="$BIN_DIR/proot -r $ROOTFS -b /dev -b /proc -b /sys -b $ANCLI_DIR -b /data/adb -w /root"
-    say ">> 安装容器规格：$(profile_name "$profile")（约 $(profile_size "$profile") MB）"
+    say ">> 安装容器规格：$(profile_name "$profile")（占用待实测）"
     say ">> 规格说明：$(profile_description "$profile")"
     say ">> 软件包：$packages"
+    say ">> 说明：切换较小规格不会卸载已有软件包。"
 
+    if [ -f "$ANCLI_DIR/apt-key-compat.sh" ]; then
+        sh "$ANCLI_DIR/apt-key-compat.sh" "$ROOTFS" || { say "[X] APT 密钥环兼容设置失败"; return 1; }
+    else
+        say "[X] APT 密钥环兼容脚本缺失；请更新模块"
+        return 1
+    fi
     if ! $proot /root/ancli-container-setup.sh; then
         say "[X] 容器依赖安装失败；配置已保留，可修复后再次执行 ancli container install"
         rm -f "$setup"
         return 1
     fi
     rm -f "$setup"
+    sh "$ANCLI_DIR/apt-key-compat.sh" "$ROOTFS" || return 1
 
     mkdir -p "$ROOTFS/usr/local/bin" "$ROOTFS/usr/local/sbin" "$ROOTFS/usr/local/lib/node_modules" "$ROOTFS/root/.npm/_logs"
     # 部署容器内原生 ancli 入口与 /usr/local/bin/bash
@@ -524,10 +534,13 @@ EOF
 EOF
     chmod 644 "$ROOTFS/root/.ancli-config.json" 2>/dev/null || true
 
-    write_config "$profile" "installed" "$network" "$proxy_url" "$lang" "$default_cwd" "$agent_mem"
+    if [ -n "${ANCLI_ROOTFS_STAGE:-}" ]; then
+        ancli_commit_rootfs || { say "[X] 无法提交新容器；已有数据未被覆盖"; return 1; }
+    fi
+    write_config "$profile" "installed" "$network" "$proxy_url" "$lang" "$default_cwd" "$agent_mem" "$_selected_mirror"
     say "[OK] 容器安装完成。可以运行 ancli repair 初始化 Agent 入口。"
     return 0
-}
+)
 
 action="${1:-status}"
 case "$action" in
@@ -548,20 +561,79 @@ case "$action" in
         profile="$(json_value profile)"; [ -n "$profile" ] || profile="standard"
         network="$(json_value network_mode)"; [ -n "$network" ] || network="system"
         proxy_url="$(json_value proxy_url)"
+        _set_mirror="$(json_value mirror)"; [ -n "$_set_mirror" ] || _set_mirror=tuna
         for arg in "$@"; do
             case "$arg" in
                 --profile=*) profile="${arg#*=}" ;;
                 --network=*) network="${arg#*=}" ;;
-                --proxy-url=*) proxy_url="${arg#*=}" ;;
+                --mirror=*) _set_mirror="${arg#*=}" ;;
+                --proxy-url=*) proxy_url="$(url_decode "${arg#*=}")" ;;
             esac
         done
         valid_profile "$profile" || { say "[X] profile 必须是 minimal、standard、developer 或 full"; exit 2; }
         case "$network" in system|manual|direct) ;; *) say "[X] network 必须是 system、manual 或 direct"; exit 2 ;; esac
-        write_config "$profile" "$(json_value install_mode)" "$network" "$proxy_url" || exit 1
+        case "$_set_mirror" in tuna|ustc|official) ;; *) say "[X] 无效下载站点"; exit 2 ;; esac
+        write_config "$profile" "$(json_value install_mode)" "$network" "$proxy_url" "$(json_value lang)" "$(json_value default_cwd)" "$(json_value agent_memory)" "$_set_mirror" || exit 1
         status_json
         ;;
+    speed-test)
+        shift
+        _speed_choice=tuna; _speed_network=system; _speed_proxy=''
+        for arg in "$@"; do
+            case "$arg" in
+                --mirror=*) _speed_choice="${arg#*=}" ;;
+                --network=*) _speed_network="${arg#*=}" ;;
+                --proxy-url=*) _speed_proxy="$(url_decode "${arg#*=}")" ;;
+                *) say "[X] Unknown speed test option"; exit 2 ;;
+            esac
+        done
+        case "$_speed_network" in system|manual|direct) ;; *) exit 2 ;; esac
+        [ -f "$ANCLI_DIR/container-mirror.sh" ] && [ -f "$ANCLI_DIR/install-network.sh" ] || exit 1
+        . "$ANCLI_DIR/container-mirror.sh"
+        . "$ANCLI_DIR/install-network.sh"
+        ancli_mirror_valid "$_speed_choice" || exit 2
+        unset http_proxy https_proxy all_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY
+        ANCLI_PROXY_TEST_TIMEOUT=4 ancli_install_network "$_speed_network" "$_speed_proxy" || exit 1
+        case "$(detect_host_arch)" in arm64) _speed_arch=arm64 ;; x86_64) _speed_arch=amd64 ;; *) exit 1 ;; esac
+        ancli_mirror_speed_test "$_speed_choice" "$_speed_arch"
+        ;;
+    vpn-status)
+        [ -f "$ANCLI_DIR/install-network.sh" ] || exit 1
+        . "$ANCLI_DIR/install-network.sh"
+        ancli_detect_vpn
+        ;;
+    network-test)
+        shift
+        _test_mode="system"
+        _test_proxy=""
+        for arg in "$@"; do
+            case "$arg" in
+                --network=*) _test_mode="${arg#*=}" ;;
+                --proxy-url=*) _test_proxy="$(url_decode "${arg#*=}")" ;;
+                *) say "[X] Unknown network test option"; exit 2 ;;
+            esac
+        done
+        case "$_test_mode" in system|manual|direct) ;; *) say "[X] Invalid network mode"; exit 2 ;; esac
+        [ -f "$ANCLI_DIR/install-network.sh" ] || { say "[X] Network helper missing"; exit 1; }
+        unset http_proxy https_proxy all_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY
+        . "$ANCLI_DIR/install-network.sh"
+        export ANCLI_NETWORK_VERBOSE=1 ANCLI_PROXY_TEST_TIMEOUT=5
+        ancli_detect_vpn
+        ancli_probe_ping_sites
+        ancli_probe_route
+        ancli_install_network "$_test_mode" "$_test_proxy" || exit $?
+        if [ "$_test_mode" = system ]; then
+            if [ -n "${_ancli_candidate:-}" ] && [ -n "${_ancli_host:-}" ] && [ -n "${_ancli_port:-}" ]; then
+                printf '%s %s %s\n' "$_ancli_host" "$_ancli_port" "$(date +%s)" > "$ANCLI_DIR/.proxy_cache" &&
+                    cp -f "$ANCLI_DIR/.proxy_cache" "$ANCLI_DIR/.proxy_cache_last" || true
+            else
+                rm -f "$ANCLI_DIR/.proxy_cache" "$ANCLI_DIR/.proxy_cache_last"
+            fi
+        fi
+        ;;
     install|apply)
-        install_container
+        shift
+        install_container "$@"
         ;;
     *)
         echo "用法：ancli container status [--json] | ancli container set --profile=standard --network=system | ancli container install" >&2

@@ -6,9 +6,9 @@ Welcome, fellow AI Assistant. If you are reading this, you have been tasked with
 AnCLI is a unified, systemless environment manager and plugin-based installer designed to bring full Linux command-line tools (like Node.js, Go, or Python-based AI agents) to rooted Android devices.
 Because Android uses the Bionic C library, native Linux binaries often crash. AnCLI solves this by using `proot` to run a pure Ubuntu `glibc` base system transparently on Android.
 
-## 当前交接（2026-11-16，v1.2.623-beta）
+## 当前交接（2026-11-18，v1.2.642-beta）
 
-- `v1.2.623-beta` 使用 `versionCode=35`，对应的不可变发布包是 `ancli-35-v1.2.623-beta.zip`；该 beta 包包含 Codex 退出清理和 Codex 全局上下文入口修复。
+- 当前工作区版本 `v1.2.642-beta` 使用 `versionCode=54`；平板竖屏布局和 Codex 强制退出恢复尚未在真机上回归。
 - 保持单一 `proot-ubuntu` 后端。容器内提供原生 `/usr/local/bin/ancli`，宿主 bash 兼容入口仍使用 `$MODPATH/system/bin/bash`（Path A）和 `/data/adb/ksu/bin/bash`、`/data/adb/ap/bin/bash`（Path B）。
 - 容器 wrapper 的 PATH 仍为 `/usr/local/bin:/usr/bin:/bin:/data/adb/ksu/bin:/data/adb/ap/bin:/system/bin`，`/system/bin` 只能作为 Android 安全只读工具的回退路径。
 - PRoot 容器命令不能启用 Linux User Namespace 或 Seccomp sandbox；Android 内核下会产生 `EINVAL`。不要引入嵌套 PRoot。
@@ -16,6 +16,7 @@ Because Android uses the Bionic C library, native Linux binaries often crash. An
 - WebUI 长任务必须通过 `nohup` 脱离 KernelSU WebUI exec 会话，并由后台 shell 写入 `.log` 和 `.exit`；只追加 `&` 会导致模块安装只留下 `.meta`，页面误报“下载失败”。
 - 应用目录当前包含 `codex-cli`，使用官方 npm 包 `@openai/codex`，并随模块打包 OpenAI 图标；图标损坏或缺失时必须回退到字母徽章。
 - `update.json` 目前仍指向稳定版 `v1.2.612`。Beta 版本通过 GitHub tag/release 直接测试，除非明确要切换稳定渠道，否则不要把 beta 写入稳定 manifest。
+- Codex 启动目录：从 `/` 或不可映射目录启动时使用配置的 `default_cwd`，留空时有效目录是 `/root/.ancli-work`；从可映射目录启动则保留原 cwd。排查设备扫描慢时记录启动时的 `pwd` 和实际工作区；模拟器状态不能代替平板实测。
 
 ## 默认实施流程（每次改动都按这个顺序）
 
@@ -96,8 +97,8 @@ When modifying the script execution logic or registry installer commands, you MU
 4. **Command Whitelist Validation**:
    - Any execution inside the container must be explicitly whitelisted in `ALLOWED_CMD_PREFIXES` in `ancli-core.py`. Add `bash ` and `sh ` if running local shell script installers.
    - Registry `version_cmd` probes (`claude --version`) go through `_capture_cmd(..., _probe_prefixes(...))`: the executable names come from the registry and extend the whitelist for that one call only (`validate_cmd` default stays strict). Because a probe runs *automatically* (WebUI page load, `ancli check`), it is stricter than `install_cmd`: `_probe_cmd_allowed()` requires the first token to equal the app's own `executable` and passes `allow_operators=False`, so no `&&`/`||`/`|` chain can be smuggled into a registry entry.
-5. **Do NOT force delete container data during Manager uninstall (CRITICAL)**:
-   - Magisk/KSU Manager uninstallations trigger `uninstall.sh` in a non-interactive background shell (there is **no TTY detection** in that script — do not claim there is). It defaults to KEEP: only `$ANCLI_DIR/bin` is wiped, while `/data/local/tmp/ancli/rootfs`, `installed.json`, `secrets/`, `registry.json` and `.update_cache.json` survive. A full purge only happens when `/data/local/tmp/ancli_force_purge` exists. This ensures Python dependencies (like `gitpython`) and API keys are not lost during module upgrades.
+5. **Uninstall purges AnCLI data**:
+   - Both manager uninstall and WebUI uninstall remove `/data/local/tmp/ancli` and AnCLI-owned wrappers; the manager removes its module directory on reboot. Do not recursively delete the `/mnt/ancli-data` mount point. Module updates must preserve the existing container and configuration.
 6. **`--json` stdout must stay parseable**: `_stdout_to_stderr()` redirects both `sys.stdout` and file descriptor 1 while data is gathered, so diagnostics from `os.system`/subprocess helpers land on stderr. Keep new diagnostics on stderr and never print to stdout from a helper used by `list --json` / `check --json`.
 
 ## 5. Physical Layout Mapping
@@ -175,7 +176,7 @@ shared root by `ancli skills`). When adding an app, survey its real paths instea
 the bundled docs. Aider-style tools with no skill system use `CONVENTIONS.md` / `--read`.
 
 ## 7. Testing Constraints
-- There is **no Android emulator** for this project — and an emulator could not verify this module anyway (it needs a rooted real device).
+- A rooted Android Studio AVD `emulator-5580` is available for limited module and shell checks, but it cannot replace tablet-specific network, KernelSU manager, or UI validation.
 - Only use `adb` when a device is actually attached (`adb devices` lists one). Even then, stick to read-only inspection (`ls`, `cat`, `settings get`, `logcat`) unless the user explicitly asks you to flash/test.
 - **NEVER** claim the module was flashed or verified when it was not, and never flash/uninstall on your own. Fall back to `sh -n` syntax checks, `python -m pytest tests/`, and static reasoning.
 - Update detection has two runnable checks: `python -m pytest tests/` (offline unit suite) and `python scripts/smoke_update_check.py` (optional live-upstream check for registry latest sources). Device state comes from `ancli list --json` on the currently attached phone or tablet.
@@ -266,6 +267,6 @@ Release rules:
 - **Keep the KernelSU workflow pinned**: it performs the same ZIP validation as the official catalog and fails if the published Release is not immutable.
 - **Release notes must be version-specific**: use `scripts/extract_release_notes.py`; do not publish the entire historical `CHANGELOG.md` as one Release body. The workflow accepts the beta tag because its section is already headed with the full `-beta` version.
 - **Never ship a zip whose root is not the module root** (no extra folder around `module.prop`), and keep the module directory name equal to `id` in `module.prop`.
-- **Upgrade must not lose user data**: `uninstall.sh` preserves `/data/local/tmp/ancli/rootfs` and `installed.json` (see section 4.5). Re-check that rule before every release that touches install/uninstall logic.
+- **Updates must preserve user data**: a manager uninstall intentionally purges `/data/local/tmp/ancli`; verify update and uninstall paths separately before release.
 - **Pre-release checks you can actually run here**: `sh -n` on every `src/module/*.sh`, `python -m pytest tests/ -q`, `python -m json.tool src/registry.json`, `python scripts/build_module.py`, WebUI `node --check`, and a manual read of the diff for `/system` writes (must not exist — see section 3 dual-injection).
 - **On a real device only** (when `adb devices -l` shows one, and only with the user's go-ahead): identify the current serial, hot-patch through the container helper when needed, then verify `ancli --version`, `ancli list --json`, and `ancli status --json`. Flashing, rebooting, uninstalling, or installing a new CLI requires explicit user scope; never claim those actions from a hot-patch or read-only probe.

@@ -177,3 +177,22 @@ test('real shell publishes metadata and preserves exit codes, percent signs and 
     fs.rmdirSync(cwd);
   }
 });
+
+test('uninstall runner retains active log and schedules cleanup only after success', async () => {
+  const { spawnSync } = require('node:child_process');
+  const bash = process.platform === 'win32' ? 'C:/Program Files/Git/bin/bash.exe' : '/bin/bash';
+  let launch = '';
+  const ctx = page(async command => {
+    if (command.includes('boot_time=')) return result('boot-a\t1234567890\n__ANCLI_TASKS_END__\n');
+    if (command.includes('ANCLI_UNINSTALL_LOG=')) { launch = command; return result(); }
+    if (command.includes('echo pending')) return result('0\n\n__ANCLI_POLL_END__');
+    throw new Error('unexpected command: ' + command);
+  });
+  const task = await ctx.runBackground('( echo uninstall )', '', {moduleUninstall: true, timeoutMs: 2000});
+  assert.equal(task.status, 'done');
+  assert.match(launch, /ANCLI_UNINSTALL_LOG=/);
+  assert.match(launch, /sleep 60/);
+  assert.match(launch, /\$rc/);
+  const syntax = spawnSync(bash, ['-n', '-c', launch], {encoding: 'utf8'});
+  assert.equal(syntax.status, 0, syntax.stderr);
+});

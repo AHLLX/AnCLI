@@ -5,34 +5,89 @@
     "minimal": {
       "name": "最小运行环境",
       "name_en": "Minimal runtime",
-      "description": "Python、Git、curl 和证书，适合轻量脚本与基础 CLI。",
-      "description_en": "Python, Git, curl and certificates for lightweight scripts and basic CLI tools.",
-      "estimated_size_mb": 480,
-      "packages": ["ca-certificates", "curl", "python3", "python3-pip", "git"]
+      "description": "Python、pip、Node.js、npm、Git、curl 与证书，用于 Agent 基础安装。",
+      "description_en": "Python, pip, Node.js, npm, Git, curl and certificates for agent installation.",
+      "estimated_size_mb": 0,
+      "packages": [
+        "ca-certificates",
+        "curl",
+        "python3",
+        "python3-pip",
+        "git",
+        "nodejs",
+        "npm"
+      ]
     },
     "standard": {
       "name": "标准 Agent 环境",
       "name_en": "Standard Agent",
-      "description": "包含 Node.js、npm，兼容 Codex、AGY、Claude、OpenCode 等常用 Agent。",
-      "description_en": "Adds Node.js and npm for Codex, AGY, Claude, OpenCode and similar agents.",
-      "estimated_size_mb": 900,
-      "packages": ["ca-certificates", "curl", "python3", "python3-pip", "git", "nodejs", "npm", "openjdk-17-jre-headless", "binutils"]
+      "description": "最小环境加 ZIP 与 unzip 归档工具。",
+      "description_en": "Minimal environment plus ZIP archive tools.",
+      "estimated_size_mb": 0,
+      "packages": [
+        "ca-certificates",
+        "curl",
+        "python3",
+        "python3-pip",
+        "git",
+        "nodejs",
+        "npm",
+        "zip",
+        "unzip"
+      ]
     },
     "developer": {
       "name": "开发工具环境",
       "name_en": "Developer tools",
-      "description": "标准环境加 Java、binutils、zip/unzip 和 build-essential，适合 Android 逆向与编译。",
-      "description_en": "Adds Java, binutils, archive and build tools for Android and binary analysis.",
-      "estimated_size_mb": 1120,
-      "packages": ["ca-certificates", "curl", "python3", "python3-pip", "git", "nodejs", "npm", "openjdk-17-jre-headless", "binutils", "zip", "unzip", "build-essential"]
+      "description": "标准环境加编译工具、binutils 和 Java 17。",
+      "description_en": "Standard environment plus build tools, binutils and Java 17.",
+      "estimated_size_mb": 0,
+      "packages": [
+        "ca-certificates",
+        "curl",
+        "python3",
+        "python3-pip",
+        "git",
+        "nodejs",
+        "npm",
+        "zip",
+        "unzip",
+        "build-essential",
+        "binutils",
+        "openjdk-17-jre-headless"
+      ]
     },
     "full": {
       "name": "完整开发环境",
       "name_en": "Full development",
-      "description": "开发工具环境加编译工具和 CJK 输入法组件，磁盘占用最高。",
-      "description_en": "Adds build tools and CJK input components; uses the most storage.",
-      "estimated_size_mb": 1480,
-      "packages": ["ca-certificates", "curl", "python3", "python3-pip", "git", "nodejs", "npm", "openjdk-17-jre-headless", "binutils", "zip", "unzip", "build-essential", "fcitx5", "fcitx5-chinese-addons"]
+      "description": "开发环境加 JSON、搜索、终端、网络诊断及中文输入组件。",
+      "description_en": "Developer environment plus JSON, search, terminal, network diagnostics and Chinese input tools.",
+      "estimated_size_mb": 0,
+      "packages": [
+        "ca-certificates",
+        "curl",
+        "python3",
+        "python3-pip",
+        "git",
+        "nodejs",
+        "npm",
+        "zip",
+        "unzip",
+        "build-essential",
+        "binutils",
+        "openjdk-17-jre-headless",
+        "jq",
+        "ripgrep",
+        "less",
+        "file",
+        "procps",
+        "dnsutils",
+        "openssh-client",
+        "tmux",
+        "vim-tiny",
+        "fcitx5",
+        "fcitx5-chinese-addons"
+      ]
     }
   }
 }

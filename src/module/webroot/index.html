@@ -364,6 +364,15 @@ body.ime-open .topbar { backdrop-filter: none; -webkit-backdrop-filter: none; ba
   border-radius: 0 0 var(--r-lg) var(--r-lg);
 }
 .dlg-foot .btn { min-width: 84px; }
+.guide-intro { color: var(--muted); margin-bottom: 12px; }
+.guide-steps { display: grid; gap: 10px; }
+.guide-step { display: grid; grid-template-columns: 28px minmax(0, 1fr); gap: 9px; align-items: start; padding: 11px; border: 1px solid var(--border); border-radius: var(--r); background: var(--surface-2); }
+.guide-step-num { display: grid; place-items: center; width: 24px; height: 24px; border-radius: 50%; background: var(--accent-soft); color: var(--accent); font-weight: 700; }
+.guide-step p { color: var(--muted); margin-bottom: 7px; }
+.guide-commands { display: flex; flex-wrap: wrap; gap: 7px; }
+.guide-agent-command { display: grid; gap: 4px; color: var(--faint); font-size: 11px; }
+.guide-command { display: inline-block; padding: 5px 9px; border: 1px solid var(--border); border-radius: var(--r-xs); background: var(--surface); color: var(--text); font: 600 13px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; }
+.guide-note { margin-top: 12px; color: var(--faint); font-size: 12px; }
 .note { color: var(--muted); font-size: 12px; margin-bottom: 12px; }
 .note a { color: var(--accent); }
 .note b { color: var(--text); }
@@ -769,6 +778,13 @@ body.ime-open .topbar { backdrop-filter: none; -webkit-backdrop-filter: none; ba
   .app { grid-template-columns: 34px minmax(0, 1fr) auto; align-items: start; }
   .app-actions { grid-column: auto; margin-top: 1px; }
 }
+/* Tablet portrait: the 720px desktop reading column leaves a large blank rail
+   when the WebView reports a desktop-sized CSS viewport. Use the available
+   portrait width so the dashboard stays centered in the physical screen. */
+@media (orientation: portrait) and (min-width: 620px) and (max-width: 1600px) {
+  .topbar { max-width: none; width: calc(100% - 24px); margin: 8px 12px 0; }
+  .wrap { max-width: none; width: 100%; margin: 0; }
+}
 /* 2026-11-13: Use a phone-first two-row header and full-width card actions.
    The manager WebView may report a narrow CSS viewport even on a high-DPI
    phone screenshot; size breakpoints must follow CSS pixels, not image pixels. */
@@ -926,6 +942,8 @@ body.ime-open .settings-viewport { min-height: 0; }
     <div class="skeleton"></div><div class="skeleton"></div>
   </div>
 
+  <div id="pendingActivationNotice" class="note" role="status" hidden style="margin:8px 0; color:var(--warn);">模块更新尚未激活；请重启手机后重新打开 WebUI。</div>
+
   <section class="card console" id="taskConsole" aria-label="输出" tabindex="-1">
     <div class="log-tabs" id="logTabs" role="tablist"></div>
     <div class="console-head">
@@ -933,6 +951,7 @@ body.ime-open .settings-viewport { min-height: 0; }
       <b data-i18n="output">输出</b>
       <span class="meta" id="logCount">0 行</span>
       <span class="spacer"></span>
+      <button class="btn xs danger" type="button" id="btnStopTask" hidden>强制停止</button>
       <button class="icon-btn" id="btnLogCopy" title="复制全部" aria-label="复制全部" data-i18n-title="copyAll">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h8"/></svg>
       </button>
@@ -948,6 +967,38 @@ body.ime-open .settings-viewport { min-height: 0; }
 
   <div class="foot" data-i18n="footer">AnCLI · Android CLI 环境管理器</div>
 </main>
+
+<div class="overlay" id="welcomeGuideOverlay" aria-hidden="true">
+  <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="welcomeGuideTitle">
+    <div class="dlg-head">
+      <h3 id="welcomeGuideTitle" data-i18n="welcomeGuideTitle">首次使用指南</h3>
+      <button type="button" class="icon-btn" id="welcomeGuideClose" aria-label="关闭" data-i18n-title="close">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      </button>
+    </div>
+    <div class="dlg-body">
+      <p class="guide-intro" data-i18n="welcomeGuideIntro">通过终端启动 AnCLI 或 AI 工具前，请先切换到 root 权限。</p>
+      <div class="guide-steps">
+        <div class="guide-step">
+          <span class="guide-step-num">1</span>
+          <div><p data-i18n="welcomeGuideStep1">打开终端程序，输入命令并在 KernelSU 弹窗中授予 root 权限：</p><code class="guide-command">su</code></div>
+        </div>
+        <div class="guide-step">
+          <span class="guide-step-num">2</span>
+          <div>
+            <p data-i18n="welcomeGuideStep2">进入 root 终端后，直接输入对应命令启动 Agent：</p>
+            <div class="guide-commands">
+              <span class="guide-agent-command"><span data-i18n="welcomeGuideCodex">Codex</span><code class="guide-command">codex</code></span>
+              <span class="guide-agent-command"><span data-i18n="welcomeGuideAntigravity">反重力</span><code class="guide-command">agy</code></span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <p class="guide-note" data-i18n="welcomeGuideNote">需要管理应用或调整配置时，再运行 ancli 打开管理菜单。只使用当前 WebUI 页面不需要另开终端。</p>
+    </div>
+    <div class="dlg-foot"><span class="spacer"></span><button type="button" class="btn primary" id="welcomeGuideDone" data-i18n="welcomeGuideDone">知道了</button></div>
+  </div>
+</div>
 
 <div class="overlay" id="cfgOverlay" aria-hidden="true">
   <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="cfgTitle">
@@ -1044,6 +1095,14 @@ body.ime-open .settings-viewport { min-height: 0; }
               <select id="setContainerProfile" class="setting-select">
                 <option value="standard">标准 Agent 环境</option>
               </select>
+              <small class="hint" id="containerProfileAdditive">切换较小规格不会卸载已有软件包。</small>
+            </div>
+
+            <div class="setting-item wrap">
+              <div class="setting-item-left"><span class="setting-icon" aria-hidden="true">⇩</span><div class="setting-item-text"><b>容器下载站点</b><small>仅用于 Ubuntu 容器基础镜像和软件包，不改变 Agent 下载源。</small></div></div>
+              <select id="setContainerMirror" class="setting-select"><option value="tuna">清华镜像（国内）</option><option value="ustc">中科大镜像（国内）</option><option value="official">Ubuntu 官方（国外）</option></select>
+              <button type="button" class="btn xs" id="btnMirrorSpeed">测试选中站点速度</button>
+              <small id="mirrorSpeedResult" class="hint" role="status">最多下载 1 MiB，测试后自动删除。</small>
             </div>
 
             <div class="setting-item wrap">
@@ -1081,6 +1140,7 @@ body.ime-open .settings-viewport { min-height: 0; }
               <span class="proxy-badge disconnected" id="setProxyCurrentBadge" data-i18n="proxyDisconnected">未连接</span>
             </div>
 
+            <div class="hint" id="setVpnStatus" role="status" style="margin-bottom:8px;">VPN：尚未检测</div>
             <div class="setting-item">
               <div class="setting-item-left">
                 <span class="setting-icon" aria-hidden="true">⇄</span>
@@ -1094,6 +1154,11 @@ body.ime-open .settings-viewport { min-height: 0; }
                 <option value="manual">手动指定</option>
                 <option value="direct">直连</option>
               </select>
+            </div>
+
+            <div style="margin-top: 10px;">
+              <button type="button" class="btn xs" id="btnProxyProbe">手动检测网络 / 代理</button>
+              <div class="hint" id="proxyProbeResult" role="status" style="white-space:pre-line;margin-top:8px;"></div>
             </div>
 
             <div class="fields" id="setProxyUrlField" style="margin-top: 8px;">
@@ -1344,6 +1409,22 @@ body.ime-open .settings-viewport { min-height: 0; }
   </div>
 </div>
 
+<div class="overlay" id="stopTaskOverlay" aria-hidden="true">
+  <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="stopTaskTitle">
+    <div class="dlg-head"><h3 id="stopTaskTitle">强制停止安装？</h3></div>
+    <div class="dlg-body"><div class="note" id="stopTaskDescription">将终止当前安装任务，并清理该任务创建的临时容器文件。已有容器和数据会保留；中断的软件包可能需要修复。</div></div>
+    <div class="dlg-foot"><button class="btn" id="stopTaskCancel" type="button">取消</button><button class="btn danger" id="stopTaskConfirm" type="button">确认停止</button></div>
+  </div>
+</div>
+
+<div class="overlay" id="codexSandboxOverlay" aria-hidden="true">
+  <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="codexSandboxTitle">
+    <div class="dlg-head"><h3 id="codexSandboxTitle" data-i18n="codexSandboxTitle">Codex 在 Android PRoot 中的权限设置</h3></div>
+    <div class="dlg-body"><div class="note" style="line-height:1.55;" data-i18n="codexSandboxNotice">Android PRoot 无法建立 Codex 默认命令沙箱需要的挂载隔离，安装 bubblewrap 也不能补上这项内核能力。安装后启动 Codex，在输入框运行 /permissions，选择 Full Access，再重试命令。Full Access 会关闭 Codex 自身的命令沙箱，请只在你信任的工作区使用。</div></div>
+    <div class="dlg-foot"><button class="btn" type="button" id="codexSandboxCancel" data-i18n="cancel">取消</button><button class="btn primary" type="button" id="codexSandboxContinue" data-i18n="codexSandboxContinue">继续安装</button></div>
+  </div>
+</div>
+
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
 <script>
@@ -1357,6 +1438,27 @@ let bridge = null;
 let bridgeName = null;
 let bridgeLogged = false;
 let ANCLI = 'ancli';
+
+async function checkPendingActivation() {
+  const notice = document.getElementById('pendingActivationNotice');
+  if (!notice) return;
+  try {
+    const r = await execCmd('if [ -d /data/adb/modules_update/ancli ] || [ -f /data/adb/modules/ancli/remove ]; then echo pending; else echo clear; fi');
+    notice.hidden = !(r.code === 0 && (r.stdout || '').trim() === 'pending');
+    notice.textContent = uiLang === 'en' ? 'Module activation is pending. Reboot the device, then reopen WebUI.' : '模块安装或移除尚未完成，请重启手机后重新打开 WebUI。';
+  } catch (_) { notice.hidden = true; }
+}
+
+async function resolveAncli() {
+  // Probe real execution in the manager's namespace, not only file existence.
+  const cmd = 'for p in /data/adb/ksu/bin/ancli /data/adb/ap/bin/ancli /data/adb/modules_update/ancli/system/bin/ancli /data/adb/modules/ancli/system/bin/ancli; do [ -x "$p" ] || continue; "$p" container status --json >/dev/null 2>&1 && { printf "%s\\n" "$p"; exit 0; }; done; command -v ancli 2>/dev/null';
+  try {
+    const r = await execCmd(cmd);
+    const path = (r.stdout || '').trim().split(/\s+/).pop();
+    if (r.code === 0 && /^\/(?:data\/adb\/(?:ksu|ap)\/bin|data\/adb\/modules(?:_update)?\/ancli\/system\/bin|system\/bin)\/ancli$/.test(path)) ANCLI = path;
+  } catch (_) {}
+  return ANCLI;
+}
 let currentApps = [];
 let cfgApp = null;
 let selectedProvider = null;
@@ -1620,12 +1722,13 @@ function renderTaskFeedback() {
     if (!entry) { slot.textContent = ''; continue; }
     const { task, label } = entry;
     const status = task.interrupted ? uiText('taskInterrupted') : uiText(TASK_STATUS_LABEL[task.status]);
+    const stop = task.cancellable && taskUnresolved(task) ? '<button type="button" class="btn xs danger" data-task-stop="' + esc(task.id) + '">' + (uiLang === 'en' ? 'Force stop' : '强制停止') + '</button>' : '';
     const refresh = task.status === 'unknown'
       ? '<button type="button" class="btn xs" data-task-refresh>' + esc(uiText('taskRefresh')) + '</button>'
       : '';
     slot.innerHTML = '<div class="task-feedback" data-state="' + esc(task.status) + '">' +
       '<span class="task-feedback-status" role="status"><span class="dot" aria-hidden="true"></span>' +
-      esc(uiText(label) + ' · ' + status) + '</span><span class="task-feedback-actions">' + refresh +
+      esc(uiText(label) + ' · ' + status) + '</span><span class="task-feedback-actions">' + stop + refresh +
       '<button type="button" class="btn xs quiet" data-task-log="' + esc(task.id) + '">' +
       esc(uiText('historyView')) + '</button></span></div>';
   }
@@ -1659,6 +1762,9 @@ function renderTaskTabs() {
   }
   renderSettingsHistory();
   renderTaskFeedback();
+  const stopButton = document.getElementById('btnStopTask');
+  const active = taskTabs.get(activeTaskId);
+  if (stopButton) { stopButton.hidden = !(active && active.cancellable && taskUnresolved(active)); stopButton.textContent = uiLang === 'en' ? 'Force stop' : '强制停止'; }
 }
 
 function revealAppLog(id) {
@@ -1820,6 +1926,10 @@ function taskUnresolved(task) {
   return task.status === 'running' || task.status === 'unknown';
 }
 
+function taskCancellable(command) {
+  return /^(?:\S*\/)?ancli\s+(?:install\s+\S+|update\s+\S+|container\s+(?:install|apply))(?:\s|$)/.test(command);
+}
+
 function taskReadOnly(command) {
   return /^(?:\S*\/)?ancli\s+check-module(?:\s|$)/.test(command);
 }
@@ -1918,6 +2028,7 @@ async function runBackground(cmd, preface, options = {}) {
     scope: cmd.match(/\bancli\s+(?:install|update|uninstall|config)\s+([^\s]+)/)?.[1] || '',
     logFile, exitFile: logFile + '.exit', metaFile: logFile + '.meta',
     status: 'running', quiet: Boolean(options.quiet), onOutput: options.onOutput,
+    cancellable: taskCancellable(cmd), pidFile: logFile + '.pid',
   };
   taskTabs.set(task.id, task);
   if (!task.quiet) {
@@ -1933,22 +2044,33 @@ async function runBackground(cmd, preface, options = {}) {
   }
   renderTaskTabs();
 
-  const actualCmd = options.keepLog && /^\s*ancli\s+/.test(cmd)
+  const actualCmd = options.keepLog && /^\s*(?:\S*\/)?ancli\s+/.test(cmd)
     ? cmd + ' --keep-log=' + shQuote(logFile)
     : cmd;
   const metadata = JSON.stringify(task).slice(0, -1) + ',"bootId":"';
   // Publish metadata before launching. A subshell confines "exit" and
   // compound command redirections to the workload, leaving the writer alive.
-  const runner = '( ' + actualCmd + ' ) > ' + shQuote(logFile) + ' 2>&1; rc=$?; ' +
+  const uninstallEnv = options.moduleUninstall ? 'export ANCLI_UNINSTALL_LOG=' + shQuote(logFile) + '; ' : '';
+  const cleanup = options.moduleUninstall ?
+    '; if [ "$rc" -eq 0 ]; then nohup sh -c ' + shQuote('sleep 60; rm -f ' + [task.logFile, task.exitFile, task.metaFile, task.pidFile || (task.logFile + ".pid")].map(shQuote).join(' ')) + ' </dev/null >/dev/null 2>&1 & fi' : '';
+  const identity = task.cancellable ?
+    'start=$(awk \'{print $22}\' /proc/$$/stat); boot=$(cat /proc/sys/kernel/random/boot_id); ' +
+    'umask 077; printf \'%s %s %s\\n\' "$$" "$start" "$boot" > ' + shQuote(task.pidFile + '.tmp') +
+    ' && mv -f ' + shQuote(task.pidFile + '.tmp') + ' ' + shQuote(task.pidFile) + ' || exit 1; ' +
+    'export ANCLI_TASK_ID=' + shQuote(task.id) + '; ' : '';
+  const runner = identity + '( ' + uninstallEnv + actualCmd + ' ) > ' + shQuote(logFile) + ' 2>&1; rc=$?; ' +
     'printf "%s\\n" "$rc" > ' + shQuote(task.exitFile + '.tmp') + ' && mv -f ' +
-    shQuote(task.exitFile + '.tmp') + ' ' + shQuote(task.exitFile);
+    shQuote(task.exitFile + '.tmp') + ' ' + shQuote(task.exitFile) + cleanup;
   const launch = 'boot=$(cat /proc/sys/kernel/random/boot_id 2>/dev/null); ' +
     'umask 077; printf \'%s%s"}\\n\' ' + shQuote(metadata) + ' "$boot" > ' + shQuote(task.metaFile + '.tmp') +
     ' && mv -f ' + shQuote(task.metaFile + '.tmp') + ' ' + shQuote(task.metaFile) +
     ' || { echo ancli-meta-failed; exit 1; }; ' +
-    'nohup sh -c ' + shQuote(runner) + ' </dev/null >/dev/null 2>&1 &';
+    (task.cancellable ? '[ -x /system/bin/setsid ] || { echo 127 > ' + shQuote(task.exitFile) + '; echo ancli-no-setsid; exit 1; }; nohup /system/bin/setsid /system/bin/sh -c ' : 'nohup sh -c ') + shQuote(runner) + ' </dev/null >/dev/null 2>&1 &';
   try {
     const result = await taskBridge('sh -c ' + shQuote(launch), Math.min(deadline, Date.now() + BRIDGE_COMMAND_TIMEOUT_MS), false);
+    if (result.code !== 0 && result.stdout.trim() === 'ancli-no-setsid') {
+      task.status = 'failed'; appendTaskOutput(task, '系统不支持安全的任务停止，未启动安装。', 'err'); renderTaskTabs(); return task;
+    }
     if (result.code !== 0 && result.stdout.trim() === 'ancli-meta-failed') {
       task.status = 'failed';
       appendTaskOutput(task, '无法保存后台任务记录，命令未启动。', 'err');
@@ -1971,7 +2093,7 @@ const LOG_HISTORY_LIMIT_BYTES = 10 * 1024 * 1024;
 function logHistoryShell(deleteOld) {
   const limit = String(LOG_HISTORY_LIMIT_BYTES);
   const remove = deleteOld ?
-    'if [ ! -f "$f.exit" ] && [ ! -f "$f.meta" ]; then if [ $((total + n)) -le ' + limit + ' ]; then total=$((total+n)); else rm -f "$f"; fi; elif [ ! -f "$f.exit" ] || [ $((total + n)) -le ' + limit + ' ]; then total=$((total+n)); else rm -f "$f" "$f.exit" "$f.meta"; fi' :
+    'if [ ! -f "$f.exit" ] && [ ! -f "$f.meta" ]; then if [ $((total + n)) -le ' + limit + ' ]; then total=$((total+n)); else rm -f "$f"; fi; elif [ ! -f "$f.exit" ] || [ $((total + n)) -le ' + limit + ' ]; then total=$((total+n)); else rm -f "$f" "$f.exit" "$f.meta" "$f.pid"; fi' :
     'total=$((total+n))';
   return 'total=0; for f in $(ls -1t /data/local/tmp/ancli/.webui_*.log 2>/dev/null); do case "$f" in *\/.webui_launch_*) continue;; esac; [ -f "$f" ] || continue; n=$(wc -c < "$f" 2>/dev/null || echo 0); case "$n" in *[!0-9]*|"") continue;; esac; ' + remove + '; done; echo "$total"';
 }
@@ -2215,9 +2337,9 @@ async function loadStatus() {
         openMemoryPrompt();
       }
     }
-    if (!s.rootfs_ready && (!currentApps || currentApps.length === 0)) {
-      renderApps([]);
-    }
+    // The initialization card and app buttons depend on rootfs readiness.
+    // Re-render even when the catalog was already loaded before status arrived.
+    renderApps(currentApps || []);
   } catch (e) {
     logLine('状态加载失败: ' + e, 'err');
   }
@@ -2352,6 +2474,14 @@ const UI_TEXT = {
     uninstallStarting: '正在彻底卸载模块与容器数据…',
     uninstallFailed: '模块卸载失败，请查看日志。',
     uninstallDone: '模块与容器已彻底卸载完毕！请重启手机以应用系统变更。',
+    codexSandboxTitle: 'Codex 在 Android PRoot 中的权限设置',
+    codexSandboxNotice: 'Android PRoot 无法建立 Codex 默认命令沙箱需要的挂载隔离，安装 bubblewrap 也不能补上这项内核能力。安装后启动 Codex，在输入框运行 /permissions，选择 Full Access，再重试命令。Full Access 会关闭 Codex 自身的命令沙箱，请只在你信任的工作区使用。',
+    codexSandboxContinue: '继续安装',
+    welcomeGuideTitle: '首次使用指南', welcomeGuideIntro: '通过终端启动 AnCLI 或 AI 工具前，请先切换到 root 权限。',
+    welcomeGuideStep1: '打开终端程序，输入命令并在 KernelSU 弹窗中授予 root 权限：',
+    welcomeGuideStep2: '进入 root 终端后，直接输入对应命令启动 Agent：',
+    welcomeGuideNote: '需要管理应用或调整配置时，再运行 ancli 打开管理菜单。只使用当前 WebUI 页面不需要另开终端。',
+    welcomeGuideCodex: 'Codex', welcomeGuideAntigravity: '反重力', welcomeGuideDone: '知道了',
     languageSetting: '语言', languageHint: '界面文本', themeSetting: '主题', themeHint: '页面外观', installedCount: '已安装', updatesCount: '可更新', updateBadge: '更新', updateAvailable: '检测到渠道更新',
     agentMemorySetting: 'Agent 全局记忆', agentMemoryHint: 'AGENTS.md 与环境探测',
     agentMemoryEnabled: '添加（推荐）', agentMemoryDisabled: '不添加（纯净模式）',
@@ -2418,6 +2548,14 @@ const UI_TEXT = {
     uninstallStarting: 'Purging module and container data…',
     uninstallFailed: 'Module uninstall failed. See the task log.',
     uninstallDone: 'Module and container purged! Please reboot your device.',
+    codexSandboxTitle: 'Codex permissions in Android PRoot',
+    codexSandboxNotice: 'Android PRoot cannot provide the mount isolation required by Codex’s default command sandbox; installing bubblewrap does not add that kernel capability. After installation, start Codex, enter /permissions, select Full Access, then retry the command. Full Access disables Codex’s own command sandbox; use it only in a workspace you trust.',
+    codexSandboxContinue: 'Continue installation',
+    welcomeGuideTitle: 'Getting started', welcomeGuideIntro: 'Before launching AnCLI or an AI tool from a terminal, switch to root first.',
+    welcomeGuideStep1: 'Open your terminal, enter the command below, then grant root access in the KernelSU prompt:',
+    welcomeGuideStep2: 'Once you are at a root prompt, enter the command for the Agent you want to start:',
+    welcomeGuideNote: 'Run ancli to manage installed apps or change settings. You do not need another terminal just to use this WebUI.',
+    welcomeGuideCodex: 'Codex', welcomeGuideAntigravity: 'Antigravity', welcomeGuideDone: 'Got it',
     languageSetting: 'Language', languageHint: 'Interface text', themeSetting: 'Theme', themeHint: 'Page appearance', installedCount: 'Installed', updatesCount: 'Updates', updateBadge: 'Update', updateAvailable: 'Channel update available',
     agentMemorySetting: 'Agent global memory', agentMemoryHint: 'AGENTS.md and environment probe',
     agentMemoryEnabled: 'Add (Recommended)', agentMemoryDisabled: 'Do not add (Clean mode)',
@@ -2464,6 +2602,8 @@ function applyLanguage(lang) {
     el.innerHTML = uiText(el.dataset.i18nHtml);
   });
   document.querySelectorAll('[data-i18n-title]').forEach(el => { el.title = uiText(el.dataset.i18nTitle); el.setAttribute('aria-label', uiText(el.dataset.i18nTitle)); });
+  const probeButton = document.getElementById('btnProxyProbe');
+  if (probeButton) probeButton.textContent = uiLang === 'en' ? 'Check network / proxy' : '手动检测网络 / 代理';
   const proxyMode = document.getElementById('setProxyMode');
   if (proxyMode) {
     proxyMode.options[0].textContent = uiText('systemProxy');
@@ -2539,6 +2679,7 @@ function appIconMarkup(app) {
 function buildContainerInitCardHtml() {
   const hostArch = latestStatus.host_arch || (latestStatus.container && latestStatus.container.config && latestStatus.container.config.host_arch) || 'x86_64';
   const curProfile = latestStatus.profile || (latestStatus.container && latestStatus.container.config && latestStatus.container.config.profile) || 'standard';
+  const curMirror = latestStatus.mirror || latestStatus.container?.config?.mirror || 'tuna';
   const curNet = latestStatus.network_mode || (latestStatus.container && latestStatus.container.config && latestStatus.container.config.network_mode) || 'system';
   return '<div class="card container-init-card">' +
     '<div class="container-init-head">' +
@@ -2551,18 +2692,28 @@ function buildContainerInitCardHtml() {
       '<div class="field">' +
         '<label>' + (uiLang === 'en' ? 'Container Profile' : '容器规格') + '</label>' +
         '<select id="initContainerProfile" class="setting-select" style="max-width: none; width: 100%; text-align: left;">' +
-          '<option value="minimal"' + (curProfile === 'minimal' ? ' selected' : '') + '>' + (uiLang === 'en' ? 'Minimal runtime · 480 MB' : '最小运行环境 · 480 MB (Python, Git, curl)') + '</option>' +
-          '<option value="standard"' + (curProfile === 'standard' ? ' selected' : '') + '>' + (uiLang === 'en' ? 'Standard Agent · 900 MB' : '标准 Agent 环境 · 900 MB (Node.js, npm, Java 17, binutils)') + '</option>' +
-          '<option value="developer"' + (curProfile === 'developer' ? ' selected' : '') + '>' + (uiLang === 'en' ? 'Developer tools · 1120 MB' : '开发工具环境 · 1120 MB (C/C++ build-essential, zip)') + '</option>' +
-          '<option value="full"' + (curProfile === 'full' ? ' selected' : '') + '>' + (uiLang === 'en' ? 'Full development · 1480 MB' : '完整开发环境 · 1480 MB (CJK, 输入法组件)') + '</option>' +
+          '<option value="minimal"' + (curProfile === 'minimal' ? ' selected' : '') + '>' + (uiLang === 'en' ? 'Minimal Agent' : '最小 Agent 环境 (Python, Node.js, npm)') + '</option>' +
+          '<option value="standard"' + (curProfile === 'standard' ? ' selected' : '') + '>' + (uiLang === 'en' ? 'Standard Agent' : '标准 Agent 环境 (ZIP, unzip)') + '</option>' +
+          '<option value="developer"' + (curProfile === 'developer' ? ' selected' : '') + '>' + (uiLang === 'en' ? 'Developer tools' : '开发工具环境 (编译工具、Java)') + '</option>' +
+          '<option value="full"' + (curProfile === 'full' ? ' selected' : '') + '>' + (uiLang === 'en' ? 'Full development' : '完整开发环境 (终端、网络诊断、中文)') + '</option>' +
         '</select>' +
         '<div class="hint wrap-text" id="initContainerHint"></div>' +
+      '</div>' +
+      '<div class="field">' +
+        '<label>' + (uiLang === 'en' ? 'Container download site' : '容器下载站点') + '</label>' +
+        '<select id="initContainerMirror" class="setting-select" style="max-width:none;width:100%;text-align:left;">' +
+          '<option value="tuna"' + (curMirror === 'tuna' ? ' selected' : '') + '>清华镜像（国内）</option>' +
+          '<option value="ustc"' + (curMirror === 'ustc' ? ' selected' : '') + '>中科大镜像（国内）</option>' +
+          '<option value="official"' + (curMirror === 'official' ? ' selected' : '') + '>Ubuntu 官方（国外）</option>' +
+        '</select>' +
+        '<button type="button" class="btn xs" id="initMirrorSpeed">测试选中站点速度</button>' +
+        '<div class="hint" id="initMirrorSpeedResult">最多下载 1 MiB，测试后自动删除；只影响容器。</div>' +
       '</div>' +
       '<div class="field">' +
         '<label>' + (uiLang === 'en' ? 'Network Mode' : '网络模式') + '</label>' +
         '<select id="initNetworkMode" class="setting-select" style="max-width: none; width: 100%; text-align: left;">' +
           '<option value="system"' + (curNet === 'system' ? ' selected' : '') + '>' + (uiLang === 'en' ? 'System Proxy (Recommended)' : '跟随系统代理（推荐）') + '</option>' +
-          '<option value="manual"' + (curNet === 'manual' ? ' selected' : '') + '>' + (uiLang === 'en' ? 'Manual HTTP/SOCKS Proxy' : '手动代理地址') + '</option>' +
+          '<option value="manual"' + (curNet === 'manual' ? ' selected' : '') + '>' + (uiLang === 'en' ? 'Manual HTTP Proxy' : '手动 HTTP 代理') + '</option>' +
           '<option value="direct"' + (curNet === 'direct' ? ' selected' : '') + '>' + (uiLang === 'en' ? 'Direct (No Proxy)' : '直连（不走代理）') + '</option>' +
         '</select>' +
       '</div>' +
@@ -2582,12 +2733,16 @@ function wireContainerInitCard() {
   const selProf = document.getElementById('initContainerProfile');
   const hintEl = document.getElementById('initContainerHint');
   const selNet = document.getElementById('initNetworkMode');
+  const selMirror = document.getElementById('initContainerMirror');
+  const speedButton = document.getElementById('initMirrorSpeed');
+  if (speedButton) speedButton.onclick = () => { void measureContainerMirror(true); };
   const proxyField = document.getElementById('initProxyUrlField');
   const proxyInput = document.getElementById('initProxyUrl');
   const updateHint = () => {
     if (!selProf || !hintEl) return;
+    hintEl.style.whiteSpace = 'pre-line';
     const p = containerProfileCatalog[selProf.value];
-    if (p) hintEl.textContent = (uiLang === 'en' ? (p.description_en || p.description) : p.description) + ' (' + (p.estimated_size_mb || '') + ' MB)';
+    if (p) hintEl.textContent = containerProfileDetails(p, selProf.value);
   };
   if (selProf) {
     selProf.onchange = async () => {
@@ -2609,9 +2764,9 @@ function wireContainerInitCard() {
         await ancli('config --set proxy_mode=manual --set proxy_url=' + encodeURIComponent(proxyInput.value.trim()));
       }
       if (selProf && selNet) {
-        await ancli('container set --profile=' + selProf.value + ' --network=' + selNet.value, true);
+        await ancli('container set --profile=' + selProf.value + ' --network=' + selNet.value + ' --mirror=' + (selMirror ? selMirror.value : 'tuna'), true);
       }
-      void installContainerFromUi();
+      void installContainerFromUi(selProf ? selProf.value : 'standard', selMirror ? selMirror.value : 'tuna');
     };
   }
   const btnSet = document.getElementById('btnInitSettings');
@@ -2758,6 +2913,7 @@ async function doInstall(id) {
     toast(uiLang === 'en' ? 'Please initialize the Ubuntu container first' : '请先完成 Ubuntu 容器初始化', 'err');
     return;
   }
+  if (id === 'codex-cli' && !(await confirmCodexSandboxNotice())) return;
   const app = currentApps.find(a => a.id === id) || { name: id };
   // 2026-11-16：安装按钮直接启动后台任务，避免移动端出现二次确认界面。
   toast('开始安装 ' + app.name + '，日志已打开');
@@ -2772,6 +2928,30 @@ async function doInstall(id) {
     if (task && task.status === 'done') toast(app.name + ' 安装完成');
     else if (task && task.status === 'failed') toast(app.name + ' 安装失败，请查看日志', 'err');
   }
+}
+
+function confirmCodexSandboxNotice() {
+  return new Promise(resolve => {
+    const overlay = document.getElementById('codexSandboxOverlay');
+    const cancel = document.getElementById('codexSandboxCancel');
+    const proceed = document.getElementById('codexSandboxContinue');
+    if (!overlay || !cancel || !proceed) { resolve(true); return; }
+    const finish = value => {
+      overlay.classList.remove('show');
+      overlay.setAttribute('aria-hidden', 'true');
+      document.body.style.overflow = '';
+      cancel.removeEventListener('click', onCancel);
+      proceed.removeEventListener('click', onProceed);
+      resolve(value);
+    };
+    const onCancel = () => finish(false);
+    const onProceed = () => finish(true);
+    cancel.addEventListener('click', onCancel);
+    proceed.addEventListener('click', onProceed);
+    overlay.classList.add('show');
+    overlay.setAttribute('aria-hidden', 'false');
+    document.body.style.overflow = 'hidden';
+  });
 }
 
 async function doUpdate(id) {
@@ -3154,6 +3334,7 @@ function switchSettingsTab(tabName) {
   document.querySelectorAll('.settings-tabs .tab-btn').forEach(btn => {
     btn.classList.toggle('active', btn.dataset.tab === tabName);
   });
+  if (tabName === 'proxy') void refreshVpnStatus();
   const slider = document.getElementById('settingsSlider');
   if (slider) {
     slider.style.transform = 'translateX(-' + (index * 20) + '%)';
@@ -3203,7 +3384,7 @@ function setSettingsStatus(cfg, runtime) {
       proxyStatus.textContent = currentProxy;
       proxyStatus.style.color = 'var(--text)';
     } else {
-      proxyStatus.textContent = uiText('proxyDisconnected');
+      proxyStatus.textContent = uiLang === 'en' ? 'No HTTP proxy detected' : '未检测到 HTTP 代理';
       proxyStatus.style.color = 'var(--faint)';
     }
   }
@@ -3215,7 +3396,7 @@ function setSettingsStatus(cfg, runtime) {
       proxyBadge.className = 'proxy-badge connected';
       proxyBadge.title = mode === 'manual' ? uiText('manualProxy') : uiText('systemProxy');
     } else {
-      proxyBadge.textContent = uiText('proxyDisconnected');
+      proxyBadge.textContent = uiLang === 'en' ? 'No HTTP proxy detected' : '未检测到 HTTP 代理';
       proxyBadge.className = 'proxy-badge disconnected';
       proxyBadge.title = mode === 'direct' ? uiText('directProxy') : uiText('proxyDisconnected');
     }
@@ -3223,24 +3404,115 @@ function setSettingsStatus(cfg, runtime) {
 }
 
 const DEFAULT_CONTAINER_PROFILES = {
-    minimal: { name: '最小运行环境', name_en: 'Minimal runtime', description: 'Python、Git、curl 和证书，适合轻量脚本与基础 CLI。', description_en: 'Python, Git, curl and certificates for lightweight scripts and basic CLI tools.', estimated_size_mb: 480 },
-    standard: { name: '标准 Agent 环境', name_en: 'Standard Agent', description: '包含 Node.js、npm，兼容常用 Agent。', description_en: 'Adds Node.js and npm for common agents.', estimated_size_mb: 900 },
-    developer: { name: '开发工具环境', name_en: 'Developer tools', description: '标准环境加 Java、binutils、zip/unzip。', description_en: 'Adds Java, binutils and archive tools.', estimated_size_mb: 1120 },
-    full: { name: '完整开发环境', name_en: 'Full development', description: '开发工具环境加编译工具和 CJK 组件。', description_en: 'Adds build tools and CJK components.', estimated_size_mb: 1480 }
+  "minimal": {
+    "name": "最小运行环境",
+    "name_en": "Minimal runtime",
+    "description": "Python、pip、Node.js、npm、Git、curl 与证书，用于 Agent 基础安装。",
+    "description_en": "Python, pip, Node.js, npm, Git, curl and certificates for agent installation.",
+    "estimated_size_mb": 0
+  },
+  "standard": {
+    "name": "标准 Agent 环境",
+    "name_en": "Standard Agent",
+    "description": "最小环境加 ZIP 与 unzip 归档工具。",
+    "description_en": "Minimal environment plus ZIP archive tools.",
+    "estimated_size_mb": 0
+  },
+  "developer": {
+    "name": "开发工具环境",
+    "name_en": "Developer tools",
+    "description": "标准环境加编译工具、binutils 和 Java 17。",
+    "description_en": "Standard environment plus build tools, binutils and Java 17.",
+    "estimated_size_mb": 0
+  },
+  "full": {
+    "name": "完整开发环境",
+    "name_en": "Full development",
+    "description": "开发环境加 JSON、搜索、终端、网络诊断及中文输入组件。",
+    "description_en": "Developer environment plus JSON, search, terminal, network diagnostics and Chinese input tools.",
+    "estimated_size_mb": 0
+  }
 };
 let containerProfileCatalog = DEFAULT_CONTAINER_PROFILES;
 let containerCatalogVersion = '';
 let containerOptionsKey = '';
+const CONTAINER_PACKAGES = {
+  "minimal": [
+    "ca-certificates",
+    "curl",
+    "python3",
+    "python3-pip",
+    "git",
+    "nodejs",
+    "npm"
+  ],
+  "standard": [
+    "ca-certificates",
+    "curl",
+    "python3",
+    "python3-pip",
+    "git",
+    "nodejs",
+    "npm",
+    "zip",
+    "unzip"
+  ],
+  "developer": [
+    "ca-certificates",
+    "curl",
+    "python3",
+    "python3-pip",
+    "git",
+    "nodejs",
+    "npm",
+    "zip",
+    "unzip",
+    "build-essential",
+    "binutils",
+    "openjdk-17-jre-headless"
+  ],
+  "full": [
+    "ca-certificates",
+    "curl",
+    "python3",
+    "python3-pip",
+    "git",
+    "nodejs",
+    "npm",
+    "zip",
+    "unzip",
+    "build-essential",
+    "binutils",
+    "openjdk-17-jre-headless",
+    "jq",
+    "ripgrep",
+    "less",
+    "file",
+    "procps",
+    "dnsutils",
+    "openssh-client",
+    "tmux",
+    "vim-tiny",
+    "fcitx5",
+    "fcitx5-chinese-addons"
+  ]
+};
+function containerProfileDetails(profile, id) {
+  const packages = profile.packages || CONTAINER_PACKAGES[id] || [];
+  return (uiLang === 'en' ? (profile.description_en || profile.description) : profile.description) +
+    (profile.estimated_size_mb ? ' · ' + profile.estimated_size_mb + ' MB' : '') +
+    (packages.length ? '\n' + (uiLang === 'en' ? 'Packages: ' : '包含软件包：') + packages.join('、') : '');
+}
 
 function updateContainerProfileHint() {
   const select = document.getElementById('setContainerProfile');
   const hint = document.getElementById('setContainerHint');
   if (!select || !hint) return;
   const profile = containerProfileCatalog[select.value];
-  hint.textContent = profile
-    ? (uiLang === 'en' ? (profile.description_en || profile.description) : profile.description) +
-      (profile.estimated_size_mb ? ' · ' + profile.estimated_size_mb + ' MB' : '')
-    : uiText('containerProfileHint');
+  const additive = document.getElementById('containerProfileAdditive');
+  if (additive) additive.textContent = uiLang === 'en' ? 'Switching to a smaller profile does not remove installed packages.' : '切换较小规格不会卸载已有软件包。';
+  hint.style.whiteSpace = 'pre-line';
+  hint.textContent = profile ? containerProfileDetails(profile, select.value) : uiText('containerProfileHint');
 }
 
 function renderContainerProfileOptions(selected) {
@@ -3272,6 +3544,8 @@ function renderContainerSettings(data, version = data?.ancli_version) {
   if (suppliedProfiles && Object.keys(suppliedProfiles).length) containerProfileCatalog = suppliedProfiles;
   const config = data?.config && typeof data.config === 'object' ? data.config : data || {};
   renderContainerProfileOptions(config.profile);
+  const mirrorSelect = document.getElementById('setContainerMirror');
+  if (mirrorSelect && ['tuna', 'ustc', 'official'].includes(config.mirror)) mirrorSelect.value = config.mirror;
   const status = document.getElementById('setContainerStatus');
   if (status) {
     const state = config.rootfs_ready ? (uiLang === 'en' ? 'Installed' : '已安装') : (uiLang === 'en' ? 'Deferred' : '待安装');
@@ -3293,15 +3567,22 @@ async function loadContainerSettings() {
   }
 }
 
-async function installContainerFromUi() {
+async function installContainerFromUi(requestedProfile, requestedMirror) {
   if (busy > 0) return;
+  const profile = requestedProfile || document.getElementById('setContainerProfile')?.value || 'standard';
+  const mirror = requestedMirror || document.getElementById('setContainerMirror')?.value || 'tuna';
+  if (!['tuna', 'ustc', 'official'].includes(mirror)) { toast(uiText('containerInstallFailed'), 'err'); return; }
+  if (!Object.prototype.hasOwnProperty.call(CONTAINER_PACKAGES, profile)) { toast(uiText('containerInstallFailed'), 'err'); return; }
   const release = setBusy(true, uiText('containerInstallStarting'));
   let task;
   try {
-    task = await runBackground(ANCLI + ' container install', uiText('containerInstallStarting'), { timeoutMs: 3600000 });
-    await loadContainerSettings();
+    task = await runBackground(ANCLI + ' container install --profile=' + profile + ' --mirror=' + mirror, uiText('containerInstallStarting'), { timeoutMs: 3600000 });
+    const result = await loadContainerSettings();
     await loadStatus();
-    if (task && task.status === 'done') toast(uiLang === 'en' ? 'Container profile applied' : '容器规格应用完成');
+    await loadApps();
+    const config = result?.config && typeof result.config === 'object' ? result.config : result;
+    if (task && task.status === 'done' && config?.profile === profile && config?.mirror === mirror) toast(uiLang === 'en' ? 'Container profile applied' : '容器规格应用完成');
+    else if (task && task.status === 'done') toast(uiLang === 'en' ? 'Profile verification failed; check the log' : '规格核对失败，请查看日志', 'err');
     else if (task && task.status === 'failed') toast(uiText('containerInstallFailed'), 'err');
   } catch (e) {
     toast(uiText('containerInstallFailed'), 'err');
@@ -3407,6 +3688,7 @@ async function saveSettings() {
   const lang = document.getElementById('setLang').value === 'en' ? 'en' : 'zh';
   const agentMemory = document.getElementById('setAgentMemory').value;
   const containerProfile = document.getElementById('setContainerProfile')?.value || 'standard';
+  const containerMirror = document.getElementById('setContainerMirror')?.value || 'tuna';
   const theme = ['auto', 'light', 'dark'].includes(document.getElementById('setTheme').value)
     ? document.getElementById('setTheme').value : 'auto';
 
@@ -3435,7 +3717,7 @@ async function saveSettings() {
     await ancli('config --set default_cwd=' + encodeURIComponent(v) + ' --set lang=' + lang +
       ' --set proxy_mode=' + encodeURIComponent(proxyMode) + ' --set proxy_url=' + encodeURIComponent(proxyValue) +
       ' --set agent_memory=' + encodeURIComponent(agentMemory) + ' --set container_profile=' + encodeURIComponent(containerProfile));
-    await ancli('container set --profile=' + containerProfile + ' --network=' + proxyMode +
+    await ancli('container set --profile=' + containerProfile + ' --network=' + proxyMode + ' --mirror=' + containerMirror +
       (proxyValue ? ' --proxy-url=' + encodeURIComponent(proxyValue) : ''), true);
     applyLanguage(lang);
     applyTheme(theme);
@@ -3599,12 +3881,43 @@ async function refreshTaskStatus() {
   try {
     try { await restoreTasks(); }
     catch (e) { toast(uiText('taskUnknown'), 'err'); }
+    await resolveAncli();
+    await checkPendingActivation();
     await loadStatus();
     await loadApps();
   } finally { release(); }
 }
 document.getElementById('btnRefresh').onclick = refreshTaskStatus;
+let pendingStopTask = null;
+function promptStopTask(id) {
+  const task = taskTabs.get(id);
+  if (!task || !task.cancellable || !taskUnresolved(task)) return;
+  pendingStopTask = id;
+  document.getElementById('stopTaskTitle').textContent = uiLang === 'en' ? 'Force stop installation?' : '强制停止安装？';
+  document.getElementById('stopTaskDescription').textContent = uiLang === 'en' ? 'Stop this task and clean its own temporary container files. Existing container data is preserved; interrupted packages may need repair.' : '将终止当前安装任务，并清理该任务创建的临时容器文件。已有容器和数据会保留；中断的软件包可能需要修复。';
+  const overlay = document.getElementById('stopTaskOverlay'); overlay.classList.add('show'); overlay.setAttribute('aria-hidden','false');
+}
+function closeStopTask() { pendingStopTask = null; const overlay = document.getElementById('stopTaskOverlay'); overlay.classList.remove('show'); overlay.setAttribute('aria-hidden','true'); }
+document.getElementById('btnStopTask').onclick = () => promptStopTask(activeTaskId);
+document.getElementById('stopTaskCancel').onclick = closeStopTask;
+document.getElementById('stopTaskConfirm').onclick = async () => {
+  const id = pendingStopTask;
+  if (!id || !/^\d+_\d+$/.test(id)) return;
+  const btn = document.getElementById('stopTaskConfirm'); btn.disabled = true;
+  try {
+    const r = await execCmd('/system/bin/sh /data/local/tmp/ancli/task-stop.sh ' + id);
+    const message = strip((r.stdout || '') + (r.stderr || '')).trim();
+    if (r.code !== 0) { toast(uiLang === 'en' ? 'Could not safely stop; check log' : '无法安全确认停止，请查看日志', 'err'); logLine(message, 'err'); }
+    else { toast(uiLang === 'en' ? 'Task stopped' : '停止请求已处理'); logLine(message, 'dim'); }
+    closeStopTask();
+    await restoreTasks();
+  } catch (e) { toast(uiLang === 'en' ? 'Stop failed' : '停止失败', 'err'); logLine(String(e), 'err'); }
+  finally { btn.disabled = false; }
+};
+
 document.addEventListener('click', event => {
+  const stopButton = event.target.closest('[data-task-stop]');
+  if (stopButton) { promptStopTask(stopButton.dataset.taskStop); return; }
   if (event.target.closest('[data-task-refresh]')) { void refreshTaskStatus(); return; }
   const button = event.target.closest('[data-task-log]');
   if (!button) return;
@@ -3646,6 +3959,81 @@ document.querySelectorAll('.settings-tabs .tab-btn').forEach(btn => {
   btn.onclick = () => switchSettingsTab(btn.dataset.tab);
 });
 document.getElementById('setProxyMode').addEventListener('change', updateProxyInputVisibility);
+function updateVpnStatus(value) {
+  const el = document.getElementById('setVpnStatus');
+  if (!el) return;
+  const labels = uiLang === 'en' ? {connected:'VPN: detected',not_detected:'VPN: not detected in system networks',unknown:'VPN: cannot determine'} : {connected:'VPN：系统检测到已连接',not_detected:'VPN：系统网络中未检测到',unknown:'VPN：无法确定'};
+  el.textContent = labels[value] || labels.unknown;
+}
+async function refreshVpnStatus() {
+  try {
+    const r = await execCmd(ANCLI + ' container vpn-status');
+    const match = (r.stdout || '').match(/ANCLI_VPN=(connected|not_detected|unknown)/);
+    updateVpnStatus(r.code === 0 && match ? match[1] : 'unknown');
+  } catch (_) { updateVpnStatus('unknown'); }
+}
+async function measureContainerMirror(initial) {
+  const prefix = initial ? 'init' : '';
+  const select = document.getElementById(initial ? 'initContainerMirror' : 'setContainerMirror');
+  const button = document.getElementById(initial ? 'initMirrorSpeed' : 'btnMirrorSpeed');
+  const result = document.getElementById(initial ? 'initMirrorSpeedResult' : 'mirrorSpeedResult');
+  const mode = document.getElementById(initial ? 'initNetworkMode' : 'setProxyMode')?.value || 'system';
+  const proxy = document.getElementById(initial ? 'initProxyUrl' : 'setProxyUrl')?.value.trim() || '';
+  if (!select || !button || !result || !['tuna','ustc','official'].includes(select.value)) return;
+  button.disabled = true; result.textContent = uiLang === 'en' ? 'Testing…' : '正在下载最多 1 MiB 测试…';
+  try {
+    const r = await execCmd(ANCLI + ' container speed-test --mirror=' + select.value + ' --network=' + mode + (proxy ? ' --proxy-url=' + encodeURIComponent(proxy) : ''));
+    const output = strip((r.stdout || '') + (r.stderr || ''));
+    const speed = output.match(/ANCLI_SPEED_BPS=(\d+)/);
+    const bytes = output.match(/ANCLI_SPEED_BYTES=(\d+)/);
+    const seconds = output.match(/ANCLI_SPEED_SECONDS=([0-9.]+)/);
+    if (r.code !== 0 || !speed || !bytes || !seconds) throw new Error(uiLang === 'en' ? 'Download failed; check network or proxy.' : '测速失败，请检查网络或代理。');
+    result.textContent = (uiLang === 'en' ? 'Approx. ' : '约 ') + (Number(speed[1])/1048576).toFixed(2) + ' MiB/s · ' + (Number(bytes[1])/1048576).toFixed(2) + ' MiB / ' + seconds[1] + ' s' + (uiLang === 'en' ? ' · temporary data removed' : ' · 临时文件已删除');
+  } catch (e) { result.textContent = String(e.message || e); }
+  finally { button.disabled = false; }
+}
+document.getElementById('btnMirrorSpeed').onclick = () => { void measureContainerMirror(false); };
+document.getElementById('btnProxyProbe').onclick = async () => {
+  const button = document.getElementById('btnProxyProbe');
+  const result = document.getElementById('proxyProbeResult');
+  const mode = document.getElementById('setProxyMode').value;
+  const proxy = document.getElementById('setProxyUrl').value.trim();
+  button.disabled = true;
+  result.textContent = uiLang === 'en' ? 'Checking…' : '正在检测…';
+  try {
+    const r = await execCmd(ANCLI + ' container network-test --network=' + mode + (proxy ? ' --proxy-url=' + encodeURIComponent(proxy) : ''));
+    result.textContent = strip((r.stdout || '') + (r.stderr || '')).trim() || (uiLang === 'en' ? 'No result' : '未返回检测结果');
+    const rawProbe = result.textContent;
+    const ping = {};
+    for (const name of ['baidu', 'qq', 'google', 'cloudflare']) {
+      const match = rawProbe.match(new RegExp('ANCLI_PING_' + name + '=(ok|failed|unknown)'));
+      ping[name] = match ? match[1] : 'unknown';
+    }
+    const pingSummary = (uiLang === 'en' ? 'Ping (domestic / international): ' : 'Ping 国内 / 国外：') +
+      ['baidu', 'qq', 'google', 'cloudflare'].map(name => name + ' ' + (ping[name] === 'ok' ? '✓' : (ping[name] === 'failed' ? '×' : '?'))).join(' · ');
+    result.textContent = result.textContent.replace(/ANCLI_PING_[a-z]+=(?:ok|failed|unknown)\s*/g, '').replace(/ANCLI_PING=unavailable\s*/, '');
+    const vpn = rawProbe.match(/ANCLI_VPN=(connected|not_detected|unknown)/);
+    updateVpnStatus(vpn ? vpn[1] : 'unknown');
+    result.textContent = result.textContent.replace(/ANCLI_VPN=(connected|not_detected|unknown)\s*/, '');
+    const route = result.textContent.match(/ANCLI_ROUTE=(reachable|failed|unknown)/);
+    const routes = uiLang === 'en' ? {reachable:'HTTPS route: reachable',failed:'HTTPS route: target unreachable',unknown:'HTTPS route: no usable test tool'} : {reachable:'HTTPS 线路：目标可达',failed:'HTTPS 线路：目标不可达',unknown:'HTTPS 线路：缺少可用检测工具'};
+    result.textContent = result.textContent.replace(/ANCLI_ROUTE=(reachable|failed|unknown)\s*/, (route ? routes[route[1]] : routes.unknown) + '\n');
+    result.textContent += uiLang === 'en' ? '\nUpstream transparent proxy address cannot be inferred; reachability does not identify the route.' : '\n上游透明代理地址无法从设备可靠推断；目标可达不代表已确认经过代理。';
+    const badge = document.getElementById('setProxyCurrentBadge');
+    const detected = result.textContent.match(/HTTP 代理：(https?:\/\/[^\s]+)/);
+    const tested = /代理连接测试成功/.test(result.textContent);
+    const foreignReachable = ping.google === 'ok' || ping.cloudflare === 'ok';
+    const routeHint = !detected && vpn && vpn[1] === 'not_detected' && foreignReachable
+      ? (uiLang === 'en' ? 'Transparent upstream proxy: possible (inferred from reachability)' : '透明代理：可能存在（根据可达性推测）')
+      : (uiLang === 'en' ? 'Transparent upstream proxy: cannot determine' : '透明代理：无法确定');
+    result.textContent = pingSummary + '\n' + routeHint + '\n' + result.textContent;
+    result.textContent += uiLang === 'en' ? '\nICMP may be blocked; reachability does not prove a proxy or route.' : '\nPing 可能被屏蔽；站点可达也不能证明代理或实际路由。';
+    if (badge) { badge.textContent = detected ? detected[1].replace(/^https?:\/\//, '') + (tested ? '' : (uiLang === 'en' ? ' (untested/failed)' : '（未通过检测）')) : (uiLang === 'en' ? 'No HTTP proxy detected' : '未检测到 HTTP 代理'); badge.className = 'proxy-badge ' + (detected && tested ? 'connected' : 'disconnected'); }
+    if (mode === 'system') result.textContent += uiLang === 'en' ? '\nVPN traffic may still work without an Android HTTP proxy.' : '\n未公布 HTTP 代理不代表 VPN 未运行；VPN 通常无需重启即可生效。';
+    if (r.code !== 0) result.textContent += uiLang === 'en' ? '\nCheck failed.' : '\n检测失败，请检查配置。';
+  } catch (e) { result.textContent = String(e); }
+  finally { button.disabled = false; }
+};
 document.getElementById('btnFactoryReset').onclick = openReset;
 document.getElementById('resetCancel').onclick = closeReset;
 document.getElementById('resetClose').onclick = closeReset;
@@ -3760,7 +4148,7 @@ function consumeModuleDownloadOutput(text, task) {
 
 async function installDownloadedModule(path, button, messageEl) {
   if (moduleDownloadBusy) return;
-  if (!/^\/data\/local\/tmp\/ancli\/module-updates\/ancli-\d+-/.test(path || '')) {
+  if (!/^\/sdcard\/Download\/ancli-\d+-v?\d+\.\d+\.\d+(?:-[A-Za-z0-9][A-Za-z0-9.-]*)?\.zip$/.test(path || '')) {
     messageEl.textContent = uiText('aboutDownloadFailed');
     return;
   }
@@ -4005,7 +4393,8 @@ document.getElementById('repairOverlay').addEventListener('click', e => {
 });
 document.addEventListener('keydown', e => {
   if (e.key !== 'Escape') return;
-  if (document.getElementById('cfgOverlay').classList.contains('show')) closeConfig();
+  if (document.getElementById('welcomeGuideOverlay').classList.contains('show')) closeWelcomeGuide();
+  else if (document.getElementById('cfgOverlay').classList.contains('show')) closeConfig();
   else if (document.getElementById('uninstallAppOverlay').classList.contains('show')) closeUninstallAppPrompt();
   else if (document.getElementById('repairOverlay').classList.contains('show')) closeRepairPrompt();
   else if (document.getElementById('resetOverlay').classList.contains('show')) closeReset();
@@ -4096,6 +4485,32 @@ function setupImeGuard() {
   document.addEventListener('focusout', schedule);
 }
 
+// ---------- 首次使用 root 终端指南 ----------
+function closeWelcomeGuide() {
+  const overlay = document.getElementById('welcomeGuideOverlay');
+  if (!overlay) return;
+  overlay.classList.remove('show');
+  overlay.setAttribute('aria-hidden', 'true');
+  try { localStorage.setItem('ancli_welcome_guide_v1', 'seen'); } catch (e) { /* storage may be disabled */ }
+  try { sessionStorage.setItem('ancli_welcome_guide_v1', 'seen'); } catch (e) { /* storage may be disabled */ }
+}
+function maybeShowWelcomeGuide() {
+  let seen = false;
+  try { seen = localStorage.getItem('ancli_welcome_guide_v1') === 'seen'; } catch (e) { /* try session storage */ }
+  if (!seen) { try { seen = sessionStorage.getItem('ancli_welcome_guide_v1') === 'seen'; } catch (e) { /* show this visit */ } }
+  if (seen) return;
+  const overlay = document.getElementById('welcomeGuideOverlay');
+  if (!overlay) return;
+  overlay.classList.add('show');
+  overlay.setAttribute('aria-hidden', 'false');
+  requestAnimationFrame(() => document.getElementById('welcomeGuideDone')?.focus());
+}
+document.getElementById('welcomeGuideClose').onclick = closeWelcomeGuide;
+document.getElementById('welcomeGuideDone').onclick = closeWelcomeGuide;
+document.getElementById('welcomeGuideOverlay').addEventListener('click', e => {
+  if (e.target.id === 'welcomeGuideOverlay') closeWelcomeGuide();
+});
+
 // ---------- 主题 ----------
 function applyTheme(mode) {
   if (!['auto', 'light', 'dark'].includes(mode)) mode = 'auto';
@@ -4130,15 +4545,17 @@ if (window.matchMedia) {
   let savedLang = 'zh';
   try { savedLang = localStorage.getItem('ancli_lang') || 'zh'; } catch (e) { /* ignore */ }
   applyLanguage(savedLang);
+  maybeShowWelcomeGuide();
 
   // 首屏只等待两个轻量 JSON 请求，两个请求各自完成后立即更新对应区域。
-  const firstLoad = Promise.allSettled([loadStatus(), loadApps()]);
+  const firstLoad = resolveAncli().then(() => Promise.allSettled([loadStatus(), loadApps()]));
 
   // 2026-11-16：默认 PATH 已由模块 wrapper 提供 ancli；不再在首屏额外
   // 探测绝对路径，避免一条无关 shell 命令阻塞设置和更新按钮。
 
   // 日志维护、任务恢复与官方版本查询延迟到首屏稳定后静默运行。
   void firstLoad.finally(() => {
+    void checkPendingActivation();
     setTimeout(() => {
       void trimTaskLogs();
       void restoreTasks().catch(() => {});

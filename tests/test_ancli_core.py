@@ -1214,15 +1214,11 @@ def test_github_release_downloads_fail_fast_and_are_verified():
         'claude-code ships SHASUMS256.txt — verify it'
 
 
-def test_full_purge_uses_one_shot_marker():
-    root = os.path.join(os.path.dirname(__file__), '..')
-    with open(os.path.join(root, 'src', 'module', 'uninstall.sh'), encoding='utf-8') as f:
-        uninstall = f.read()
+def test_uninstall_instructions_explain_manager_purge():
+    for language in ("zh", "en"):
+        text = core.STRINGS[language]["uninstall_instructions"]
+        assert "ancli_force_purge" not in text
 
-    assert 'PURGE_MARKER="/data/local/tmp/ancli_force_purge"' in uninstall
-    assert 'rm -f "$PURGE_MARKER"' in uninstall
-    assert 'rm -rf "$ANCLI_DIR"' in uninstall
-    assert 'rm -rf /data/local/tmp/ancli' not in uninstall
 
 
 class TestAndroidDnsDiscovery:

@@ -44,7 +44,6 @@ esac
 # 2. 解析当前宿主机 PWD 在 PRoot 容器中的映射路径；
 #    若处于未挂载的宿主机路径（如 /cache），回退至小型 TUI 工作目录
 ANCLI_TUI_CWD=/root/.ancli-work
-mkdir -p "/data/local/tmp/ancli/rootfs$ANCLI_TUI_CWD" 2>/dev/null || true
 
 # 容器延迟安装时，rootfs 还不存在，必须在宿主侧直接处理 container
 # 状态、规格和安装请求；其他命令继续走正常 PRoot 入口。
@@ -75,6 +74,8 @@ if [ ! -f /data/local/tmp/ancli/rootfs/bin/bash ]; then
     echo "[AnCLI] Ubuntu 容器尚未安装。请先运行：ancli container install" >&2
     exit 78
 fi
+
+mkdir -p "/data/local/tmp/ancli/rootfs$ANCLI_TUI_CWD" 2>/dev/null || true
 
 # 确保 Android 宿主桥接守护服务存活（供容器内 ancli android shell IPC 调用）
 _bridge_dir=/data/local/tmp/ancli/.bridge

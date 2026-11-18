@@ -1,3 +1,69 @@
+## v1.2.642-beta (2026-11-18)
+
+- Add a first-use guide showing `su`, then direct `codex` and `agy` launch commands in a root terminal.
+- Fix the centered, clipped WebUI layout on portrait tablets.
+- Recover stale terminal input state and safely stop Codex/PRoot descendants before restoring the terminal.
+
+## v1.2.641-beta (2026-11-18)
+
+- Explain Codex PRoot sandbox limitations before WebUI installation and direct CLI users to the manual `/permissions` Full Access setting.
+- Document the tablet-verified Codex global `AGENTS.md` symlink target.
+
+## v1.2.640-beta (2026-11-18)
+
+- Start Codex with `--no-daemon` in its generated AnCLI wrapper to avoid the Android PRoot shared app-server socket failure.
+
+## v1.2.639-beta (2026-11-18)
+
+- Allow selecting and speed testing the Ubuntu container download mirror, with bounded temporary downloads and automatic cleanup.
+- Refresh the app list immediately when container readiness changes.
+- Improve network diagnostics, WebUI command discovery, and safe cancellation of installation tasks.
+
+## v1.2.638-beta (2026-11-18)
+
+- WebUI 首屏探测宿主命令的可执行绝对路径，并提示待重启的模块状态。
+- 代理页支持手动刷新，分开展示 VPN、系统 HTTP 代理及国内外可达性；透明代理仅提示可能。
+- 为容器及应用安装任务提供进程身份校验、二次确认停止和任务临时文件清理。
+
+## v1.2.637-beta (2026-11-18)
+
+- 在支持热安装的 KernelSU 中申请立即激活 WebUI；系统覆盖文件改变时安全回退到重启生效。
+- 热安装后检查容器状态入口，已有 Agent 和桥接进程不被主动终止。
+
+## v1.2.636-beta (2026-11-18)
+
+- 容器规格选择增加第五项“返回上一级”，可重新选择立即安装或稍后安装。
+- 修复首次选择 WebUI 安装时，状态查询创建空占位目录并误判为残留；保留含用户数据的目录。
+
+## v1.2.635-beta (2026-11-18)
+
+- 最小 Agent 环境包含 Node.js/npm、Python/pip 及下载工具；安装 npm 型 Agent 前自动修复旧环境。
+- 默认安装 Node.js 24 LTS，按架构下载并验证固定 SHA-256；保留已安装的更高版本。
+- 重新分层归档、编译与诊断工具，安装占用待实测。
+
+## v1.2.634-beta (2026-11-18)
+
+- 修复 WebUI 应用容器规格时沿用旧配置；安装请求携带选择并核对结果。
+- 安装界面显示各规格完整软件包，说明缩小规格不会自动卸载已有包。
+- 遇到旧版或未完成容器时可选择修补或确认清理后重新选择，取消和超时保留数据并停止。
+
+## v1.2.633-beta (2026-11-18)
+
+- 修复 APT 密钥兼容脚本行尾导致 Android shell 无法执行的问题。
+- 刷入和 WebUI 初始化时检测系统或手动 HTTP 代理，并报告连通性结果。
+- 新容器在临时目录安装，失败时清理本次半成品；未知的已有数据不会自动删除。
+
+## v1.2.632-beta (2026-11-18)
+
+- 修复 ARM64 PRoot 中 APT 错误判断 Ubuntu 密钥环不可读导致签名验证失败的问题，继续保留签名验证。
+- 简化刷入时的容器规格列表和切换提示，减少重复输出。
+
+## v1.2.631-beta (2026-11-18)
+
+- 统一管理器与 WebUI 卸载行为，清理 AnCLI 容器、工具、配置、密钥与入口；覆盖更新保留容器。
+- 容器尚未安装时，即使旧配置存在也显示音量键选择；按键不可用或未确认时延后安装。
+- 模块更新 ZIP 下载到手机 Download 文件夹，校验通过后才交付，不覆盖同名不同内容文件。
+
 ## v1.2.630-beta (2026-11-18)
 
 ### 容器、桥接与 WebUI 改进

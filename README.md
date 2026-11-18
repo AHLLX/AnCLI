@@ -10,6 +10,8 @@ AnCLI 是一个为已 Root 安卓设备打造的统一、免系统修改（Syste
 
 当前运行后端只有 `proot-ubuntu`。Android 的 `/system` 继续保持只读，工具通过模块 systemless wrapper 与 KernelSU/APatch 动态路径暴露；容器内 Agent 的运行时上下文规范源固定在 `/root/.agents/AGENTS.md`，Codex 与 Antigravity 通过各自的兼容入口读取它。
 
+> **KernelSU 热安装**：当安装器声明支持热安装且已有模块的 `system/` 覆盖文件与新包一致时，安装器会请求立即激活模块文件与 WebUI。首次安装也可请求热安装；system 挂载仍要重启，root 终端可使用 KernelSU 动态命令路径。旧版 KernelSU、其他管理器，或覆盖文件发生变化时，仍按管理器提示重启。最终是否热安装成功，以刷入日志为准。
+
 ## 功能特性
 
 - **独立二进制工具无需宿主 Node.js**：Claude Code、OpenCode 和 MiMo Code 直接安装官方预编译 Linux-arm64 二进制；DeepSeek Harness（`dsh`）是明确的 npm 例外，会在容器内引导自己的 Node LTS。
@@ -29,6 +31,8 @@ AnCLI 是一个为已 Root 安卓设备打造的统一、免系统修改（Syste
 - **稳定的 dsh WebUI 启动**：AnCLI WebUI 等待 dsh 生成带 token 的地址后打开浏览器；3080 已有服务时复用该服务。
 - **统一品牌图标**：模块图标和 WebUI 顶部使用黑底终端与安卓机器人图标。
 - **终端生命周期绑定**：Agent wrapper 会绑定启动它的终端父进程；终端正常切到后台时继续运行，终端被划掉或强制停止时自动结束 PRoot 和 Agent。完全初始化前也会先清理已知 Agent 进程。
+- **Codex PRoot 启动**：AnCLI 生成的 Codex wrapper 自动添加 `--no-daemon`，避免 Android PRoot 下共享 app-server 因 Linux `bubblewrap`/namespace 不可用而等待 socket 超时。仅对 Codex 生效。
+- **Codex 命令沙箱提示**：PRoot 无法建立 Codex 默认沙箱所需的挂载隔离；安装 `bubblewrap` 不会补上内核能力。安装时 WebUI 会提示用户在 Codex 中运行 `/permissions` 并手动选择 `Full Access` 后重试。该选项会关闭 Codex 自身的命令沙箱，AnCLI 不会自动切换。
 
 ## 项目指导文件
 
@@ -80,13 +84,13 @@ dsh headless "总结这个仓库"   # 一次性任务，打印结果后退出
 
 AnCLI 保留在自己的公开 GitHub 仓库中，KernelSU Modules 负责校验并索引不可变 Release。首次提交前，在 GitHub 仓库开启 **Settings → General → Releases → Enable release immutability**，然后在 [KernelSU Developer Portal](https://developers.kernelsu.org/) 中执行 **预检 → 预览 → 提交收录**。模块 ID 固定为 `ancli`。
 
-后续升级只需提高 `versionCode`，运行 `python scripts/prepare_release.py` 和 `python scripts/build_module.py`，提交 `v*` 标签并推送；仓库内的 [KernelSU 发布工作流](.github/workflows/kernelsu-release.yml) 会构建并发布不可变 Release。官方资产名称为 `ancli-<versionCode>-<version>.zip`，当前资产为 `ancli-22-v1.2.610.zip`。完整维护步骤见 [KernelSU 官方目录维护](docs/KERNELSU-MAINTENANCE.md)。
+后续升级需提高 `versionCode` 并同步版本元数据，运行 `python scripts/build_module.py`，提交 `v*` 标签并推送；仓库内的 [KernelSU 发布工作流](.github/workflows/kernelsu-release.yml) 会构建并发布不可变 Release。官方资产名称为 `ancli-<versionCode>-<version>.zip`。Beta 发布保持 `update.json` 指向稳定版。完整维护步骤见 [KernelSU 官方目录维护](docs/KERNELSU-MAINTENANCE.md)。
 
 ## 安装方法
 
 ### 方式 A：通过 Root 管理器刷入 (推荐)
 
-1. 从 [Releases](https://github.com/AHLLX/AnCLI/releases) 页面下载 `ancli-<versionCode>-<版本号>.zip` 模块包（当前为 `ancli-22-v1.2.610.zip`）。
+1. 从 [Releases](https://github.com/AHLLX/AnCLI/releases) 页面下载最新版本列出的 `ancli-<versionCode>-<版本号>.zip` 模块包。
 2. 打开你的 Magisk、KernelSU 或 APatch 管理器应用。
 3. 进入 **模块** -> **从存储安装**，选择下载的 ZIP 文件。
 4. 安装并完成初始化后，在任意 root 终端输入 `ancli` 即可启动。
@@ -247,6 +251,8 @@ skill 存在容器的 `/root` 下，模块升级不会丢；想跟着项目走�
 
 Termius 新会话、或 `su` 之后直接敲 `codex`/`mimo`，宿主 cwd 通常是 `/`。Node/TUI 工具会扫描当前工作目录；如果直接使用 `/root`，还会碰到 Codex 缓存、会话和 skills。AnCLI 把这种启动转到小目录——默认 `/root/.ancli-work`，也可以自己指定：
 
+当前默认配置留空，因此有效目录为 `/root/.ancli-work`。这只约束从 `/` 或不可映射目录启动的情况；若启动时继承了有效目录，Codex 会把那个目录当工作区并读取其中的项目文件。排查平板启动扫描慢时，先记录启动时的 `pwd` 和 Codex 实际工作区；模拟器配置不能证明平板当时使用的目录。
+
 ```bash
 ancli config                                     # 查看当前设置
 ancli config --set default_cwd=/sdcard/projects  # 从 / 启动时落到这里
@@ -269,6 +275,8 @@ AnCLI 会在容器规范目录 `/root/.agents/AGENTS.md` 维护一份简短的�
 `ancli agent-init` 可以显式生成；`ancli repair`、`ancli skills` 和成功安装工具时也会刷新
 AnCLI 自己生成的文件。默认工作目录只影响工具启动位置，运行时上下文规范源始终位于
 `/root/.agents/AGENTS.md`。
+
+2026-11-18 平板实测核对：`/root/.codex/AGENTS.md` 指向 `/root/.agents/AGENTS.md`，目标文件存在且内容为 AnCLI Runtime Context。设备重装或路径变化后仍应重新实测。
 
 新文件包含首次环境确认协议。第一个读取它的 Agent 必须先探测当前设备，再运行
 `ancli agent-init --finalize`。AnCLI 会把实测路径、绑定关系、可用命令、已安装工具和操作边界
@@ -325,12 +333,9 @@ export ANCLI_MIRROR="mirrors.ustc.edu.cn"
 
 ## 卸载方法
 
-- **普通卸载（安全且默认）**：在 Magisk/KernelSU/APatch 管理器中删除模块时，系统只会清理模块的挂载入口，而**安全保留**你的完整 Ubuntu 容器系统、已安装的 Python 依赖包和 API 密钥配置。这样你在以后升级重装时能够瞬间恢复环境。
-- **彻底清除（完全卸载）**：如果你想彻底删除容器、已安装工具、密钥和配置，请在 `ancli` 主菜单中按 `u` 键，然后选择 `[3] Completely uninstall AnCLI` 获取受支持的清理流程。在 root Android shell 中先创建一次性清除标记，再从 Magisk、KernelSU 或 APatch 管理器卸载模块：
-  ```bash
-  touch /data/local/tmp/ancli_force_purge
-  ```
-  卸载脚本会消费并删除这个标记，清理 AnCLI 数据目录和动态 wrapper。升级时不要保留这个标记。
+在 Magisk、KernelSU 或 APatch 管理器中卸载 AnCLI，或在 WebUI 中选择“彻底卸载模块”，均会删除 Ubuntu 容器、容器内工具、配置和密钥，并清理 AnCLI 的宿主命令入口。卸载会永久删除这些数据；需要保留时请先自行备份。模块目录和系统挂载由管理器在重启后完成移除。
+
+覆盖更新模块与卸载是不同操作：更新时保留现有容器及配置。
 
 ## 技术架构
 

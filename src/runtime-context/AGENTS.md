@@ -18,6 +18,8 @@
 
 Codex 的全局规则入口是 `/root/.codex/AGENTS.md`；AGY 的全局规则入口可能是 `/root/.gemini/AGENTS.md` 或 `/root/.gemini/GEMINI.md`。AnCLI 将这些入口都链接到本文件；规范源仍是 `/root/.agents/AGENTS.md`。如果某个 Agent 报告没有加载记忆，先检查它自己的官方发现路径和 `readlink -f` 结果。进入具体仓库后，仓库根目录到当前目录之间的项目级 `AGENTS.md` 仍按工具规则优先于全局入口。
 
+在 Android PRoot 中，Codex 默认命令沙箱的 bubblewrap 挂载隔离可能无法建立；安装 bubblewrap 包并不保证修复 PRoot 的挂载兼容问题。需要执行命令时，可在 Codex 输入框运行 `/permissions` 并由用户手动选择 `Full Access` 后重试。该模式关闭 Codex 自身命令沙箱，只在用户信任的工作区使用；AnCLI 不自动更改权限。
+
 <!-- ancli:first-run:pending -->
 ## 首次环境确认（按需执行）
 
@@ -101,4 +103,4 @@ ancli repair
 - 工具安装和版本来源由 `registry.json` 定义；优先修改 registry 数据，不要为单个工具复制核心分支。
 - wrapper 必须保持完整 Android bind、TTY 恢复、代理/DNS 继承和 `/mnt/ancli-data` 通道。
 - `--json` stdout 必须只有 JSON；诊断写 stderr。
-- 模块管理器卸载默认保留 rootfs、安装状态、密钥和配置；只有显式创建 `/data/local/tmp/ancli_force_purge` 才执行全清。
+- 模块管理器卸载和 WebUI 彻底卸载都会删除 rootfs、安装状态、密钥和配置；需要保留时先备份。覆盖更新不应删除现有容器。

@@ -10,7 +10,7 @@
 unset LD_LIBRARY_PATH LD_PRELOAD
 
 # 2. 容器内基础环境变量（所有受管工具均运行在 Ubuntu PRoot 客体中）
-export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/root/.local/bin
+export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/root/.local/bin:/system/bin:/system/xbin
 export TMPDIR=/tmp
 export HOME=/root
 export GODEBUG=netdns=go
@@ -102,17 +102,29 @@ else
         fi
     fi
     if [ -z "$PROXY_HOST" ]; then
-        PROXY_INFO=$(dumpsys connectivity 2>/dev/null | grep -i 'HttpProxy:' | head -n 1)
-        if [ -n "$PROXY_INFO" ]; then
-            PROXY_HOST=$(echo "$PROXY_INFO" | sed -n 's/.*HttpProxy:[[:space:]]*\[\([^ ]*\)\].*/\1/p')
-            PROXY_PORT=$(echo "$PROXY_INFO" | sed -ne 's/.*HttpProxy:[[:space:]]*\[[^ ]*\][[:space:]]*\([0-9]*\).*/\1/p')
-            if [ -n "$PROXY_HOST" ] && [ -n "$PROXY_PORT" ]; then
-                # 普通 shell 用户（uid 2000）无权写入 root 所有的 /data/local/tmp/ancli，失败时静默退回每次探测
-                mkdir -p /data/local/tmp/ancli 2>/dev/null || true
-                echo "$PROXY_HOST $PROXY_PORT $(date +%s 2>/dev/null || echo 0)" > "$PROXY_CACHE" 2>/dev/null || true
-                chmod 644 "$PROXY_CACHE" 2>/dev/null || true
-                cp -f "$PROXY_CACHE" "$PROXY_LAST" 2>/dev/null || true
+        # Android's explicit HTTP proxy setting and active Wi-Fi proxy are
+        # separate sources; neither identifies a VPN's upstream server.
+        _proxy_setting=$(settings get global http_proxy 2>/dev/null | head -n 1 | tr -d '\r')
+        case "$_proxy_setting" in
+            ''|null|:0|0.0.0.0:0|*[!a-zA-Z0-9.:-]*|:*|*:|*:*:*) ;;
+            *:*)
+                _proxy_candidate_host=${_proxy_setting%:*}
+                _proxy_candidate_port=${_proxy_setting##*:}
+                case "$_proxy_candidate_port" in ''|*[!0-9]*) ;; *) PROXY_HOST="$_proxy_candidate_host"; PROXY_PORT="$_proxy_candidate_port" ;; esac
+                ;;
+        esac
+        if [ -z "$PROXY_HOST" ]; then
+            PROXY_INFO=$(dumpsys connectivity 2>/dev/null | grep -i 'HttpProxy:' | head -n 1)
+            if [ -n "$PROXY_INFO" ]; then
+                PROXY_HOST=$(echo "$PROXY_INFO" | sed -n 's/.*HttpProxy:[[:space:]]*\[\([^ ]*\)\].*/\1/p')
+                PROXY_PORT=$(echo "$PROXY_INFO" | sed -ne 's/.*HttpProxy:[[:space:]]*\[[^ ]*\][[:space:]]*\([0-9]*\).*/\1/p')
             fi
+        fi
+        if [ -n "$PROXY_HOST" ] && [ -n "$PROXY_PORT" ]; then
+            mkdir -p /data/local/tmp/ancli 2>/dev/null || true
+            echo "$PROXY_HOST $PROXY_PORT $(date +%s 2>/dev/null || echo 0)" > "$PROXY_CACHE" 2>/dev/null || true
+            chmod 644 "$PROXY_CACHE" 2>/dev/null || true
+            cp -f "$PROXY_CACHE" "$PROXY_LAST" 2>/dev/null || true
         fi
     fi
     if [ -z "$PROXY_HOST" ] && [ -f "$PROXY_LAST" ]; then

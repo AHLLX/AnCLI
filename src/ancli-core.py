@@ -17,6 +17,7 @@ import json
 import shlex
 import time
 import threading
+import tempfile
 import subprocess
 import shutil
 import urllib.request
@@ -41,7 +42,7 @@ MOD_DIR = "/data/adb/modules/ancli"
 KSU_BIN = "/data/adb/ksu/bin"
 AP_BIN  = "/data/adb/ap/bin"
 
-VERSION = "1.2.630-beta"
+VERSION = "1.2.642-beta"
 
 # 2026-11-13: 应用目录随模块固化打包；官方版本检查直接读取各应用自身的 `latest` 字段，
 # 不再从网络拉取第二份 AnCLI 注册表。
@@ -59,7 +60,7 @@ BIND_MOUNT_ROOTS = ("/dev", "/proc", "/sys", "/sdcard", "/storage", "/mnt",
                     "/data", "/apex", "/system", "/linkerconfig")
 # `ancli check` 写入的官方最新版本缓存，会合并到 `ancli list --json` 输出中供 WebUI 离线兜底
 UPDATE_CACHE   = f"{ANCLI_DIR}/.update_cache.json"
-MODULE_UPDATE_DIR = f"{ANCLI_DIR}/module-updates"
+MODULE_UPDATE_DIR = "/sdcard/Download"
 CONTAINER_CONFIG_FILE = f"{ANCLI_DIR}/container-config.json"
 CONTAINER_PROFILES_FILE = f"{ANCLI_DIR}/container-profiles.json"
 DNS_CACHE      = f"{ANCLI_DIR}/.dns_cache"   # 由宿主机 ancli_env.sh 探测写入的真实 DNS 缓存
@@ -110,7 +111,7 @@ def load_container_profiles():
 
 def load_container_config(profiles=None):
     """Return persisted host-side container settings with safe defaults."""
-    defaults = {"profile": "standard", "install_mode": "deferred", "network_mode": "system"}
+    defaults = {"profile": "standard", "install_mode": "deferred", "network_mode": "system", "mirror": "tuna"}
     try:
         with open(CONTAINER_CONFIG_FILE, "r", encoding="utf-8") as fh:
             value = json.load(fh)
@@ -126,6 +127,8 @@ def load_container_config(profiles=None):
         defaults["install_mode"] = "deferred"
     if defaults["network_mode"] not in ("system", "manual", "direct"):
         defaults["network_mode"] = "system"
+    if defaults["mirror"] not in ("tuna", "ustc", "official"):
+        defaults["mirror"] = "tuna"
     profile = profiles.get(defaults["profile"], {})
     defaults["profile_name"] = profile.get("name", defaults["profile"])
     defaults["description"] = profile.get("description", "")
@@ -404,7 +407,7 @@ STRINGS = {
         "enter_num_uninstall": "输入数字进行卸载 (0 取消): ",
         "confirm_uninstall_all": "确定要卸载所有应用吗？(y/n): ",
         "all_apps_uninstalled": "[OK] 所有应用已卸载。",
-        "uninstall_instructions": "\n\033[91m完全卸载会删除容器、安装状态、密钥和配置。退出此菜单，在 root Android shell 中创建清除标记，再从 Magisk、KernelSU 或 APatch 管理器卸载模块：\033[0m\n\n    \033[1;33mtouch /data/local/tmp/ancli_force_purge\033[0m\n\n\033[90m卸载脚本会清理标记和动态 wrapper。\033[0m",
+        "uninstall_instructions": "\n\033[91m管理器卸载和 WebUI 彻底卸载都会删除容器、工具、密钥和配置。请先备份，然后从 Magisk、KernelSU 或 APatch 管理器卸载模块并重启。\033[0m\n",
         
         "manage_title": "管理 {}",
         "manage_update": "更新",
@@ -506,7 +509,7 @@ STRINGS = {
         "enter_num_uninstall": "Enter number to uninstall (0 to cancel): ",
         "confirm_uninstall_all": "Are you sure you want to uninstall ALL apps? (y/n): ",
         "all_apps_uninstalled": "[OK] All apps uninstalled.",
-        "uninstall_instructions": "\n\033[91mComplete removal deletes the container, install state, secrets, and config. Exit this menu, create the purge marker in a root Android shell, then uninstall the module from Magisk, KernelSU, or APatch:\033[0m\n\n    \033[1;33mtouch /data/local/tmp/ancli_force_purge\033[0m\n\n\033[90mThe uninstall script removes the marker and dynamic wrappers.\033[0m",
+        "uninstall_instructions": "\n\033[91mManager and WebUI uninstall both delete the container, tools, secrets and configuration. Back up first, then uninstall from Magisk, KernelSU or APatch and reboot.\033[0m\n",
         
         "manage_title": "Manage {}",
         "manage_update": "Update",
@@ -789,6 +792,10 @@ def generate_proot_wrapper(executable, env_dict=None, runtime_env_list=None, pro
     proxy_override = ""
     if proxy_mode == "direct":
         proxy_override = "# This tool opts out of the Android system proxy.\nunset http_proxy https_proxy all_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY\n"
+    # Android PRoot cannot provide the Linux namespace support required by
+    # Codex's shared app-server daemon. Run Codex in-process by default; this
+    # avoids stale/missing daemon sockets while leaving other agents unchanged.
+    codex_no_daemon = "--no-daemon " if executable == "codex" else ""
 
     # Build the single PRoot wrapper used by every supported app.
     wrapper = f"""#!/system/bin/sh
@@ -798,9 +805,9 @@ def generate_proot_wrapper(executable, env_dict=None, runtime_env_list=None, pro
 #    to prevent nested PRoot lockups and watchdog timeouts.
 if [ "$ANCLI_IN_CONTAINER" = "1" ] || [ -n "$PROOT_TMP_DIR" ]; then
     if [ -x "/usr/local/bin/{executable}" ]; then
-        exec "/usr/local/bin/{executable}" "$@"
+        exec "/usr/local/bin/{executable}" {codex_no_daemon}"$@"
     elif [ -x "/usr/bin/{executable}" ]; then
-        exec "/usr/bin/{executable}" "$@"
+        exec "/usr/bin/{executable}" {codex_no_daemon}"$@"
     fi
 fi
 
@@ -962,7 +969,16 @@ fi
 #    puts them back on every exit path. `exec` is deliberately not used anymore:
 #    it would replace this shell, leaving nobody to restore the terminal.
 _ancli_saved_tty=""
-if [ -t 0 ]; then _ancli_saved_tty=$(stty -g 2>/dev/null) || _ancli_saved_tty=""; fi
+if [ -t 0 ]; then
+    # A previous force-stop may have killed a TUI before it restored canonical
+    # input/echo. Normalize that stale raw state before saving the state that
+    # this wrapper will restore after the next TUI exits.
+    _ancli_tty_state=$(stty -a 2>/dev/null)
+    if printf '%s\n' "$_ancli_tty_state" | grep -Eq '(^|[;[:space:]])-icanon([;[:space:]]|$)|(^|[;[:space:]])-echo([;[:space:]]|$)'; then
+        stty sane 2>/dev/null || true
+    fi
+    _ancli_saved_tty=$(stty -g 2>/dev/null) || _ancli_saved_tty=""
+fi
 ancli_restore_tty() {{
 # Restore line discipline and visual state even when the TUI exits by signal.
 # Some Android terminal apps keep the alternate screen/hidden cursor otherwise,
@@ -976,19 +992,45 @@ printf '\033[?25h\033[?1049l\033[0m\r\n' 2>/dev/null || true
 return 0
 }}
 # A terminal app may deliver HUP/TERM to the wrapper after the Codex task is
-# disconnected, while the foreground PRoot child remains in the same process
-# group. Forward the signal to that group so the child cannot be orphaned and
-# leave the caller's shell waiting on a dead TUI session.
+# disconnected. Signal only this wrapper's direct children. Sending to -$$ is
+# unsafe: the wrapper may share that process group with its caller, and after
+# disabling this trap the group signal can terminate the wrapper before it has
+# waited for PRoot or restored the terminal.
 ancli_signal_exit() {{
 _ancli_signal="$1"
 trap - INT TERM HUP EXIT
-ancli_restore_tty
-[ -n "$ANCLI_OPEN_WATCHER_PID" ] && kill "$ANCLI_OPEN_WATCHER_PID" 2>/dev/null || true
-[ -n "$ANCLI_WATCHDOG_PID" ] && kill "$ANCLI_WATCHDOG_PID" 2>/dev/null || true
-for _p in $(pgrep -P "$$" 2>/dev/null); do
+_ancli_direct_children="$(pgrep -P "$$" 2>/dev/null)"
+_ancli_descendants=""
+ancli_collect_descendants() {{
+    for _child in $(pgrep -P "$1" 2>/dev/null); do
+        _ancli_descendants="$_ancli_descendants $_child"
+        ancli_collect_descendants "$_child"
+    done
+}}
+ancli_collect_descendants "$$"
+for _p in $_ancli_descendants; do
     kill -"$_ancli_signal" "$_p" 2>/dev/null || true
 done
-kill -"$_ancli_signal" -$$ 2>/dev/null || true
+# Give PRoot and the helper processes time to exit before restoring the tty.
+# If a child ignores the signal, escalate only against the recorded direct
+# children; never signal the caller's process group.
+_ancli_wait=0
+while [ "$_ancli_wait" -lt 3 ]; do
+    _ancli_alive=0
+    for _p in $_ancli_descendants; do
+        kill -0 "$_p" 2>/dev/null && _ancli_alive=1
+    done
+    [ "$_ancli_alive" -eq 0 ] && break
+    sleep 1
+    _ancli_wait=$((_ancli_wait + 1))
+done
+if [ "$_ancli_wait" -ge 3 ]; then
+    for _p in $_ancli_descendants; do
+        kill -KILL "$_p" 2>/dev/null || true
+    done
+fi
+for _p in $_ancli_direct_children; do wait "$_p" 2>/dev/null || true; done
+ancli_restore_tty
 case "$_ancli_signal" in
     INT) exit 130 ;;
     TERM) exit 143 ;;
@@ -1063,7 +1105,7 @@ export PROOT_NO_SECCOMP=1
 {ANCLI_DIR}/bin/proot -r {ROOTFS} -b /dev -b /proc -b /sys -b {ANCLI_DIR} \\
 $ANCLI_BIND_ARGS \\
 -b {ANCLI_DIR}/hosts:/etc/hosts -b /data/adb $SHM_BIND \\
--w "$PROOT_CWD" /usr/bin/env ANCLI_IN_CONTAINER=1 PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/system/bin SHELL=/bin/bash BROWSER=/usr/local/bin/xdg-open {executable} "$@"
+-w "$PROOT_CWD" /usr/bin/env ANCLI_IN_CONTAINER=1 PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/system/bin SHELL=/bin/bash BROWSER=/usr/local/bin/xdg-open {executable} {codex_no_daemon}"$@"
 _ancli_rc=$?
 [ -n "$ANCLI_OPEN_WATCHER_PID" ] && kill "$ANCLI_OPEN_WATCHER_PID" 2>/dev/null || true
 [ -n "$ANCLI_OPEN_WATCHER_PID" ] && wait "$ANCLI_OPEN_WATCHER_PID" 2>/dev/null || true
@@ -2655,6 +2697,8 @@ def install_app(app_id, registry):
 
     print(f"\033[92m[*] Installing {app['name']}...\033[0m")
     print(f"\033[96m[i] Backend: proot\033[0m")
+    if app.get('executable') == 'codex':
+        print("\033[93m[!] Android PRoot cannot provide Codex's default bubblewrap mount sandbox. After installation, start Codex, run /permissions, select Full Access, then retry shell commands. Full Access disables Codex's command sandbox; use only in a trusted workspace.\033[0m")
     return _install_proot(app_id, app, registry)
 
 def _build_pipe_script_cmd(script_path, installer_env=None, installer_args=""):
@@ -2757,6 +2801,18 @@ def _install_proot(app_id, app, registry=None):
             print("\033[91m[X] Failed to install 'curl' inside container. Installation might fail.\033[0m")
         else:
             print("\033[92m[OK] 'curl' and certificates installed successfully.\033[0m")
+
+    # Old minimal containers may have no npm or an outdated Node. Repair the
+    # runtime before invoking npm-based agent installers.
+    if app_id in ("codex-cli", "dsh"):
+        node_setup = "/data/local/tmp/ancli/node-setup.sh"
+        if not os.path.isfile(node_setup):
+            print("[X] Node.js 修复脚本缺失，请先升级 AnCLI 模块。")
+            return False
+        print("[i] 正在检查 Node.js 与 npm，缺失或版本过低时将自动安装。")
+        if not run_cmd("sh " + node_setup):
+            print("[X] Node.js / npm 初始化失败，请检查网络后重试。")
+            return False
 
     # Dispatch based on install_method defined in registry
     install_method = app.get('install_method', 'cmd')
@@ -3723,8 +3779,8 @@ def check_module_update(channel=None):
 def download_module_update(channel=None):
     """Download the selected module channel into the host-visible update directory.
 
-    The WebUI runs this command in the guest, while ``/data/local/tmp`` remains
-    host-visible through the standard bind.  Progress lines are deliberately
+    The WebUI runs this command in the guest; ``/sdcard/Download`` is the
+    Android shared Download directory through the standard bind.  Progress lines are deliberately
     plain text so the WebUI can update a progress bar without parsing stdout as
     JSON.  The ZIP is validated before a ready marker is emitted.
     """
@@ -3747,7 +3803,7 @@ def download_module_update(channel=None):
         return None
 
     target = os.path.join(MODULE_UPDATE_DIR, asset_name)
-    partial = target + ".part"
+    partial = None
     expected_version = str(result.get("latest_version") or "")
     expected_code = int(result.get("latest_version_code") or 0)
     received = 0
@@ -3755,13 +3811,10 @@ def download_module_update(channel=None):
 
     try:
         os.makedirs(MODULE_UPDATE_DIR, exist_ok=True)
-        # 2026-11-16：每次下载先删除旧目标和半成品，避免把上次中断的 ZIP 当成可安装包。
-        for stale in (target, partial):
-            try:
-                if os.path.exists(stale):
-                    os.remove(stale)
-            except OSError:
-                pass
+        # Use a private temporary filename in Download; never remove an existing
+        # user file before the replacement has been fully downloaded and checked.
+        fd, partial = tempfile.mkstemp(prefix="." + asset_name + ".", suffix=".part", dir=MODULE_UPDATE_DIR)
+        os.close(fd)
 
         print(f"[i] 正在下载 {asset_name} …", flush=True)
         with _urlopen_response(zip_url, {"User-Agent": "AnCLI"}, timeout=30) as response:
@@ -3784,8 +3837,7 @@ def download_module_update(channel=None):
                         last_report = now
                 output.flush()
 
-        os.replace(partial, target)
-        with zipfile.ZipFile(target) as package:
+        with zipfile.ZipFile(partial) as package:
             names = set(package.namelist())
             if "module.prop" not in names:
                 raise ValueError("ZIP 根目录缺少 module.prop")
@@ -3798,6 +3850,19 @@ def download_module_update(channel=None):
             raise ValueError(f"ZIP 版本不匹配：清单 {expected_version}，文件 {actual_version}")
         if expected_code and actual_code != expected_code:
             raise ValueError(f"ZIP versionCode 不匹配：清单 {expected_code}，文件 {actual_code}")
+
+        if os.path.exists(target):
+            # Keep an identical existing download; never overwrite a different
+            # file the user has already placed in Download.
+            with open(target, "rb") as previous, open(partial, "rb") as current:
+                old_hash = hashlib.file_digest(previous, "sha256").digest()
+                new_hash = hashlib.file_digest(current, "sha256").digest()
+            if old_hash != new_hash:
+                raise FileExistsError(f"下载目录已有同名不同内容的文件，请先重命名：{target}")
+            os.remove(partial)
+        else:
+            os.replace(partial, target)
+        partial = None
 
         if not total:
             print(f"ANCLI_DOWNLOAD_PROGRESS {received} {received} 100", flush=True)
@@ -3822,9 +3887,9 @@ def download_module_update(channel=None):
             "bytes": received,
         }
     except Exception as exc:
-        for stale in (partial, target):
+        for stale in (partial,):
             try:
-                if os.path.exists(stale):
+                if stale and os.path.exists(stale):
                     os.remove(stale)
             except OSError:
                 pass
