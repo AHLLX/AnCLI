@@ -78,6 +78,7 @@ jobs:
           zip: ancli-${{ steps.metadata.outputs.version_code }}-${{ steps.metadata.outputs.version }}.zip
           asset-pattern: ancli-*.zip
           release-notes-file: .release-notes.md
+          prerelease: ${{ contains(github.ref_name, '-beta') }}
           require-immutable: true
 
       - name: Print release digest
