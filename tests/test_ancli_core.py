@@ -267,7 +267,8 @@ class TestWrapperGeneration:
         assert "PROOT_CWD=\"$PWD\"" in wrapper
         assert "case \"$PROOT_CWD\"" in wrapper
         assert '-w "$PROOT_CWD"' in wrapper
-        assert "PROOT_CWD=/root" in wrapper
+        assert 'ANCLI_TUI_CWD=/root/.ancli-work' in wrapper
+        assert 'PROOT_CWD="$ANCLI_TUI_CWD"' in wrapper
         # root-dir redirect so TUI tools don't scan the whole container fs
         assert 'if [ "$PROOT_CWD" = "/" ]; then' in wrapper
         assert "Launched from /" not in wrapper
@@ -756,6 +757,38 @@ class TestUpdateCheckFlow:
         assert data['check_ttl'] == core.CHECK_TTL
         assert app['cloud_version'] == '2.1.283'
         assert app['update_available'] is True
+
+    def test_list_apps_catalog_revision_reuses_only_static_fields(self, tmp_path, monkeypatch, capsys):
+        registry = self._env(tmp_path, monkeypatch)
+        monkeypatch.setattr(core, "_load_bundled_registry", lambda: registry)
+        core.list_apps_json()
+        original = json.loads(capsys.readouterr().out)
+        revision = original["catalog_revision"]
+        assert original["apps"][0]["name"] == "Claude Code"
+
+        core.save_installed({"claude-code": {
+            "executable": "claude", "installed_version": "2.1.283", "version_verified": True,
+        }})
+        core.list_apps_json(revision)
+        cached = json.loads(capsys.readouterr().out)
+        assert cached["catalog_unchanged"] is True
+        assert cached["catalog_revision"] == revision
+        app = cached["apps"][0]
+        assert "name" not in app
+        assert app["id"] == "claude-code"
+        assert app["installed"] is True
+        assert app["installed_version"] == "2.1.283"
+
+        registry["apps"]["claude-code"]["description"] = "Updated catalog"
+        core.list_apps_json(revision)
+        changed = json.loads(capsys.readouterr().out)
+        assert changed["catalog_unchanged"] is False
+        assert changed["catalog_revision"] != revision
+        assert changed["apps"][0]["description"] == "Updated catalog"
+
+        monkeypatch.setattr(core, "VERSION", "another-version")
+        core.list_apps_json(changed["catalog_revision"])
+        assert json.loads(capsys.readouterr().out)["catalog_unchanged"] is False
 
     def test_list_apps_json_flags_update_for_unverified_legacy_record(self, tmp_path, monkeypatch, capsys):
         self._env(tmp_path, monkeypatch)
@@ -1794,6 +1827,7 @@ class TestInstallSelfCheck:
 
         assert core._install_proot_common("broken-tool", app) is False
         assert 'does not seem to be installed' in capsys.readouterr().out
+        assert 'broken-tool' not in core.load_installed()
 
     def test_reports_success_when_the_binary_is_there(self, tmp_path, monkeypatch, capsys):
         _core_paths(tmp_path, monkeypatch)
@@ -1803,6 +1837,84 @@ class TestInstallSelfCheck:
 
         assert core._install_proot_common("fine-tool", app) is True
         capsys.readouterr()
+
+
+class TestArchitectureGuard:
+    def test_arm_only_registry_installers_reject_x86_before_any_commands(self, monkeypatch, capsys):
+        registry_path = os.path.join(os.path.dirname(__file__), '..', 'src', 'registry.json')
+        with open(registry_path, encoding='utf-8') as source:
+            registry = json.load(source)
+        monkeypatch.setattr(core, '_detect_arch', lambda: 'x86_64')
+        monkeypatch.setattr(core, '_install_proot', lambda *args: pytest.fail('installer must not run'))
+        for app_id in ('dsh',):
+            assert core.install_app(app_id, registry) is False
+            message = capsys.readouterr().out
+            assert 'x86_64' in message and 'No changes made' in message
+
+    @pytest.mark.parametrize('app_id,asset', [
+        ('mimo', 'mimocode-linux-x64-baseline.tar.gz'),
+        ('claude-code', 'claude-linux-x64.tar.gz'),
+        ('opencode', 'opencode-linux-x64-baseline.tar.gz'),
+    ])
+    def test_architecture_specific_official_installer_selected(self, monkeypatch, app_id, asset):
+        registry_path = os.path.join(os.path.dirname(__file__), '..', 'src', 'registry.json')
+        with open(registry_path, encoding='utf-8') as source:
+            registry = json.load(source)
+        app = registry['apps'][app_id]
+        monkeypatch.setattr(core, '_detect_arch', lambda: 'x86_64')
+        selected = []
+        monkeypatch.setattr(core, '_install_proot', lambda _, definition, __: selected.append(definition) or True)
+        assert core.install_app(app_id, registry)
+        assert asset in selected[0]['install_cmd']
+        assert asset in core._arch_command_app(app, 'update')['update_cmd']
+        assert core.validate_cmd(selected[0]['install_cmd'])
+        monkeypatch.setattr(core, '_detect_arch', lambda: 'arm64')
+        assert core._arch_command_app(app, 'install')['install_cmd'] == app['install_cmd']
+        monkeypatch.setattr(core, '_detect_arch', lambda: 'unknown')
+        assert core._arch_command_app(app, 'install') is None
+
+    def test_unsupported_update_never_runs_installer(self, monkeypatch, capsys):
+        monkeypatch.setattr(core, '_detect_arch', lambda: 'x86_64')
+        monkeypatch.setattr(core, 'load_installed', lambda: {'dsh': {}})
+        monkeypatch.setattr(core, 'run_cmd', lambda *args: pytest.fail('update must not run'))
+        assert core.update_app('dsh', {'apps': {'dsh': {
+            'name': 'DeepSeek Harness', 'supported_arches': ['arm64'],
+            'update_cmd': 'npm install -g @deepseek-ai/dsh',
+        }}}) is False
+        assert 'x86_64' in capsys.readouterr().out
+
+    def test_supported_and_agnostic_installers_are_dispatched(self, monkeypatch):
+        monkeypatch.setattr(core, '_detect_arch', lambda: 'arm64')
+        dispatched = []
+        monkeypatch.setattr(core, '_install_proot', lambda app_id, app, reg: dispatched.append(app_id) or True)
+        registry = {'apps': {'restricted': {'name': 'Restricted', 'supported_arches': ['arm64']},
+                             'agnostic': {'name': 'Agnostic'}}}
+        assert core.install_app('restricted', registry) is True
+        assert core.install_app('agnostic', registry) is True
+        assert dispatched == ['restricted', 'agnostic']
+
+    @pytest.mark.parametrize('arch,asset', [
+        ('x86_64', 'mimocode-linux-x64-baseline.tar.gz'),
+        ('arm64', 'mimocode-linux-arm64.tar.gz'),
+        ('unknown', None),
+    ])
+    def test_list_json_exposes_selected_update_command(self, tmp_path, monkeypatch, capsys, arch, asset):
+        registry_path = os.path.join(os.path.dirname(__file__), '..', 'src', 'registry.json')
+        with open(registry_path, encoding='utf-8') as source:
+            registry = json.load(source)
+        reg_path = tmp_path / 'registry.json'
+        reg_path.write_text(json.dumps(registry), encoding='utf-8')
+        monkeypatch.setattr(core, 'ANCLI_DIR', str(tmp_path))
+        monkeypatch.setattr(core, 'INSTALLED_FILE', str(tmp_path / 'installed.json'))
+        monkeypatch.setattr(core, 'UPDATE_CACHE', str(tmp_path / 'update-cache.json'))
+        monkeypatch.setattr(core, '_detect_arch', lambda: arch)
+        core.list_apps_json()
+        payload = json.loads(capsys.readouterr().out)
+        app = next(item for item in payload['apps'] if item['id'] == 'mimo')
+        if asset is None:
+            assert app['update_cmd'] == ''
+        else:
+            assert asset in app['update_cmd']
 
 
 class TestReviewRegressions:
@@ -1987,3 +2099,169 @@ class TestReviewRegressions:
         assert os.path.normpath(str(ap_bin / "bash")) in deployed
         assert (sys_bin / "bash").exists()
         assert "AnCLI AGY host bash compatibility" in (sys_bin / "bash").read_text(encoding="utf-8")
+
+    def test_wrapper_signal_exit_and_open_watcher_cleanup(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(core, "ANCLI_DIR", str(tmp_path / "ancli"))
+        monkeypatch.setattr(core, "MOD_DIR", str(tmp_path / "mod"))
+        monkeypatch.setattr(core, "KSU_BIN", str(tmp_path / "ksu"))
+        monkeypatch.setattr(core, "AP_BIN", str(tmp_path / "ap"))
+        monkeypatch.setattr(core, "SECRETS_DIR", str(tmp_path / "secrets"))
+        os.makedirs(tmp_path / "ancli" / "bin", exist_ok=True)
+
+        core.generate_proot_wrapper("codex", {}, [])
+        wrapper = (tmp_path / "ancli" / "bin" / "codex").read_text(encoding="utf-8")
+        assert 'ANCLI_OPEN_WATCHER_PID=$!' in wrapper
+        assert 'kill "$ANCLI_OPEN_WATCHER_PID"' in wrapper
+        assert 'trap - INT TERM HUP EXIT' in wrapper
+        assert 'INT) exit 130 ;;' in wrapper
+        assert 'TERM) exit 143 ;;' in wrapper
+        assert 'HUP) exit 129 ;;' in wrapper
+
+    def test_set_proxy_mode_direct_clears_cache(self, tmp_path, monkeypatch):
+        ancli_dir = tmp_path / "ancli"
+        ancli_dir.mkdir(parents=True)
+        proxy_cache = ancli_dir / ".proxy_cache"
+        proxy_cache.write_text("127.0.0.1 7890 1234567890\n", encoding="utf-8")
+        proxy_cache_last = ancli_dir / ".proxy_cache_last"
+        proxy_cache_last.write_text("127.0.0.1 7890\n", encoding="utf-8")
+        cfg_file = tmp_path / "config.json"
+
+        monkeypatch.setattr(core, "ANCLI_DIR", str(ancli_dir))
+        monkeypatch.setattr(core, "CONFIG_FILE", str(cfg_file))
+
+        ok, err = core.set_proxy_mode("direct")
+        assert ok is True
+        assert not proxy_cache.exists()
+        assert not proxy_cache_last.exists()
+
+    def test_android_command_dispatch(self, tmp_path, monkeypatch):
+        ancli_dir = tmp_path / "ancli"
+        ancli_dir.mkdir(parents=True)
+        probe_script = ancli_dir / "android-probe.sh"
+        probe_script.write_text("#!/bin/sh\necho '{\"status\":\"ok\"}'\n", encoding="utf-8")
+
+        monkeypatch.setattr(core, "ANCLI_DIR", str(ancli_dir))
+        called_cmd = []
+
+        def fake_call(cmd):
+            called_cmd.extend(cmd)
+            return 0
+
+        monkeypatch.setattr(core.subprocess, "call", fake_call)
+        try:
+            core.android_command(["probe", "--json"])
+        except SystemExit as e:
+            assert e.code == 0
+        assert os.path.normpath(str(probe_script)) == os.path.normpath(called_cmd[1])
+        assert "probe" in called_cmd
+        assert "--json" in called_cmd
+
+    def test_android_command_host_bridge_ipc(self, tmp_path, monkeypatch, capsys):
+        ancli_dir = tmp_path / "ancli"
+        ancli_dir.mkdir(parents=True)
+        probe_script = ancli_dir / "android-probe.sh"
+        probe_script.write_text("#!/bin/sh\necho '{\"status\":\"ok\"}'\n", encoding="utf-8")
+        bridge_dir = ancli_dir / ".bridge"
+        (bridge_dir / "reqs").mkdir(parents=True)
+        (bridge_dir / "active").write_text("1", encoding="utf-8")
+
+        monkeypatch.setattr(core, "ANCLI_DIR", str(ancli_dir))
+        monkeypatch.setenv("ANCLI_IN_CONTAINER", "1")
+
+        # Simulate host watcher in background thread
+        import threading
+        import time
+        def fake_host_watcher():
+            for _ in range(50):
+                reqs = list((bridge_dir / "reqs").glob("req_*.sh"))
+                for r in reqs:
+                    req_id = r.name.replace("req_", "").replace(".sh", "")
+                    (bridge_dir / f"out_{req_id}").write_text("HOST_OUTPUT\n", encoding="utf-8")
+                    (bridge_dir / f"exit_{req_id}").write_text("0\n", encoding="utf-8")
+                    r.unlink()
+                    return
+                time.sleep(0.02)
+
+        t = threading.Thread(target=fake_host_watcher)
+        t.start()
+
+        try:
+            core.android_command(["probe", "--json"])
+        except SystemExit as e:
+            assert e.code == 0
+        t.join(timeout=2.0)
+        out, _ = capsys.readouterr()
+        assert "HOST_OUTPUT" in out
+
+    def test_status_json_includes_host_and_rootfs_arch(self, tmp_path, monkeypatch, capsys):
+        ancli_dir = tmp_path / "ancli"
+        ancli_dir.mkdir(parents=True)
+        (ancli_dir / "bin").mkdir()
+        (ancli_dir / "bin" / "proot").write_text("")
+        rootfs = tmp_path / "rootfs"
+        (rootfs / "bin").mkdir(parents=True)
+        (rootfs / "bin" / "bash").write_text("")
+        monkeypatch.setattr(core, "ANCLI_DIR", str(ancli_dir))
+        monkeypatch.setattr(core, "ROOTFS", str(rootfs))
+        monkeypatch.setattr(core, "CONFIG_FILE", str(tmp_path / "config.json"))
+        monkeypatch.setattr(core, "INSTALLED_FILE", str(ancli_dir / "installed.json"))
+        monkeypatch.setattr(core, "UPDATE_CACHE", str(ancli_dir / "update_cache.json"))
+        monkeypatch.setattr(core, "CONTAINER_CONFIG_FILE", str(ancli_dir / "container-config.json"))
+        monkeypatch.setattr(core, "CONTAINER_PROFILES_FILE", str(ancli_dir / "container-profiles.json"))
+
+        core.status_json()
+        out, _ = capsys.readouterr()
+        data = json.loads(out)
+        assert "host_arch" in data
+        assert "rootfs_arch" in data
+        assert data["host_arch"] in ("arm64", "x86_64")
+        assert data["container"]["config"]["host_arch"] in ("arm64", "x86_64")
+
+    def test_android_command_container_bridge_inactive_errors_cleanly(self, tmp_path, monkeypatch, capsys):
+        ancli_dir = tmp_path / "ancli"
+        ancli_dir.mkdir(parents=True)
+        probe_script = ancli_dir / "android-probe.sh"
+        probe_script.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+        monkeypatch.setattr(core, "ANCLI_DIR", str(ancli_dir))
+        monkeypatch.setenv("ANCLI_IN_CONTAINER", "1")
+
+        try:
+            core.android_command(["shell", "id"])
+        except SystemExit as e:
+            assert e.code == 1
+        _, err = capsys.readouterr()
+        assert "Android host bridge service is not running" in err
+
+
+class TestAptSecurityRegression:
+    def test_install_proot_curl_bootstrap_enforces_apt_gpg_verification(self, monkeypatch):
+        """Regression test: APT bootstrap must never use AllowInsecureRepositories or --allow-unauthenticated."""
+        recorded_cmds = []
+        sandbox_called = []
+
+        monkeypatch.setattr(core.shutil, "which", lambda name: None if name == "curl" else "/usr/bin/" + name)
+        monkeypatch.setattr(core, "_ensure_apt_sandbox", lambda: sandbox_called.append(True))
+        monkeypatch.setattr(core, "run_cmd", lambda cmd, **kw: recorded_cmds.append(cmd) or True)
+        monkeypatch.setattr(core, "_install_proot_common", lambda app_id, app, registry=None: True)
+
+        ok = core._install_proot("dummy-app", {
+            "install_method": "cmd",
+            "install_cmd": "npm install -g dummy-app",
+        })
+
+        assert ok is True
+        assert sandbox_called == [True]
+        assert len(recorded_cmds) == 2
+        apt_cmd = recorded_cmds[0]
+        assert "apt-get update" in apt_cmd
+        assert "apt-get install" in apt_cmd
+        assert "curl" in apt_cmd and "ca-certificates" in apt_cmd
+        lower_apt = apt_cmd.lower()
+        for forbidden in (
+            "allowinsecurerepositories",
+            "allow-unauthenticated",
+            "allowunauthenticated",
+            "check-valid-until=false",
+            "trusted=yes",
+        ):
+            assert forbidden not in lower_apt, f"Forbidden APT bypass flag found: {forbidden}"

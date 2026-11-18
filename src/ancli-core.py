@@ -16,6 +16,7 @@ import glob
 import json
 import shlex
 import time
+import threading
 import subprocess
 import shutil
 import urllib.request
@@ -25,6 +26,8 @@ import ssl
 import contextlib
 import datetime
 import zipfile
+import hashlib
+import platform
 
 # 2026-11-13: TLS 降级回退仅限定在单次请求作用域内，严禁修改全局 ssl 上下文，
 # 以防止容器内 CA 证书库不完整时意外削弱全进程 TLS 校验安全性。
@@ -38,7 +41,7 @@ MOD_DIR = "/data/adb/modules/ancli"
 KSU_BIN = "/data/adb/ksu/bin"
 AP_BIN  = "/data/adb/ap/bin"
 
-VERSION = "1.2.623-beta"
+VERSION = "1.2.630-beta"
 
 # 2026-11-13: 应用目录随模块固化打包；官方版本检查直接读取各应用自身的 `latest` 字段，
 # 不再从网络拉取第二份 AnCLI 注册表。
@@ -57,6 +60,8 @@ BIND_MOUNT_ROOTS = ("/dev", "/proc", "/sys", "/sdcard", "/storage", "/mnt",
 # `ancli check` 写入的官方最新版本缓存，会合并到 `ancli list --json` 输出中供 WebUI 离线兜底
 UPDATE_CACHE   = f"{ANCLI_DIR}/.update_cache.json"
 MODULE_UPDATE_DIR = f"{ANCLI_DIR}/module-updates"
+CONTAINER_CONFIG_FILE = f"{ANCLI_DIR}/container-config.json"
+CONTAINER_PROFILES_FILE = f"{ANCLI_DIR}/container-profiles.json"
 DNS_CACHE      = f"{ANCLI_DIR}/.dns_cache"   # 由宿主机 ancli_env.sh 探测写入的真实 DNS 缓存
 CHECK_TTL      = 6 * 3600                 # 旧版 WebUI 客户端参考的缓存提示周期（6 小时）
 CHECK_TTL_FAILED = 15 * 60                # 检查失败后的较短重试提示周期（15 分钟）
@@ -69,6 +74,15 @@ ALLOWED_CMD_PREFIXES = ("pip ", "npm ", "apt-get ", "apt ", "curl ", "rm ", "agy
 # 全局配置与多语言支持 (Configuration & Multi-language Support)
 # ---------------------------------------------------------------------------
 
+def _detect_arch():
+    m = platform.machine().lower()
+    if m in ("aarch64", "arm64"):
+        return "arm64"
+    if m in ("x86_64", "amd64"):
+        return "x86_64"
+    return m or "unknown"
+
+
 def load_config():
     """读取全局配置文件 `/root/.ancli-config.json`，缺失或损坏时回退默认中文配置。"""
     if os.path.exists(CONFIG_FILE):
@@ -78,6 +92,55 @@ def load_config():
         except Exception:
             pass
     return {"lang": "zh"}
+
+
+def load_container_profiles():
+    """Load the bundled container profile catalog without network access."""
+    candidates = (CONTAINER_PROFILES_FILE, os.path.join(ANCLI_DIR, "bin", "container-profiles.json"))
+    for path in candidates:
+        try:
+            with open(path, "r", encoding="utf-8") as fh:
+                data = json.load(fh)
+            if isinstance(data.get("profiles"), dict):
+                return data
+        except (OSError, ValueError, TypeError):
+            continue
+    return {"schema_version": 1, "default_profile": "standard", "profiles": {}}
+
+
+def load_container_config(profiles=None):
+    """Return persisted host-side container settings with safe defaults."""
+    defaults = {"profile": "standard", "install_mode": "deferred", "network_mode": "system"}
+    try:
+        with open(CONTAINER_CONFIG_FILE, "r", encoding="utf-8") as fh:
+            value = json.load(fh)
+        if isinstance(value, dict):
+            defaults.update({k: value[k] for k in defaults if k in value})
+    except (OSError, ValueError, TypeError):
+        pass
+    if profiles is None:
+        profiles = load_container_profiles().get("profiles") or {}
+    if defaults["profile"] not in profiles:
+        defaults["profile"] = "standard"
+    if defaults["install_mode"] not in ("installed", "deferred"):
+        defaults["install_mode"] = "deferred"
+    if defaults["network_mode"] not in ("system", "manual", "direct"):
+        defaults["network_mode"] = "system"
+    profile = profiles.get(defaults["profile"], {})
+    defaults["profile_name"] = profile.get("name", defaults["profile"])
+    defaults["description"] = profile.get("description", "")
+    defaults["estimated_size_mb"] = profile.get("estimated_size_mb", 0)
+    defaults["host_arch"] = _detect_arch()
+    defaults["rootfs_arch"] = _detect_arch()
+    defaults["rootfs_ready"] = os.path.exists(f"{ROOTFS}/bin/bash") or os.path.exists("/bin/bash")
+    defaults["proot_deployed"] = os.path.exists(f"{ANCLI_DIR}/bin/proot")
+    return defaults
+
+
+def container_status_payload():
+    profiles = load_container_profiles().get("profiles") or {}
+    config = load_container_config(profiles)
+    return {"config": config, "profiles": profiles}
 
 def save_config(config):
     """将全局配置字典持久化写入 `/root/.ancli-config.json`。"""
@@ -174,6 +237,7 @@ def _get_detected_proxy():
 
     # mode == "system": 优先从宿主机 ancli_env.sh 探测并写入的缓存读取
     cache_files = (f"{ANCLI_DIR}/.proxy_cache", f"{ANCLI_DIR}/.proxy_cache_last")
+    now_ts = int(time.time())
     for c_path in cache_files:
         try:
             if os.path.exists(c_path):
@@ -182,6 +246,10 @@ def _get_detected_proxy():
                 if line:
                     parts = line.split()
                     if len(parts) >= 2 and parts[0] and parts[1].isdigit():
+                        if len(parts) >= 3 and parts[2].isdigit():
+                            ts = int(parts[2])
+                            if ts > 0 and (now_ts - ts > 3600):
+                                continue  # 超过 1 小时的代理缓存失效，不作为当前生效代理
                         return f"{parts[0]}:{parts[1]}"
         except OSError:
             pass
@@ -206,6 +274,14 @@ def set_proxy_mode(value):
         return False, "代理模式必须是 system、manual 或 direct"
     cfg = load_config()
     cfg["proxy_mode"] = value
+    if value == "direct":
+        # 直连模式下清空旧的宿主代理缓存，防止残留旧代理污染
+        for p in (f"{ANCLI_DIR}/.proxy_cache", f"{ANCLI_DIR}/.proxy_cache_last"):
+            try:
+                if os.path.exists(p):
+                    os.remove(p)
+            except OSError:
+                pass
     save_config(cfg)
     return True, ""
 
@@ -834,11 +910,31 @@ while IFS= read -r _ancli_url; do
 done < "$ANCLI_OPEN_QUEUE"
 : > "$ANCLI_OPEN_QUEUE" 2>/dev/null || true
 }}
+ANCLI_BRIDGE_DIR="{ANCLI_DIR}/.bridge"
+mkdir -p "$ANCLI_BRIDGE_DIR/reqs" 2>/dev/null
+chmod 777 "$ANCLI_BRIDGE_DIR" "$ANCLI_BRIDGE_DIR/reqs" 2>/dev/null || true
+ancli_bridge_drain() {{
+    for _ancli_req in "$ANCLI_BRIDGE_DIR/reqs"/req_*.sh; do
+        [ -f "$_ancli_req" ] || continue
+        _ancli_req_id="${{_ancli_req##*/req_}}"
+        _ancli_req_id="${{_ancli_req_id%.sh}}"
+        _ancli_out="$ANCLI_BRIDGE_DIR/out_${{_ancli_req_id}}"
+        _ancli_err="$ANCLI_BRIDGE_DIR/err_${{_ancli_req_id}}"
+        _ancli_exit="$ANCLI_BRIDGE_DIR/exit_${{_ancli_req_id}}"
+        /system/bin/sh "$_ancli_req" > "$_ancli_out" 2> "$_ancli_err"
+        _ancli_bridge_rc=$?
+        printf '%s\\n' "$_ancli_bridge_rc" > "$_ancli_exit"
+        rm -f "$_ancli_req"
+    done
+}}
+ANCLI_OPEN_WATCHER_PID=""
 if [ -w "$(dirname "$ANCLI_OPEN_QUEUE")" ]; then
 (
     _ancli_ticks=0
     while [ "$_ancli_ticks" -lt 1800 ]; do
+        touch "$ANCLI_BRIDGE_DIR/active" 2>/dev/null || true
         [ -s "$ANCLI_OPEN_QUEUE" ] && ancli_open_drain
+        ancli_bridge_drain
         if [ -n "$PPID" ]; then
             # Exit with the tool (and do not linger on a hung/zombie parent: a
             # stuck proot once left this watcher behind for half an hour).
@@ -850,8 +946,10 @@ if [ -w "$(dirname "$ANCLI_OPEN_QUEUE")" ]; then
         _ancli_ticks=$((_ancli_ticks + 1))
         sleep 1
     done
+    rm -f "$ANCLI_BRIDGE_DIR/active" 2>/dev/null || true
     ancli_open_drain
 ) &
+ANCLI_OPEN_WATCHER_PID=$!
 fi
 # BROWSER is exported to the tool above: the npm `open` package prefers its own
 # vendored freedesktop xdg-open over PATH, and without this it ends with
@@ -883,10 +981,20 @@ return 0
 # leave the caller's shell waiting on a dead TUI session.
 ancli_signal_exit() {{
 _ancli_signal="$1"
-trap - INT TERM HUP
+trap - INT TERM HUP EXIT
 ancli_restore_tty
+[ -n "$ANCLI_OPEN_WATCHER_PID" ] && kill "$ANCLI_OPEN_WATCHER_PID" 2>/dev/null || true
+[ -n "$ANCLI_WATCHDOG_PID" ] && kill "$ANCLI_WATCHDOG_PID" 2>/dev/null || true
+for _p in $(pgrep -P "$$" 2>/dev/null); do
+    kill -"$_ancli_signal" "$_p" 2>/dev/null || true
+done
 kill -"$_ancli_signal" -$$ 2>/dev/null || true
-exit 128
+case "$_ancli_signal" in
+    INT) exit 130 ;;
+    TERM) exit 143 ;;
+    HUP) exit 129 ;;
+    *) exit 128 ;;
+esac
 }}
 trap 'ancli_signal_exit INT' INT
 trap 'ancli_signal_exit TERM' TERM
@@ -957,6 +1065,8 @@ $ANCLI_BIND_ARGS \\
 -b {ANCLI_DIR}/hosts:/etc/hosts -b /data/adb $SHM_BIND \\
 -w "$PROOT_CWD" /usr/bin/env ANCLI_IN_CONTAINER=1 PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/system/bin SHELL=/bin/bash BROWSER=/usr/local/bin/xdg-open {executable} "$@"
 _ancli_rc=$?
+[ -n "$ANCLI_OPEN_WATCHER_PID" ] && kill "$ANCLI_OPEN_WATCHER_PID" 2>/dev/null || true
+[ -n "$ANCLI_OPEN_WATCHER_PID" ] && wait "$ANCLI_OPEN_WATCHER_PID" 2>/dev/null || true
 kill "$ANCLI_WATCHDOG_PID" 2>/dev/null || true
 wait "$ANCLI_WATCHDOG_PID" 2>/dev/null || true
 ancli_restore_tty
@@ -1198,17 +1308,36 @@ def _is_safe_exec_name(exe):
         and exe.replace('-', '').replace('_', '').isalnum()
 
 
+COMMAND_STATUS_INTERVAL = 15
+
+
 def run_cmd(cmd):
     """在通过白名单校验后，于容器 `/bin/bash` 中以 `set -o pipefail` 执行命令。"""
     if not validate_cmd(cmd):
         return False
-    print(f"\033[96m> {cmd}\033[0m")
-    # Execute directly in container's bash to support pipefail and bypass nested proot conflicts
-    result = subprocess.run(
-        f"set -o pipefail; {cmd}",
-        shell=True,
-        executable="/bin/bash"
-    )
+    # A redirected Python stdout is block-buffered. Flush all preceding status
+    # messages before starting a child which may be silent for several minutes.
+    print(f"\033[96m> {cmd}\033[0m", flush=True)
+    done = threading.Event()
+    started = time.monotonic()
+
+    def report_waiting():
+        while not done.wait(COMMAND_STATUS_INTERVAL):
+            elapsed = int(time.monotonic() - started)
+            print(f"[i] Command still running ({elapsed}s)...", flush=True)
+
+    reporter = threading.Thread(target=report_waiting, daemon=True)
+    reporter.start()
+    try:
+        # Inherit both output streams; do not buffer or alter the exit status.
+        result = subprocess.run(
+            f"set -o pipefail; {cmd}",
+            shell=True,
+            executable="/bin/bash"
+        )
+    finally:
+        done.set()
+        reporter.join()
     return result.returncode == 0
 
 def _capture_cmd(cmd, allowed_prefixes=None, timeout=None, merge_stderr=False, allow_operators=True):
@@ -1590,6 +1719,7 @@ def _runtime_context_probe():
         "cwd": os.getcwd(),
         "execution_backend": "proot-ubuntu",
         "ancli_version": VERSION,
+        "container": container_status_payload(),
         "paths": {
             "rootfs": ROOTFS,
             "ancli_dir": ANCLI_DIR,
@@ -1609,7 +1739,7 @@ def _runtime_context_probe():
         "commands": commands,
         "android_paths": android_paths,
         "host_commands": host_commands,
-        "android_data_mounted": _android_data_mounted(),
+        "android_data_mounted": ensure_android_data(verbose=False),
         "installed_apps": apps,
         "configured_env_names": sorted({
             key
@@ -1664,6 +1794,7 @@ def _render_runtime_context_probe(probe):
     lines.extend([
         "",
         "### 运行边界",
+        "- Android 宿主一次性探测：执行 `ancli android probe --json`；它读取 Android 版本、内核、架构、挂载、存储、DNS 和系统代理，不写入敏感标识。",
         "- 工具通过宿主 wrapper 进入单层 Ubuntu PRoot；共享存储使用 /sdcard，跨 App 的真实 /data 使用 /mnt/ancli-data/data/<包名>。",
         "- Android 宿主命令必须先用实际结果确认；不要把容器内同名命令自动当成宿主能力。",
         "- 配置通过 ancli config，工具安装和更新通过 ancli install、ancli update；密钥只保存在对应 secrets 文件，不写入本记忆。",
@@ -2106,6 +2237,7 @@ def repair_env(registry):
 
     # 3.1 Deploy xdg-open browser redirect wrapper and guest ancli entrypoint inside container
     _deploy_xdg_open()
+    _deploy_guest_ancli(verbose=False)
     print("\033[92m[OK] Browser redirect wrapper deployed (/usr/local/bin/xdg-open).\033[0m")
     _deploy_guest_ancli()
 
@@ -2355,6 +2487,8 @@ def _deploy_guest_ancli(verbose=True):
     guest_bin = f"{ROOTFS}/usr/local/bin/ancli"
     script = (
         "#!/bin/sh\n"
+        "export ANCLI_IN_CONTAINER=1\n"
+        'export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH"\n'
         'exec python3 /data/local/tmp/ancli/bin/ancli-core.py "$@"\n'
     )
     try:
@@ -2435,6 +2569,7 @@ def _install_proot_common(app_id, app, registry=None):
     generate_proot_wrapper(app['executable'], carried_env if carried_env else {}, runtime_env,
                            proxy_mode)
     _deploy_xdg_open()
+    _deploy_guest_ancli(verbose=False)
     installed[app_id] = {
         "name": app['name'],
         "executable": app['executable'],
@@ -2444,17 +2579,6 @@ def _install_proot_common(app_id, app, registry=None):
         "configured_env": carried_env_names,
     }
     probed = _record_installed_version(installed, app_id, app)
-    save_installed(installed)
-    # Fix permissions immediately so the tool is usable without a reboot
-    _fix_config_permissions()
-    setup_skill_dirs(verbose=False)
-    # The installed-app summary is generated from installed.json. Refresh the
-    # AnCLI-owned runtime context after every successful install so it cannot
-    # keep saying that no tools are installed.
-    setup_runtime_context(verbose=False, refresh=True)
-    if app.get('executable') == 'dsh':
-        # A fresh dsh install ships the unpatched cookie attribute again.
-        patch_dsh_web_cookie(verbose=False)
     suffix = f" v{probed}" if probed else ""
     # Self-check: an installer whose command "succeeded" but left no runnable
     # binary (wrong runtime, missing file, half-extracted tarball) must not be
@@ -2463,9 +2587,58 @@ def _install_proot_common(app_id, app, registry=None):
         print(f"\033[91m[X] {app['name']} does not seem to be installed: no executable "
               f"'{app['executable']}' was found in the container.\033[0m")
         return False
+    save_installed(installed)
+    # Fix permissions immediately so the tool is usable without a reboot.
+    _fix_config_permissions()
+    setup_skill_dirs(verbose=False)
+    # Refresh the summary only after recording a successful installation.
+    setup_runtime_context(verbose=False, refresh=True)
+    if app.get('executable') == 'dsh':
+        patch_dsh_web_cookie(verbose=False)
+    try:
+        official, source, err = _latest_version(app, registry)
+        cache = _load_update_cache()
+        latest = dict(cache.get('latest') or {})
+        latest[app_id] = {"version": official, "source": source, "error": err}
+        _save_update_cache({"ts": cache.get('ts', 0), "latest": latest})
+    except Exception:
+        pass
     print(f"\033[92m[OK] Successfully installed {app['name']}{suffix}! Type '{app['executable']}' to run.\033[0m")
     print(f"\033[93m[i] Configure API keys anytime with: ancli config {app_id}\033[0m")
     return True
+
+def _supports_app_arch(app, verbose=True):
+    """Reject architecture-specific installers before they change the guest."""
+    supported = app.get('supported_arches')
+    if supported is None:
+        return True
+    arch = _detect_arch()
+    if isinstance(supported, list) and arch in supported:
+        return True
+    choices = ', '.join(str(item) for item in supported) if isinstance(supported, list) else 'none'
+    if verbose:
+        print(f"\033[91m[X] {app.get('name', 'App')} does not support container architecture "
+              f"'{arch}' in this AnCLI release (supported: {choices}). No changes made.\033[0m")
+    return False
+
+
+def _arch_command_app(app, action, verbose=True):
+    """Select an explicit installer for the guest architecture; never fall back on a missing mapping."""
+    field = action + '_cmd'
+    variants = app.get(field + '_by_arch')
+    if variants is None:
+        return app
+    arch = _detect_arch()
+    cmd = variants.get(arch) if isinstance(variants, dict) else None
+    # The canonical command is explicitly bound to its original architecture.
+    if cmd is None and arch == app.get('default_command_arch'):
+        cmd = app.get(field)
+    if not isinstance(cmd, str) or not cmd.strip():
+        if verbose:
+            print(f"\033[91m[X] {app.get('name', 'App')} has no {action} command for architecture '{arch}'. No changes made.\033[0m")
+        return None
+    return {**app, field: cmd}
+
 
 def install_app(app_id, registry):
     """根据应用目录定义在 PRoot 容器内安装指定 CLI 工具并生成双注入包装器。"""
@@ -2473,6 +2646,12 @@ def install_app(app_id, registry):
         print(f"\033[91m[X] App {app_id} not found in registry.\033[0m")
         return False
     app = registry['apps'][app_id]
+
+    if not _supports_app_arch(app):
+        return False
+    app = _arch_command_app(app, 'install')
+    if app is None:
+        return False
 
     print(f"\033[92m[*] Installing {app['name']}...\033[0m")
     print(f"\033[96m[i] Backend: proot\033[0m")
@@ -2551,6 +2730,18 @@ def _install_pipe_script(app_id, app, registry=None):
             pass
 
 
+def _ensure_apt_sandbox():
+    """Ensure APT sandbox user is configured as root in PRoot environment so GPG signature verification works."""
+    sandbox_conf = "/etc/apt/apt.conf.d/01sandbox"
+    try:
+        conf_dir = os.path.dirname(sandbox_conf)
+        if os.path.isdir(conf_dir) and not os.path.isfile(sandbox_conf):
+            with open(sandbox_conf, "w", encoding="utf-8") as f:
+                f.write('APT::Sandbox::User "root";\n')
+    except Exception:
+        pass
+
+
 def _install_proot(app_id, app, registry=None):
     """Install a tool inside the Ubuntu PRoot container.
     Dispatches to the appropriate installer based on the registry 'install_method' field:
@@ -2558,15 +2749,10 @@ def _install_proot(app_id, app, registry=None):
       'cmd'         — runs install_cmd directly inside the container (default)
     Returns True only when the tool was actually installed."""
     # Ensure 'curl' and 'ca-certificates' exist in container before executing any install commands.
-    # The rootfs ships a minimal apt keyring and a half-configured systemd, so a
-    # plain `apt-get install` fails signature checks — use the same permissive
-    # flags customize.sh uses for its bootstrap.
     if not shutil.which("curl"):
         print("\033[96m[i] Container is missing 'curl'. Auto-installing dependencies via apt...\033[0m")
-        apt_cmd = ("apt-get update -qy -o Acquire::AllowInsecureRepositories=true && "
-                   "apt-get install -qy --allow-unauthenticated "
-                   "-o Acquire::AllowInsecureRepositories=true "
-                   "-o Acquire::AllowUnauthenticated=true curl ca-certificates")
+        _ensure_apt_sandbox()
+        apt_cmd = "apt-get update -qy && apt-get install -qy --no-install-recommends curl ca-certificates"
         if not run_cmd(apt_cmd):
             print("\033[91m[X] Failed to install 'curl' inside container. Installation might fail.\033[0m")
         else:
@@ -2764,6 +2950,7 @@ def reset_environment(keep_log=None, verbose=True, reinstall=False):
     except OSError:
         pass
     _deploy_xdg_open()
+    _deploy_guest_ancli(verbose=False)
     setup_runtime_context(verbose=False, refresh=True)
     setup_skill_dirs(verbose=False)
     _fix_config_permissions()
@@ -2783,6 +2970,8 @@ def reset_environment(keep_log=None, verbose=True, reinstall=False):
         "reinstall_requested": bool(reinstall),
         "reinstalled_apps": [],
         "reinstall_failures": [],
+        "container_preserved": True,
+        "container": container_status_payload(),
     }
     if reinstall and before:
         try:
@@ -2822,6 +3011,11 @@ def update_app(app_id, registry):
         print(f"\033[93m[!] App {app_id} is not installed.\033[0m")
         return False
     app = registry['apps'].get(app_id, {})
+    if not _supports_app_arch(app):
+        return False
+    app = _arch_command_app(app, 'update')
+    if app is None:
+        return False
     cmd = app.get('update_cmd', f"echo 'No update cmd for {app_id}'")
     name = app.get('name', app_id)
     print(f"\033[93m[*] Updating {name}...\033[0m")
@@ -2832,13 +3026,9 @@ def update_app(app_id, registry):
               "then retry or inspect the log above.\033[0m")
         return False
 
-    cached_env = installed[app_id].get('env', {})
-    if cached_env:
-        print(f"\033[92m[i] Re-injecting stored configuration keys: {', '.join(cached_env.keys())}\033[0m")
-
     runtime_env = app.get('runtime_env', [])
     proxy_mode = app.get('proxy_mode', 'system')
-    generate_proot_wrapper(app.get('executable', app_id), cached_env if cached_env else None, runtime_env,
+    generate_proot_wrapper(app.get('executable', app_id), None, runtime_env,
                            proxy_mode)
 
     probed = _record_installed_version(installed, app_id, app, registry)
@@ -3311,10 +3501,13 @@ def _app_record(aid, app, installed_flag, info, entry=None):
         and cloud_ver not in ('unknown', '', None)
         and _update_available(local_ver, cloud_ver, trusted)
     )
+    selected_update = (_arch_command_app(app, 'update', verbose=False)
+                       if _supports_app_arch(app, verbose=False) else None)
     return {
         "id": aid,
         "name": app.get('name', aid),
         "description": app.get('description', ''),
+        "executable": exec_name,
         "installed": installed_flag,
         "active": _binary_exists(exec_name) if installed_flag else False,
         "installed_version": local_ver,
@@ -3324,7 +3517,7 @@ def _app_record(aid, app, installed_flag, info, entry=None):
         "cloud_checked": checked,
         "cloud_error": entry.get('error'),
         "update_available": update_avail,
-        "update_cmd": app.get('update_cmd', ''),
+        "update_cmd": selected_update.get('update_cmd', '') if selected_update else '',
         # Only expose an explicitly declared, non-interactive launcher to the
         # WebUI.  Terminal agents need a real TTY and must remain terminal-only.
         "launch": app.get('launch') if isinstance(app.get('launch'), dict) else None,
@@ -3334,7 +3527,7 @@ def _app_record(aid, app, installed_flag, info, entry=None):
     }
 
 
-def list_apps_json():
+def list_apps_json(catalog_revision=None):
     """Bundled catalog + install state + last known official versions as JSON.
 
     Offline-safe by design: it reads the module catalog and the
@@ -3347,9 +3540,21 @@ def list_apps_json():
         apps = []
         for aid, app in (registry.get('apps') or {}).items():
             apps.append(_app_record(aid, app, aid in installed, installed.get(aid, {}), latest.get(aid)))
+    catalog_fields = ("id", "name", "description", "update_cmd", "launch",
+                      "required_env_vars", "optional_env_vars")
+    catalog = [{key: app[key] for key in catalog_fields} for app in apps]
+    revision = hashlib.sha256(
+        json.dumps([VERSION, catalog], sort_keys=True, ensure_ascii=False).encode("utf-8")
+    ).hexdigest()
+    catalog_unchanged = revision == catalog_revision
+    if catalog_unchanged:
+        static_fields = set(catalog_fields) - {"id"}
+        apps = [{key: value for key, value in app.items() if key not in static_fields} for app in apps]
     print(json.dumps({
         "ancli_version": VERSION,
         "apps": apps,
+        "catalog_revision": revision,
+        "catalog_unchanged": catalog_unchanged,
         "last_check": cache.get('ts', 0),
         # Shorten the auto-check window after a failed run so a transient outage
         # (or GitHub rate limiting) is retried instead of frozen for 6 hours.
@@ -3632,18 +3837,22 @@ def status_json():
     """Container/module status as pure JSON (used by the WebUI)."""
     with _stdout_to_stderr():
         detected_proxy = _get_detected_proxy()
+        host_arch = _detect_arch()
         payload = {
             "ancli_version": VERSION,
             "rootfs_ready": os.path.exists(f"{ROOTFS}/bin/bash") or os.path.exists("/bin/bash"),
             "proot_deployed": os.path.exists(f"{ANCLI_DIR}/bin/proot"),
+            "host_arch": host_arch,
+            "rootfs_arch": host_arch,
             "installed_count": len(load_installed()),
-            "android_data": _android_data_mounted(),
+            "android_data": ensure_android_data(verbose=False),
             "host_bash_compat": any(
                 os.path.isfile(f"{path}/bash") for path in (KSU_BIN, AP_BIN)
             ),
             "detected_proxy": detected_proxy,
             "proxy_connected": bool(detected_proxy),
             "agent_memory": load_config().get("agent_memory", "unconfigured"),
+            "container": container_status_payload(),
         }
     print(json.dumps(payload, ensure_ascii=False))
 
@@ -3652,9 +3861,12 @@ def doctor_json():
     """Return a read-only path and runtime capability report for agents."""
     with _stdout_to_stderr():
         installed = load_installed()
+        host_arch = _detect_arch()
         paths = {
             "rootfs": ROOTFS,
             "ancli_dir": ANCLI_DIR,
+            "host_arch": host_arch,
+            "rootfs_arch": host_arch,
             "default_cwd": _effective_default_cwd(),
             "runtime_context": os.path.join(ROOTFS, "root", ".agents", RUNTIME_CONTEXT_NAME),
             "shared_skills": SHARED_SKILL_DIR,
@@ -3668,7 +3880,9 @@ def doctor_json():
             "execution_backend": "proot-ubuntu",
             "rootfs_ready": os.path.exists(f"{ROOTFS}/bin/bash") or os.path.exists("/bin/bash"),
             "proot_deployed": os.path.exists(f"{ANCLI_DIR}/bin/proot"),
-            "android_data": _android_data_mounted(),
+            "host_arch": host_arch,
+            "rootfs_arch": host_arch,
+            "android_data": ensure_android_data(verbose=False),
             "paths": paths,
             "commands": commands,
             "installed_apps": sorted(installed.keys()),
@@ -3677,8 +3891,157 @@ def doctor_json():
                 for info in installed.values()
                 for key in (info.get("configured_env") or list((info.get("env") or {}).keys()))
             }),
+            "container": container_status_payload(),
         }
     print(json.dumps(payload, ensure_ascii=False))
+
+
+def container_command(argv):
+    """Inspect or update host-side container settings from inside the guest."""
+    action = next((arg for arg in argv if not arg.startswith("-")), "status")
+    payload = container_status_payload()
+    if action in ("status", "list"):
+        print(json.dumps(payload, ensure_ascii=False) if "--json" in argv else
+              f"容器规格: {payload['config']['profile_name']} ({payload['config']['profile']})\n"
+              f"预计占用: {payload['config']['estimated_size_mb']} MB\n"
+              f"安装状态: {'已安装' if payload['config']['rootfs_ready'] else '待安装'}\n"
+              f"网络模式: {payload['config']['network_mode']}")
+        return
+    if action == "set":
+        values = parse_set_env(argv)
+        profile = values.get("profile") or values.get("container_profile")
+        network = values.get("network") or values.get("network_mode")
+        for arg in argv:
+            if arg.startswith("--profile="):
+                profile = arg.split("=", 1)[1]
+            elif arg.startswith("--network="):
+                network = arg.split("=", 1)[1]
+        profile = profile or payload["config"]["profile"]
+        network = network or payload["config"]["network_mode"]
+        if profile not in payload["profiles"]:
+            raise SystemExit(f"无效容器规格：{profile}")
+        if network not in ("system", "manual", "direct"):
+            raise SystemExit(f"无效网络模式：{network}")
+        new_config = {
+            "profile": profile,
+            "install_mode": payload["config"]["install_mode"],
+            "network_mode": network,
+            "estimated_size_mb": payload["profiles"][profile].get("estimated_size_mb", 0),
+        }
+        tmp = CONTAINER_CONFIG_FILE + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as fh:
+            json.dump(new_config, fh, ensure_ascii=False, indent=2)
+            fh.write("\n")
+        os.replace(tmp, CONTAINER_CONFIG_FILE)
+        result = container_status_payload()
+        print(json.dumps(result, ensure_ascii=False) if "--json" in argv else
+              f"[OK] 已选择容器规格：{result['config']['profile_name']}，网络：{network}")
+        return
+    if action in ("install", "apply"):
+        # A host wrapper handles this before PRoot when the rootfs is absent.
+        # Inside an already running guest, explain the boundary instead of
+        # attempting a nested PRoot bootstrap.
+        raise SystemExit("容器安装必须从 Android 宿主执行：ancli container install")
+    raise SystemExit("用法：ancli container status|set|install")
+
+
+def android_command(argv):
+    """Bridge Android host probing and commands from within or outside the container.
+
+    When running inside PRoot and the host bridge watcher is active, commands are dispatched
+    to the host Android root shell to execute outside the PRoot mount namespace
+    with parameter quoting, stdout, stderr, and exit code capture (batch execution, no interactive stdin).
+    """
+    candidates = (
+        f"{ANCLI_DIR}/android-probe.sh",
+        os.path.join(ANCLI_DIR, "bin", "android-probe.sh"),
+        os.path.join(MOD_DIR, "android-probe.sh"),
+        "/data/adb/modules/ancli/android-probe.sh",
+    )
+    probe_script = None
+    for c in candidates:
+        if os.path.exists(c):
+            probe_script = c
+            break
+
+    sh_bin = "/system/bin/sh" if os.path.exists("/system/bin/sh") else "/bin/sh"
+    if not probe_script or not os.path.exists(probe_script):
+        sys.stderr.write("AnCLI: android probe script is missing\n")
+        sys.exit(1)
+
+    in_container = (
+        os.environ.get("ANCLI_IN_CONTAINER") == "1"
+        or bool(os.environ.get("PROOT_TMP_DIR"))
+        or os.path.exists("/etc/debian_version")
+        or os.path.exists("/etc/os-release")
+    )
+    bridge_dir = f"{ANCLI_DIR}/.bridge"
+    bridge_active = os.path.exists(f"{bridge_dir}/active")
+
+    if in_container:
+        if not bridge_active:
+            for _ in range(10):
+                time.sleep(0.1)
+                if os.path.exists(f"{bridge_dir}/active"):
+                    bridge_active = True
+                    break
+        if not bridge_active:
+            sys.stderr.write("[AnCLI] Android host bridge service is not running on host. Run 'ancli repair' on host or restart the module.\n")
+            sys.exit(1)
+
+        req_id = f"{os.getpid()}_{int(time.time() * 1000)}"
+        req_file = f"{bridge_dir}/reqs/req_{req_id}.sh"
+        out_file = f"{bridge_dir}/out_{req_id}"
+        err_file = f"{bridge_dir}/err_{req_id}"
+        exit_file = f"{bridge_dir}/exit_{req_id}"
+
+        cmd_str = f"exec {shlex.quote(sh_bin)} {shlex.quote(probe_script)} " + " ".join(shlex.quote(a) for a in argv)
+        try:
+            os.makedirs(f"{bridge_dir}/reqs", exist_ok=True)
+            with open(req_file + ".tmp", "w", encoding="utf-8") as f:
+                f.write("#!/system/bin/sh\n")
+                f.write(cmd_str + "\n")
+            os.replace(req_file + ".tmp", req_file)
+
+            deadline = time.time() + 60.0
+            while time.time() < deadline:
+                if os.path.exists(exit_file):
+                    break
+                time.sleep(0.05)
+
+            if os.path.exists(exit_file):
+                with open(exit_file, "r", encoding="utf-8", errors="ignore") as f:
+                    code_str = f.read().strip()
+                exit_code = int(code_str) if (code_str and (code_str.isdigit() or (code_str.startswith('-') and code_str[1:].isdigit()))) else 1
+                if os.path.exists(out_file):
+                    with open(out_file, "r", encoding="utf-8", errors="ignore") as f:
+                        sys.stdout.write(f.read())
+                        sys.stdout.flush()
+                if os.path.exists(err_file):
+                    with open(err_file, "r", encoding="utf-8", errors="ignore") as f:
+                        sys.stderr.write(f.read())
+                        sys.stderr.flush()
+                for tmp_f in (out_file, err_file, exit_file, req_file):
+                    try:
+                        if os.path.exists(tmp_f):
+                            os.remove(tmp_f)
+                    except OSError:
+                        pass
+                sys.exit(exit_code)
+            else:
+                sys.stderr.write("[AnCLI] host bridge timeout waiting for response\n")
+                sys.exit(124)
+        except Exception as e:
+            sys.stderr.write(f"[AnCLI] host bridge IPC error: {e}\n")
+            sys.exit(1)
+
+    cmd = [sh_bin, probe_script] + argv
+    try:
+        rc = subprocess.call(cmd)
+        sys.exit(rc)
+    except Exception as e:
+        sys.stderr.write(f"AnCLI: android bridge execution error: {e}\n")
+        sys.exit(1)
 
 
 def parse_set_env(argv):
@@ -3851,6 +4214,14 @@ if __name__ == "__main__":
                 print(f"AnCLI v{VERSION}")
                 sys.exit(0)
 
+            elif action == "container":
+                container_command(sys.argv[2:])
+                sys.exit(0)
+
+            elif action == "android":
+                android_command(sys.argv[2:])
+                sys.exit(0)
+
             elif action == "reset":
                 # Full reset is intentionally offline and requires an explicit
                 # flag. The WebUI adds --keep-log so the reset itself remains
@@ -3878,7 +4249,9 @@ if __name__ == "__main__":
             # Install/update/config/repair use the same bundled catalog.
             if action == "list":
                 if "--json" in sys.argv:
-                    list_apps_json()
+                    revision = next((arg.split("=", 1)[1] for arg in sys.argv[2:]
+                                     if arg.startswith("--catalog-revision=")), None)
+                    list_apps_json(revision)
                     sys.exit(0)
                 registry  = _load_bundled_registry()  # offline-safe, no network
                 installed = load_installed()

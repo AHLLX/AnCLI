@@ -62,14 +62,20 @@ if [ "$ANCLI_PROXY_MODE" = "direct" ]; then
     unset http_proxy https_proxy all_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY
     export no_proxy="localhost,127.0.0.1,::1,0.0.0.0"
     export NO_PROXY="$no_proxy"
-elif [ "$ANCLI_PROXY_MODE" = "manual" ] && [ -n "$ANCLI_PROXY_URL" ]; then
-    export http_proxy="$ANCLI_PROXY_URL"
-    export https_proxy="$ANCLI_PROXY_URL"
-    export HTTP_PROXY="$ANCLI_PROXY_URL"
-    export HTTPS_PROXY="$ANCLI_PROXY_URL"
-    export ALL_PROXY="$ANCLI_PROXY_URL"
-    export no_proxy="localhost,127.0.0.1,::1,0.0.0.0"
-    export NO_PROXY="$no_proxy"
+elif [ "$ANCLI_PROXY_MODE" = "manual" ]; then
+    if [ -n "$ANCLI_PROXY_URL" ]; then
+        export http_proxy="$ANCLI_PROXY_URL"
+        export https_proxy="$ANCLI_PROXY_URL"
+        export HTTP_PROXY="$ANCLI_PROXY_URL"
+        export HTTPS_PROXY="$ANCLI_PROXY_URL"
+        export ALL_PROXY="$ANCLI_PROXY_URL"
+        export no_proxy="localhost,127.0.0.1,::1,0.0.0.0"
+        export NO_PROXY="$no_proxy"
+    else
+        unset http_proxy https_proxy all_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY
+        export no_proxy="localhost,127.0.0.1,::1,0.0.0.0"
+        export NO_PROXY="$no_proxy"
+    fi
 else
     # --- Android Wi-Fi / 系统代理自动探测与继承（30 秒有效缓存） ---
     # dumpsys connectivity 属于跨进程 Binder 慢调用（~1-2s），缓存可显著加快命令启动；
@@ -180,14 +186,15 @@ if ! ip addr show dev lo 2>/dev/null | grep -q "198\.18\.0\."; then
     done
 fi
 
-# 12. 修复凭证与配置目录权限，防止 root 首次运行生成的文件阻塞后续 shell 用户（uid 2000）访问
+# 12. 修复凭证与配置目录顶层权限，确保普通 shell 用户（uid 2000）可进入与读写。
+# 全量递归维护由 service.sh 与 ancli repair 负责，避免每次命令启动执行深度文件树递归扫描导致磁盘 I/O 阻塞。
 ROOTFS="/data/local/tmp/ancli/rootfs"
 # ubuntu-base 默认 /root 为 0700，必须放宽到 755 以便非 root 包装器进入目录
 chmod 755 "$ROOTFS/root" 2>/dev/null || true
-# 将凭证目录移交 uid 2000 并收紧为仅属主可读写（u+rwX,go-rwx），root 仍可正常访问且其他 App 无法窃取 OAuth 令牌
+# 将凭证目录顶层移交 uid 2000 并收紧为仅属主可读写（u+rwX,go-rwx），root 仍可正常访问且其他 App 无法窃取 OAuth 令牌
 for _conf_dir in /root/.config /root/.gemini /root/.claude /root/.local; do
     if [ -d "$ROOTFS$_conf_dir" ]; then
-        chown -R 2000:2000 "$ROOTFS$_conf_dir" 2>/dev/null || true
-        chmod -R u+rwX,go-rwx "$ROOTFS$_conf_dir" 2>/dev/null || true
+        chown 2000:2000 "$ROOTFS$_conf_dir" 2>/dev/null || true
+        chmod u+rwX,go-rwx "$ROOTFS$_conf_dir" 2>/dev/null || true
     fi
 done

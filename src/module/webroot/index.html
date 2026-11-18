@@ -2,7 +2,7 @@
 <html lang="zh-CN" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
 <meta name="color-scheme" content="light dark">
 <title>AnCLI</title>
 <style>
@@ -44,7 +44,7 @@
   --border-strong: #333a45;
   --text: #e8eaee;
   --muted: #9aa2ae;
-  --faint: #6c7481;
+  --faint: #8e96a4;
   --accent: #f0a45e;
   --accent-ink: #241704;
   --accent-soft: #2a2015;
@@ -85,7 +85,15 @@ body {
   border-radius: var(--r-lg);
   box-shadow: var(--shadow-sm);
   overflow: hidden;
-  margin: 8px 12px 0;
+  max-width: 720px;
+  margin: 8px auto 0;
+  width: calc(100% - 24px);
+}
+@media (max-width: 619px) {
+  .topbar {
+    width: calc(100% - 16px);
+    margin: 8px 8px 0;
+  }
 }
 body.ime-open .topbar { backdrop-filter: none; -webkit-backdrop-filter: none; background: var(--surface); }
 .brand { display: flex; align-items: center; gap: 9px; min-width: 0; }
@@ -180,8 +188,12 @@ body.ime-open .topbar { backdrop-filter: none; -webkit-backdrop-filter: none; ba
   50% { transform: translateY(2px); }
 }
 .icon-btn {
+  position: relative;
   display: grid; place-items: center; width: 28px; height: 28px; border-radius: var(--r-xs);
   border: 1px solid transparent; background: transparent; color: var(--muted); cursor: pointer; transition: .16s;
+}
+.icon-btn::after {
+  content: ""; position: absolute; inset: -8px;
 }
 .icon-btn svg { width: 14px; height: 14px; }
 .icon-btn:hover { background: var(--surface-2); color: var(--text); }
@@ -232,6 +244,23 @@ body.ime-open .topbar { backdrop-filter: none; -webkit-backdrop-filter: none; ba
 .detail { color: var(--faint); font-size: 11.5px; margin-top: 2px; }
 .detail b { color: var(--muted); font-weight: 600; font-variant-numeric: tabular-nums; }
 .app-actions { display: flex; gap: 6px; flex-wrap: wrap; grid-column: 2; margin-top: 10px; }
+.app-task { grid-column: 2; }
+.action-tasks { display: contents; }
+.action-tasks > [data-task-slot] { grid-column: 1 / -1; flex: 1 0 100%; }
+.action-tasks > [data-task-slot]:empty, .settings-task:empty, .app-task:empty { display: none; }
+.task-feedback {
+  display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap;
+  gap: 4px 10px; min-width: 0; padding: 5px 9px; margin-top: 5px;
+  border-radius: var(--r-sm); background: var(--surface-2);
+}
+.task-feedback-status { display: inline-flex; align-items: center; gap: 6px; min-width: 0; overflow-wrap: anywhere; font-size: 12px; font-weight: 600; }
+.task-feedback-status .dot { background: currentColor; }
+.task-feedback[data-state="running"] .task-feedback-status { color: var(--accent); }
+.task-feedback[data-state="unknown"] .task-feedback-status { color: var(--warn); }
+.task-feedback[data-state="done"] .task-feedback-status { color: var(--ok); }
+.task-feedback[data-state="failed"] .task-feedback-status { color: var(--danger); }
+.task-feedback-actions { display: flex; gap: 4px; flex-wrap: wrap; }
+.task-feedback-actions .btn { min-height: 34px; padding: 4px 7px; }
 .app-log-wrap { grid-column: 2; margin-top: 2px; }
 .app-log-toggle { font-size: 11px; color: var(--muted); border: 0; background: transparent; padding: 2px 0; cursor: pointer; }
 .app-log-toggle:hover { color: var(--accent); }
@@ -267,12 +296,13 @@ body.ime-open .topbar { backdrop-filter: none; -webkit-backdrop-filter: none; ba
   padding: 9px 10px 9px 13px; border-bottom: 1px solid var(--border); background: var(--surface);
   border-radius: var(--r-lg) var(--r-lg) 0 0;
 }
+.log-tabs:not(:empty) + .console-head { border-top-left-radius: 0; border-top-right-radius: 0; }
 .console-head b { font-size: 12.5px; font-weight: 620; }
 .log-tabs { display: flex; gap: 6px; overflow-x: auto; padding: 8px 10px 0; background: var(--console-bg); }
 .log-tab { flex: 0 0 auto; max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .log-tab.active { color: var(--accent); border-color: var(--accent-line); background: var(--accent-soft); }
 .log-tab-label { overflow: hidden; text-overflow: ellipsis; }
-.log-tab-close { margin-left: 5px; border: 0; background: transparent; color: var(--muted); cursor: pointer; font-size: 14px; line-height: 1; }
+.log-tab-close { margin-left: 5px; border: 0; background: transparent; color: var(--muted); cursor: pointer; font-size: 14px; line-height: 1; padding: 4px 6px; }
 .log-tab-close:hover { color: var(--danger); }
 .spacer { flex: 1; }
 .spin { width: 12px; height: 12px; border-radius: 50%; border: 1.6px solid var(--accent-line); border-top-color: var(--accent);
@@ -295,7 +325,7 @@ body.ime-open .topbar { backdrop-filter: none; -webkit-backdrop-filter: none; ba
 /* ============================ 配置弹窗 ============================ */
 .overlay {
   position: fixed; inset: 0; z-index: 40;
-  display: flex; align-items: center; justify-content: center;
+  display: flex; align-items: safe center; justify-content: center;
   padding: 20px 14px; background: rgba(12, 14, 18, .48);
   opacity: 0; visibility: hidden; pointer-events: none;
   transition: opacity .18s ease, visibility 0s linear .18s;
@@ -307,6 +337,7 @@ body.ime-open .topbar { backdrop-filter: none; -webkit-backdrop-filter: none; ba
   transition-delay: 0s;
 }
 .dialog {
+  margin: auto;
   width: min(480px, calc(100vw - 28px)); max-width: 100%; max-height: min(84vh, 520px);
   display: flex; flex-direction: column;
   background: var(--surface); border: 1px solid var(--border);
@@ -405,6 +436,7 @@ body.ime-open .topbar { backdrop-filter: none; -webkit-backdrop-filter: none; ba
 .history-main small { margin-top: 2px; color: var(--faint); font-size: 10.5px; }
 .history-state { flex: none; color: var(--muted); font-size: 10.5px; }
 .history-state.running { color: var(--accent); }
+.history-state.unknown { color: var(--warn, var(--muted)); }
 .history-state.done { color: var(--ok); }
 .history-state.failed { color: var(--danger); }
 .settings-danger {
@@ -627,6 +659,39 @@ body.ime-open .topbar { backdrop-filter: none; -webkit-backdrop-filter: none; ba
   overflow: hidden;
   text-overflow: ellipsis;
 }
+.setting-item.wrap {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+}
+.setting-item.wrap .setting-item-left {
+  width: 100%;
+}
+.setting-item.wrap .setting-item-text small,
+#setContainerHint,
+.wrap-text {
+  white-space: normal;
+  line-height: 1.4;
+  word-break: break-word;
+}
+.setting-item.wrap .setting-select {
+  max-width: 100%;
+  width: 100%;
+  text-align: left;
+}
+.container-init-card {
+  padding: 14px 16px;
+  border: 1px solid var(--accent-line, #388bfd40);
+  background: var(--surface);
+  border-radius: var(--r-md);
+  margin-bottom: 12px;
+}
+.container-init-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 6px;
+}
 .setting-select {
   flex: 0 0 auto;
   width: auto;
@@ -738,9 +803,11 @@ body.ime-open .topbar { backdrop-filter: none; -webkit-backdrop-filter: none; ba
   .app-title .name { font-size: 14px; }
   .desc { font-size: 11.5px; overflow-wrap: anywhere; }
   .app-actions { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; margin-top: 8px; }
+  .app-task { grid-column: 1 / -1; }
+  .task-feedback-actions .btn { min-height: 40px; }
   .app-actions .btn { min-width: 0; width: 100%; padding: 8px 6px; white-space: normal; line-height: 1.3; }
   .app-log-wrap { grid-column: 1 / -1; display: flex; flex-direction: column; }
-  .app-log-toggle { align-self: flex-end; padding: 5px 3px 2px; }
+  .app-log-toggle { align-self: flex-end; padding: 5px 3px 2px; min-height: 36px; display: inline-flex; align-items: center; }
   .console-head { flex-wrap: wrap; padding: 8px 9px 8px 11px; }
   .console-head .spacer { display: none; }
   .console-head .icon-btn:first-of-type { margin-left: auto; }
@@ -762,8 +829,33 @@ body.ime-open .topbar { backdrop-filter: none; -webkit-backdrop-filter: none; ba
   .seg button { padding-left: 7px; padding-right: 7px; font-size: 11px; }
   .settings-status { grid-template-columns: 1fr; }
 }
+@media (max-height: 540px) {
+  .overlay { padding-block: 8px; }
+  .overlay .dialog { max-height: calc(100vh - 16px); }
+  #setOverlay .dialog { max-height: calc(100vh - 16px); }
+  .settings-viewport { min-height: 0; }
+}
+body.ime-open .overlay.show {
+  top: var(--ime-top, 0px);
+  bottom: auto;
+  height: var(--ime-height, 100%);
+  padding-block: 8px;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+body.ime-open .overlay.show .dialog { max-height: 100%; }
+body.ime-open .settings-viewport { min-height: 0; }
 @media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after { animation-duration: .001ms !important; transition-duration: .001ms !important; }
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    transition-delay: 0s !important;
+    scroll-behavior: auto !important;
+  }
+  .skeleton { animation: none !important; background: var(--surface-2) !important; }
+  .spin { animation: none !important; border-color: var(--accent) !important; }
+  .settings-update-indicator, .settings-update-arrow { animation: none !important; }
 }
 </style>
 </head>
@@ -818,6 +910,12 @@ body.ime-open .topbar { backdrop-filter: none; -webkit-backdrop-filter: none; ba
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a4 4 0 0 0 5 5L21 21H3l1.3-9.7a4 4 0 0 0 5-5z"/></svg>
       <span class="i18n-label">修复环境</span>
     </button>
+    <div class="action-tasks">
+      <div data-task-slot="check"></div>
+      <div data-task-slot="repair"></div>
+      <div data-task-slot="reset"></div>
+      <div data-task-slot="module-uninstall"></div>
+    </div>
   </section>
 
   <div class="sec-head">
@@ -828,7 +926,7 @@ body.ime-open .topbar { backdrop-filter: none; -webkit-backdrop-filter: none; ba
     <div class="skeleton"></div><div class="skeleton"></div>
   </div>
 
-  <section class="card console" aria-label="输出">
+  <section class="card console" id="taskConsole" aria-label="输出" tabindex="-1">
     <div class="log-tabs" id="logTabs" role="tablist"></div>
     <div class="console-head">
       <span class="spin" id="busySpin" hidden></span>
@@ -935,6 +1033,31 @@ body.ime-open .topbar { backdrop-filter: none; -webkit-backdrop-filter: none; ba
               </select>
             </div>
 
+            <div class="setting-item wrap">
+              <div class="setting-item-left">
+                <span class="setting-icon" aria-hidden="true">▣</span>
+                <div class="setting-item-text">
+                  <b data-i18n="containerProfile">容器规格</b>
+                  <small id="setContainerHint" data-i18n="containerProfileHint">选择 Ubuntu 工具链与预计占用</small>
+                </div>
+              </div>
+              <select id="setContainerProfile" class="setting-select">
+                <option value="standard">标准 Agent 环境</option>
+              </select>
+            </div>
+
+            <div class="setting-item wrap">
+              <div class="setting-item-left">
+                <span class="setting-icon" aria-hidden="true">↓</span>
+                <div class="setting-item-text">
+                  <b data-i18n="containerInstall">容器状态</b>
+                  <small id="setContainerStatus">—</small>
+                </div>
+              </div>
+              <button type="button" class="btn xs primary" id="btnContainerInstall" data-i18n="containerInstallAction">安装 / 应用规格</button>
+            </div>
+            <div class="settings-task" data-task-slot="container"></div>
+
             <div class="fields" style="margin-top: 10px;">
               <div class="field">
                 <label data-i18n="defaultCwd">默认工作目录</label>
@@ -1007,6 +1130,7 @@ body.ime-open .topbar { backdrop-filter: none; -webkit-backdrop-filter: none; ba
               </div>
               <p data-i18n="factoryResetHint">删除已安装应用、密钥、配置、skills、记忆文件和日志，保留 Ubuntu rootfs 与模块本体。操作完成后需要重新安装应用。</p>
               <button class="btn xs danger" id="btnFactoryReset" data-i18n="factoryResetAction">完全初始化</button>
+              <div class="settings-task" data-task-slot="reset"></div>
             </section>
 
             <section class="settings-danger" style="margin-bottom: 0;">
@@ -1016,6 +1140,7 @@ body.ime-open .topbar { backdrop-filter: none; -webkit-backdrop-filter: none; ba
               </div>
               <p data-i18n="uninstallModuleHint">完全卸载所有已安装的应用，彻底删除 Ubuntu rootfs、密钥、配置与所有数据，并清除模块本体及宿主动态注入（如 bash、ancli 包装器）。</p>
               <button class="btn xs danger" id="btnUninstallModule" data-i18n="uninstallModuleAction">彻底卸载模块</button>
+              <div class="settings-task" data-task-slot="module-uninstall"></div>
             </section>
           </div>
 
@@ -1302,7 +1427,7 @@ function execOnBridge(b, cmd, name) {
 let bridgeExecTail = Promise.resolve();
 const BRIDGE_COMMAND_TIMEOUT_MS = 20000;
 
-async function execCmdDirect(cmd) {
+async function execCmdDirect(cmd, deadline, retryHttp) {
   if (!bridge) {
     try {
       const found = await waitForBridge(10000);
@@ -1310,23 +1435,28 @@ async function execCmdDirect(cmd) {
       bridgeName = found.name;
       if (!bridgeLogged) { bridgeLogged = true; logLine('已连接 KernelSU WebUI 桥接', 'dim'); }
     } catch (e) {
-      try { return await shHttp(cmd); }
+      try { return await shHttp(cmd, deadline, retryHttp); }
       catch (e2) { throw new Error('WebUI 桥接不可用（等待超时且 KKHTTP 失败）：需要 KernelSU 0.9.5+ 或 KsuWebUI 框架'); }
     }
   }
+  if (Date.now() >= deadline) throw new Error('命令等待超时');
   return await execOnBridge(bridge, cmd, bridgeName);
 }
 
-function execCmd(cmd) {
+function execCmd(cmd, deadline = Infinity, retryHttp = true) {
   const run = () => new Promise((resolve, reject) => {
+    if (Date.now() >= deadline) {
+      reject(new Error('命令等待超时'));
+      return;
+    }
     let settled = false;
     const timer = setTimeout(() => {
       if (!settled) {
         settled = true;
         reject(new Error('命令执行超时: ' + String(cmd).slice(0, 80)));
       }
-    }, BRIDGE_COMMAND_TIMEOUT_MS);
-    execCmdDirect(cmd).then(value => {
+    }, Math.min(BRIDGE_COMMAND_TIMEOUT_MS, deadline - Date.now()));
+    execCmdDirect(cmd, Math.min(deadline, Date.now() + BRIDGE_COMMAND_TIMEOUT_MS), retryHttp).then(value => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
@@ -1346,15 +1476,19 @@ function execCmd(cmd) {
 
 const sh = execCmd;
 
-async function shHttp(cmd) {
+async function shHttp(cmd, deadline, retryHttp) {
   const ports = [8443, 8080];
   let lastErr = null;
   for (const port of ports) {
+    if (Date.now() >= deadline) break;
     try {
       const r = await fetch('http://127.0.0.1:' + port + '/exec?cmd=' + encodeURIComponent(cmd), { cache: 'no-store' });
       if (!r.ok) throw new Error('HTTP ' + r.status);
       return await r.json();
-    } catch (e) { lastErr = e; }
+    } catch (e) {
+      lastErr = e;
+      if (!retryHttp) break;
+    }
   }
   throw lastErr || new Error('KKHTTP 不可用');
 }
@@ -1386,16 +1520,31 @@ function updateFollowButton() {
   btn.setAttribute('aria-pressed', logFollow ? 'true' : 'false');
 }
 
-function appendLogRow(text, kind) {
+function appendLogRows(lines, kind) {
+  if (!lines || !lines.length) return;
   const el = logEl();
-  const row = document.createElement('div');
-  if (kind) row.className = 'l-' + kind;
-  row.textContent = text;
-  el.appendChild(row);
+  const frag = document.createDocumentFragment();
+  for (let i = 0; i < lines.length; i++) {
+    const row = document.createElement('div');
+    if (kind) row.className = 'l-' + kind;
+    row.textContent = lines[i];
+    frag.appendChild(row);
+  }
+  el.appendChild(frag);
   while (el.childElementCount > LOG_MAX) el.removeChild(el.firstElementChild);
-  logLines++;
+  logLines += lines.length;
   updateLogCount();
-  if (logFollow) el.scrollTop = el.scrollHeight;
+  if (logFollow) {
+    if (window.requestAnimationFrame) {
+      window.requestAnimationFrame(() => { el.scrollTop = el.scrollHeight; });
+    } else {
+      el.scrollTop = el.scrollHeight;
+    }
+  }
+}
+
+function appendLogRow(text, kind) {
+  appendLogRows([text], kind);
 }
 
 function logLine(text, kind, taskId) {
@@ -1406,7 +1555,7 @@ function logLine(text, kind, taskId) {
 function appendTaskOutput(task, text, kind) {
   const lines = String(text || '').replace(/\n$/, '').split(/\r?\n/).filter(Boolean);
   task.output = (task.output || []).concat(lines).slice(-LOG_MAX);
-  if (task.id === activeTaskId) lines.forEach(line => appendLogRow(line, kind));
+  if (task.id === activeTaskId) appendLogRows(lines, kind);
   if (task.scope) {
     const pane = document.getElementById('app-log-' + task.scope);
     if (pane && !pane.hidden) {
@@ -1432,6 +1581,56 @@ function clearLogView() {
   updateLogCount();
 }
 
+const TASK_STATUS_LABEL = {
+  running: 'historyRunning', unknown: 'historyUnknown', done: 'historyDone', failed: 'historyFailed',
+};
+
+function taskFeedbackTarget(task) {
+  const action = (task.command || '').match(/^(?:\S*\/)?ancli\s+(\S+)/)?.[1];
+  if (task.scope && ['install', 'update', 'uninstall'].includes(action)) {
+    return { slot: 'app:' + task.scope, label: action };
+  }
+  const global = {
+    check: ['check', 'check'], repair: ['repair', 'repair'], reset: ['reset', 'factoryResetAction'],
+    container: ['container', 'containerInstallAction'],
+  };
+  if (task.command?.includes('uninstall.sh --purge')) {
+    return { slot: 'module-uninstall', label: 'uninstallModuleAction' };
+  }
+  const target = global[action];
+  return target ? { slot: target[0], label: target[1] } : null;
+}
+
+function renderTaskFeedback() {
+  const latest = new Map();
+  for (const task of taskTabs.values()) {
+    const target = taskFeedbackTarget(task);
+    if (!target || !TASK_STATUS_LABEL[task.status] || (task.quiet && task.status !== 'unknown')) continue;
+    const previous = latest.get(target.slot)?.task;
+    if (!previous || (taskUnresolved(task) !== taskUnresolved(previous)
+      ? taskUnresolved(task) : task.id > previous.id)) {
+      latest.set(target.slot, { task, label: target.label });
+    }
+  }
+  for (const slot of document.querySelectorAll('[data-task-slot]')) {
+    const entry = latest.get(slot.dataset.taskSlot);
+    const key = entry ? [entry.task.id, entry.task.status, entry.task.interrupted, uiLang].join(':') : '';
+    if ((slot.dataset.renderedTask || '') === key) continue;
+    slot.dataset.renderedTask = key;
+    if (!entry) { slot.textContent = ''; continue; }
+    const { task, label } = entry;
+    const status = task.interrupted ? uiText('taskInterrupted') : uiText(TASK_STATUS_LABEL[task.status]);
+    const refresh = task.status === 'unknown'
+      ? '<button type="button" class="btn xs" data-task-refresh>' + esc(uiText('taskRefresh')) + '</button>'
+      : '';
+    slot.innerHTML = '<div class="task-feedback" data-state="' + esc(task.status) + '">' +
+      '<span class="task-feedback-status" role="status"><span class="dot" aria-hidden="true"></span>' +
+      esc(uiText(label) + ' · ' + status) + '</span><span class="task-feedback-actions">' + refresh +
+      '<button type="button" class="btn xs quiet" data-task-log="' + esc(task.id) + '">' +
+      esc(uiText('historyView')) + '</button></span></div>';
+  }
+}
+
 function renderTaskTabs() {
   const tabs = document.getElementById('logTabs');
   tabs.textContent = '';
@@ -1442,11 +1641,12 @@ function renderTaskTabs() {
     b.setAttribute('role', 'tab');
     const label = document.createElement('span');
     label.className = 'log-tab-label';
-    label.textContent = (task.status === 'running' ? '● ' : '○ ') + task.label;
+    const statusIcon = task.status === 'running' ? '● ' : (task.status === 'unknown' ? '▲ ' : '○ ');
+    label.textContent = statusIcon + task.label;
     b.appendChild(label);
     b.title = task.command || task.label;
     b.onclick = () => selectTask(task.id);
-    if (task.status !== 'running') {
+    if (!taskUnresolved(task)) {
       const close = document.createElement('button');
       close.className = 'log-tab-close';
       close.type = 'button';
@@ -1458,6 +1658,7 @@ function renderTaskTabs() {
     tabs.appendChild(b);
   }
   renderSettingsHistory();
+  renderTaskFeedback();
 }
 
 function revealAppLog(id) {
@@ -1490,9 +1691,10 @@ function revealAppLog(id) {
 
 async function closeTask(id) {
   const task = taskTabs.get(id);
-  if (!task || task.status === 'running') return;
+  if (!task || taskUnresolved(task)) return;
   taskTabs.delete(id);
-  try { await execCmd('rm -f ' + [task.logFile, task.exitFile, task.metaFile].map(shQuote).join(' ')); } catch (e) { /* keep UI responsive */ }
+  const pidFile = task.pidFile || (task.logFile ? task.logFile.replace(/\.log$/, '.pid') : '');
+  try { await execCmd('rm -f ' + [task.logFile, task.exitFile, task.metaFile, pidFile].filter(Boolean).map(shQuote).join(' ')); } catch (e) { /* keep UI responsive */ }
   const next = taskTabs.values().next().value;
   if (next) await selectTask(next.id);
   else { activeTaskId = 'session'; clearLogView(); renderTaskTabs(); }
@@ -1508,7 +1710,11 @@ async function selectTask(id) {
   try {
     const r = await execCmd('cat ' + shQuote(task.logFile) + ' 2>/dev/null');
     const text = strip(r.stdout || '');
-    if (text) text.split(/\r?\n/).filter(Boolean).forEach(line => appendLogRow(line));
+    if (activeTaskId !== id) return;
+    const lines = text.split(/\r?\n/).filter(Boolean).slice(-LOG_MAX);
+    appendLogRows(lines);
+    if (task.status === 'unknown') appendLogRow(uiText('taskUnknown'), 'err');
+    else if (task.interrupted) appendLogRow(uiText('taskRebooted'), 'err');
     if (logFollow) logEl().scrollTop = logEl().scrollHeight;
   } catch (e) {
     appendLogRow(String(e), 'err');
@@ -1523,18 +1729,49 @@ function toast(msg, kind) {
   el.__t = setTimeout(() => { el.className = 'toast'; }, 2600);
 }
 
-// ---------- 忙碌状态 ----------
+// ---------- 忙碌状态与指令锁 ----------
+const activeBusyLocks = new Map();
 let busy = 0;
-function setBusy(on, label) {
-  busy = Math.max(0, busy + (on ? 1 : -1));
+
+function updateBusyUI() {
+  busy = activeBusyLocks.size;
   document.body.classList.toggle('busy', busy > 0);
-  document.getElementById('busySpin').hidden = busy === 0;
-  ['btnCheck', 'btnRefresh', 'btnRepair'].forEach(id => { document.getElementById(id).disabled = busy > 0; });
+  const spin = document.getElementById('busySpin');
+  if (spin) spin.hidden = busy === 0;
+  ['btnCheck', 'btnRefresh', 'btnRepair', 'btnContainerInstall', 'btnUninstallModule', 'repairConfirm', 'resetApply', 'uninstallApply', 'uninstAppConfirm'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.disabled = busy > 0;
+  });
   const resetButton = document.getElementById('btnFactoryReset');
   if (resetButton) resetButton.disabled = busy > 0;
   // Keep read-only log controls usable while an install/update runs.
-  document.querySelectorAll('#apps button[data-act]:not([data-act="toggle-log"])').forEach(b => { b.disabled = busy > 0; });
-  if (on && label) logLine(label, 'dim');
+  document.querySelectorAll('#apps button[data-act]:not([data-act="toggle-log"])').forEach(b => {
+    b.disabled = busy > 0;
+  });
+}
+
+function setBusy(on, label, ownerId) {
+  if (on) {
+    const id = ownerId || ('lock_' + Date.now() + '_' + Math.random().toString(36).slice(2, 9));
+    activeBusyLocks.set(id, { label: label || '', time: Date.now() });
+    updateBusyUI();
+    if (label) logLine(label, 'dim');
+    let released = false;
+    return function release() {
+      if (released) return;
+      released = true;
+      if (activeBusyLocks.has(id)) {
+        activeBusyLocks.delete(id);
+        updateBusyUI();
+      }
+    };
+  } else {
+    // 明确禁止兼容无 ownerId 的 setBusy(false) 弹出最旧锁，避免释放其他并发任务
+    if (ownerId && activeBusyLocks.has(ownerId)) {
+      activeBusyLocks.delete(ownerId);
+      updateBusyUI();
+    }
+  }
 }
 
 // ---------- 命令执行 ----------
@@ -1573,97 +1810,158 @@ async function execQuiet(cmd) {
   return strip(r.stdout || '');
 }
 
-// 2026-11-16：短命令可以走队列；网络检查必须以后台 shell 启动，避免
-// KernelSU 的同步 exec 在远端连接慢时冻结 WebView 的计时器和按钮。
-async function startDetached(cmd) {
-  const shell = cmd + ' >/dev/null 2>&1 &';
-  const r = await execCmd('sh -c ' + shQuote(shell));
-  if (r.code !== 0) throw new Error('后台命令启动失败（exit ' + r.code + '）');
+const TASK_WAIT_MS = 30 * 60 * 1000;
+const TASK_QUERY_FAILURE_LIMIT = 3;
+const TASK_LOG_DIR = '/data/local/tmp/ancli/.webui_';
+const UNINSTALL_LOG_DIR = '/data/local/tmp/.ancli-uninstall-';
+let taskLaunchPending = false;
+
+function taskUnresolved(task) {
+  return task.status === 'running' || task.status === 'unknown';
 }
 
-// 后台执行 + 实时输出（每次运行独立日志文件，避免两个任务互相串台）
-async function runBackground(cmd, preface, options) {
-  options = options || {};
-  const tag = Date.now() + '_' + Math.floor(Math.random() * 100000);
-  const logFile = '/data/local/tmp/ancli/.webui_' + tag + '.log';
-  const exitFile = logFile + '.exit';
-  const metaFile = logFile + '.meta';
-  const scoped = cmd.match(/\bancli\s+(?:install|update|uninstall|config)\s+([^\s]+)/);
-  const task = { id: tag, label: cmd.replace(/^.*ancli\s+/, ''), command: cmd, scope: scoped ? scoped[1] : '', logFile, exitFile, metaFile, status: 'running', onOutput: options.onOutput };
-  taskTabs.set(task.id, task);
-  if (task.scope) {
-    expandedAppLogs.add(task.scope);
-    // An install task belongs to an app that is not installed yet, so render
-    // its card log before the first output chunk arrives.
-    renderApps(currentApps);
-  }
-  activeTaskId = task.id;
-  logFollow = true;
+function taskReadOnly(command) {
+  return /^(?:\S*\/)?ancli\s+check-module(?:\s|$)/.test(command);
+}
+
+function taskResultStatus(result) {
+  if (result === '0') return 'done';
+  if (/^[0-9]{1,3}$/.test(result)) return 'failed';
+  if (result === 'rebooted') return 'failed';
+  return 'unknown';
+}
+
+function showTaskUnknown(task) {
+  task.status = 'unknown';
+  appendTaskOutput(task, uiText('taskUnknown'), 'err');
   renderTaskTabs();
-  if (task.scope) revealAppLog(task.scope);
-  clearLogView();
-  if (preface) appendLogRow(preface, 'dim');
-  appendLogRow('$ ' + cmd + '  （后台执行）', 'cmd');
-  const deadline = Number(options.timeoutMs) > 0 ? Date.now() + Number(options.timeoutMs) : 0;
-  try { await execCmd('printf ' + shQuote(JSON.stringify(task)) + ' > ' + shQuote(metaFile)); } catch (e) { /* log file remains usable */ }
+  if (!task.quiet) toast(uiText('taskUnknown'), 'err');
+}
+
+function taskBridge(command, deadline, retryHttp = true) {
+  // The timer includes time spent waiting in the bridge queue. execCmd also
+  // skips expired queued requests so an expired launch cannot start later.
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error('后台任务等待超时')), Math.max(0, deadline - Date.now()));
+    execCmd(command, deadline, retryHttp).then(resolve, reject).finally(() => clearTimeout(timer));
+  });
+}
+
+async function pollTask(task, deadline) {
+  let offset = 0;
+  let failures = 0;
+  const encode = new TextEncoder();
+  while (Date.now() < deadline && failures < TASK_QUERY_FAILURE_LIMIT) {
+    await sleep(Math.min(TASK_POLL_MS, deadline - Date.now()));
+    if (Date.now() >= deadline) break;
+    try {
+      // Read the completion marker before the log so the final batch includes
+      // all output even when the command exits between two polls.
+      const command = 'if [ -f ' + shQuote(task.exitFile) + ' ]; then cat ' + shQuote(task.exitFile) +
+        ' || exit 1; else echo pending; fi; if [ -f ' + shQuote(task.logFile) +
+        ' ]; then tail -c +' + (offset + 1) + ' ' + shQuote(task.logFile) + ' || exit 1; fi; ' +
+        'printf "\\n__ANCLI_POLL_END__\\n"';
+      const r = await taskBridge('sh -c ' + shQuote(command), Math.min(deadline, Date.now() + BRIDGE_COMMAND_TIMEOUT_MS));
+      const suffix = /\n__ANCLI_POLL_END__\s*$/.exec(r.stdout);
+      if (r.code !== 0 || !suffix) throw new Error('任务状态查询失败');
+      const payload = r.stdout.slice(0, suffix.index);
+      const newline = payload.indexOf('\n');
+      if (newline < 0) throw new Error('任务状态查询失败');
+      const result = payload.slice(0, newline).trim();
+      if (result !== 'pending' && !/^[0-9]{1,3}$/.test(result)) throw new Error('无效的任务退出码');
+      const chunk = payload.slice(newline + 1);
+      offset += encode.encode(chunk).length;
+      const visible = visibleTaskOutput(task, strip(chunk));
+      if (visible) appendTaskOutput(task, visible);
+      failures = 0;
+      if (result === 'pending') continue;
+      task.status = taskResultStatus(result);
+      appendTaskOutput(task, task.status === 'done' ? '✓ 完成' : '退出码: ' + result, task.status === 'done' ? 'ok' : 'err');
+      renderTaskTabs();
+      return;
+    } catch (e) {
+      failures++;
+    }
+  }
+  showTaskUnknown(task);
+}
+
+async function runBackground(cmd, preface, options = {}) {
+  const readOnly = taskReadOnly(cmd);
+  if (!readOnly && taskLaunchPending) {
+    if (!options.quiet) toast(uiText('taskBlocked'), 'err');
+    return { status: 'blocked' };
+  }
+
+  if (!readOnly) {
+    taskLaunchPending = true;
+    try {
+      await restoreTasks({ showHistory: false });
+      if (Array.from(taskTabs.values()).some(task => taskUnresolved(task) && !taskReadOnly(task.command))) {
+        if (!options.quiet) toast(uiText('taskBlocked'), 'err');
+        return { status: 'blocked' };
+      }
+    } catch (e) {
+      if (!options.quiet) toast(uiText('taskUnknown'), 'err');
+      return { status: 'blocked' };
+    } finally {
+      taskLaunchPending = false;
+    }
+  }
+
+  const tag = Date.now() + '_' + Math.floor(Math.random() * 100000);
+  const logFile = (options.moduleUninstall ? UNINSTALL_LOG_DIR : TASK_LOG_DIR) + tag + '.log';
+  const timeout = Number(options.timeoutMs);
+  const deadline = Date.now() + (Number.isFinite(timeout) && timeout > 0 ? timeout : TASK_WAIT_MS);
+  const task = {
+    id: tag, label: options.label || cmd.replace(/^.*ancli\s+/, ''), command: cmd,
+    scope: cmd.match(/\bancli\s+(?:install|update|uninstall|config)\s+([^\s]+)/)?.[1] || '',
+    logFile, exitFile: logFile + '.exit', metaFile: logFile + '.meta',
+    status: 'running', quiet: Boolean(options.quiet), onOutput: options.onOutput,
+  };
+  taskTabs.set(task.id, task);
+  if (!task.quiet) {
+    if (task.scope) {
+      expandedAppLogs.add(task.scope);
+      renderApps(currentApps);
+    }
+    activeTaskId = task.id;
+    logFollow = true;
+    clearLogView();
+    if (preface) appendLogRow(preface, 'dim');
+    appendLogRow('$ ' + cmd + '  （后台执行）', 'cmd');
+  }
+  renderTaskTabs();
+
+  const actualCmd = options.keepLog && /^\s*ancli\s+/.test(cmd)
+    ? cmd + ' --keep-log=' + shQuote(logFile)
+    : cmd;
+  const metadata = JSON.stringify(task).slice(0, -1) + ',"bootId":"';
+  // Publish metadata before launching. A subshell confines "exit" and
+  // compound command redirections to the workload, leaving the writer alive.
+  const runner = '( ' + actualCmd + ' ) > ' + shQuote(logFile) + ' 2>&1; rc=$?; ' +
+    'printf "%s\\n" "$rc" > ' + shQuote(task.exitFile + '.tmp') + ' && mv -f ' +
+    shQuote(task.exitFile + '.tmp') + ' ' + shQuote(task.exitFile);
+  const launch = 'boot=$(cat /proc/sys/kernel/random/boot_id 2>/dev/null); ' +
+    'umask 077; printf \'%s%s"}\\n\' ' + shQuote(metadata) + ' "$boot" > ' + shQuote(task.metaFile + '.tmp') +
+    ' && mv -f ' + shQuote(task.metaFile + '.tmp') + ' ' + shQuote(task.metaFile) +
+    ' || { echo ancli-meta-failed; exit 1; }; ' +
+    'nohup sh -c ' + shQuote(runner) + ' </dev/null >/dev/null 2>&1 &';
   try {
-    // 2026-11-16：只有 AnCLI 自身支持 --keep-log，shell 安装器不能追加该参数。
-    const actualCmd = options.keepLog && /^\s*ancli\s+/.test(cmd)
-      ? cmd + ' --keep-log=' + shQuote(logFile)
-      : cmd;
-    // 2026-11-16：KernelSU WebUI 的 exec 返回后会回收未脱离的后台子进程。
-    // 安装模块时如果只追加 `&`，通常只留下 meta 文件，没有日志和退出码，
-    // 页面随后把任务误报为“下载失败”。用 nohup 让子 shell 脱离桥接会话，
-    // 并由同一个 shell 写入日志和退出码，下载和安装都能稳定完成。
-    const quotedActual = String(actualCmd).replace(/'/g, "'\\''");
-    const detached = "nohup sh -c '" + quotedActual + " > " + shQuote(logFile) +
-      " 2>&1; echo $? > " + shQuote(exitFile) + "' </dev/null &";
-    const r = await execCmd('sh -c ' + shQuote(detached));
-    if (r.code !== 0 && !r.stdout && !r.stderr) {
-      logLine('后台任务启动失败（exit ' + r.code + '）', 'err');
-      task.status = 'failed'; renderTaskTabs();
+    const result = await taskBridge('sh -c ' + shQuote(launch), Math.min(deadline, Date.now() + BRIDGE_COMMAND_TIMEOUT_MS), false);
+    if (result.code !== 0 && result.stdout.trim() === 'ancli-meta-failed') {
+      task.status = 'failed';
+      appendTaskOutput(task, '无法保存后台任务记录，命令未启动。', 'err');
+      renderTaskTabs();
       return task;
     }
+    if (result.code !== 0) throw new Error('启动结果无法确认');
   } catch (e) {
-    logLine('后台任务启动失败: ' + e, 'err');
-    task.status = 'failed'; renderTaskTabs();
+    showTaskUnknown(task);
     return task;
   }
-  let last = 0;
-  for (;;) {
-    if (deadline && Date.now() >= deadline) {
-      task.status = 'failed';
-      appendTaskOutput(task, '任务超时，未确认模块安装结果。', 'err');
-      renderTaskTabs();
-      break;
-    }
-    await sleep(TASK_POLL_MS);
-    let out;
-    try { out = await execCmd('tail -c +' + (last + 1) + ' ' + logFile + ' 2>/dev/null'); }
-    catch (e) { continue; }
-    const text = strip(out.stdout || '');
-    if (text) {
-      const visible = visibleTaskOutput(task, text);
-      if (visible) appendTaskOutput(task, visible);
-      // `tail -c` 按字节计数：必须用 UTF-8 字节长度推进，否则会重复读取或截断中文
-      last += new TextEncoder().encode(out.stdout || '').length;
-    }
-    let done;
-    try { done = await execCmd('[ -f ' + exitFile + ' ] && cat ' + exitFile + ' || echo -n'); }
-    catch (e) { continue; }
-    const code = (done.stdout || '').trim();
-    if (code !== '') {
-      try {
-        const rest = strip((await execCmd('tail -c +' + (last + 1) + ' ' + logFile + ' 2>/dev/null')).stdout || '');
-        const visibleRest = visibleTaskOutput(task, rest);
-        if (visibleRest) appendTaskOutput(task, visibleRest);
-      } catch (e) { /* ignore */ }
-      if (code === '0') { task.status = 'done'; appendTaskOutput(task, '✓ 完成', 'ok'); }
-      else { task.status = 'failed'; appendTaskOutput(task, '退出码: ' + code + '（命令失败，未生效）', 'err'); }
-      renderTaskTabs();
-      break;
-    }
-  }
+
+  await pollTask(task, deadline);
   return task;
 }
 
@@ -1704,8 +2002,8 @@ function renderSettingsHistory() {
     return;
   }
   wrap.innerHTML = tasks.map(task => {
-    const state = task.status === 'running' ? 'running' : task.status === 'done' ? 'done' : 'failed';
-    const stateText = task.status === 'running' ? uiText('historyRunning') : task.status === 'done' ? uiText('historyDone') : uiText('historyFailed');
+    const state = task.status;
+    const stateText = uiText(TASK_STATUS_LABEL[state]);
     return '<button type="button" class="history-row" data-history-id="' + esc(task.id) + '" title="' + esc(uiText('historyView')) + '">' +
       '<span class="history-main"><b>' + esc(task.label || task.command || task.id) + '</b><small>' + esc(taskTime(task.id)) + '</small></span>' +
       '<span class="history-state ' + state + '">' + esc(stateText) + '</span></button>';
@@ -1731,7 +2029,7 @@ async function trimTaskLogs() {
 }
 
 async function clearHistoryLogs() {
-  const completed = Array.from(taskTabs.values()).filter(task => task.status !== 'running');
+  const completed = Array.from(taskTabs.values()).filter(task => !taskUnresolved(task));
   if (!completed.length) { toast(uiText('historyNothingToClear')); return; }
   for (const task of completed) {
     try { await execCmd('rm -f ' + [task.logFile, task.exitFile, task.metaFile].map(shQuote).join(' ')); }
@@ -1770,71 +2068,70 @@ async function proxyDownloadNote(app) {
   }
 }
 
-async function restoreTasks() {
-  try {
-    const raw = await execCmd(
-      'for m in $(ls -t /data/local/tmp/ancli/.webui_*.log.meta 2>/dev/null | head -n 10); do ' +
-      'echo "===META==="; cat "$m" 2>/dev/null; echo ""; ' +
-      'echo "===EXIT==="; e="${m%.meta}"; [ -f "$e" ] && cat "$e" 2>/dev/null || true; echo ""; done'
-    );
-    const chunks = strip(raw.stdout || '').split('===META===').filter(Boolean);
-    for (const chunk of chunks) {
-      try {
-        const parts = chunk.split('===EXIT===');
-        const task = JSON.parse((parts[0] || '').trim() || '{}');
-        if (!task.id || !task.logFile || taskTabs.has(task.id)) continue;
-        const exitCode = (parts[1] || '').trim();
-        task.status = exitCode === '' ? 'running' : (exitCode === '0' ? 'done' : 'failed');
-        // 2026-11-16：WebUI 被系统杀掉后，旧任务可能只剩 meta 文件。
-        // 超过 5 分钟没有 exit 标记就视为失联，避免重启页面后永久轮询并锁住桥接队列。
-        const startedAt = Number(String(task.id || '').split('_', 1)[0]);
-        if (task.status === 'running' && startedAt && Date.now() - startedAt > 5 * 60 * 1000) {
-          task.status = 'failed';
-          task.recoveryNote = '后台任务已失联，请重新执行。';
-          task.output = (task.output || []).concat(task.recoveryNote);
-        }
-        taskTabs.set(task.id, task);
-        if (task.scope) expandedAppLogs.add(task.scope);
-      } catch (e) { /* ignore single malformed entry */ }
+async function restoreTasks({ showHistory = true } = {}) {
+  const command = 'boot=$(cat /proc/sys/kernel/random/boot_id 2>/dev/null); ' +
+    'boot_time=$(sed -n "s/^btime //p" /proc/stat 2>/dev/null); printf "%s\\t%s\\n" "$boot" "$boot_time"; ' +
+    'for m in ' + TASK_LOG_DIR + '*.log.meta ' + UNINSTALL_LOG_DIR + '*.log.meta; do ' +
+    '[ -f "$m" ] || continue; ' +
+    'meta=$(cat "$m") || exit 1; e="${m%.meta}.exit"; result=pending; ' +
+    'if [ -f "$e" ]; then result=$(cat "$e") || exit 1; fi; ' +
+    'printf "%s\\t%s\\n" "$result" "$meta"; done; printf "__ANCLI_TASKS_END__\\n"';
+  const deadline = Date.now() + BRIDGE_COMMAND_TIMEOUT_MS;
+  const raw = await taskBridge('sh -c ' + shQuote(command), deadline);
+  // Some WebUI bridges strip trailing whitespace. An explicit final line
+  // lets empty histories survive that normalization while detecting truncation.
+  const lines = raw.stdout.replace(/\r\n/g, '\n').replace(/\n+$/, '').split('\n');
+  if (raw.code !== 0 || lines.pop() !== '__ANCLI_TASKS_END__' || !lines.length) {
+    throw new Error('读取后台任务状态失败');
+  }
+  const [boot, ...rows] = lines;
+  if (!/^[^\t\r\n]*\t\d*$/.test(boot)) throw new Error('后台任务启动信息无效');
+  const [bootId, bootTime] = boot.split('\t');
+  const completed = [];
+  for (const row of rows) {
+    if (!row) continue;
+    const split = row.indexOf('\t');
+    if (split < 0) throw new Error('后台任务记录格式无效');
+    const entry = JSON.parse(row.slice(split + 1));
+    if (!/^\d{13}_\d+$/.test(entry.id) || typeof entry.command !== 'string') throw new Error('后台任务记录格式无效');
+    const logFile = entry.logFile;
+    if (logFile !== TASK_LOG_DIR + entry.id + '.log' && logFile !== UNINSTALL_LOG_DIR + entry.id + '.log') {
+      throw new Error('后台任务日志路径无效');
     }
-    renderTaskTabs();
+    let result = row.slice(0, split).trim();
+    // An older WebUI fabricated exit 124 on timeout. Treat such records as
+    // unresolved because it killed only the shell PID, not necessarily its child.
+    if (result === '124' && !Object.prototype.hasOwnProperty.call(entry, 'bootId')) result = 'pending';
+    const startedAt = Number(entry.id.split('_')[0]);
+    const restarted = entry.bootId
+      ? bootId && entry.bootId !== bootId
+      : /^[0-9]{10}$/.test(bootTime) && startedAt + 60000 < Number(bootTime) * 1000;
+    if (result === 'pending' && restarted) result = 'rebooted';
+    const status = taskResultStatus(result);
+    const known = taskTabs.get(entry.id);
+    if (known) {
+      if (known.status === 'unknown' && status !== 'unknown') {
+        known.status = status;
+        known.interrupted = result === 'rebooted';
+      }
+      continue;
+    }
+    const task = { ...entry, logFile, exitFile: logFile + '.exit', metaFile: logFile + '.meta', status };
+    task.interrupted = result === 'rebooted';
+    if (taskUnresolved(task)) taskTabs.set(task.id, task);
+    else completed.push(task);
+    if (task.scope) expandedAppLogs.add(task.scope);
+  }
+  if (showHistory) {
+    completed.sort((a, b) => b.id.localeCompare(a.id));
+    for (const task of completed.slice(0, 10)) taskTabs.set(task.id, task);
+  }
+  renderTaskTabs();
+  const selected = taskTabs.get(activeTaskId);
+  if (showHistory && selected && selected.status !== 'running') await selectTask(selected.id);
+  else if (showHistory && activeTaskId === 'session') {
     const first = taskTabs.values().next().value;
-    if (first && activeTaskId === 'session') await selectTask(first.id);
-    for (const task of taskTabs.values()) if (task.status === 'running') monitorTask(task);
-  } catch (e) { /* the first page load can proceed without task history */ }
-}
-
-async function monitorTask(task) {
-  let last = 0;
-  const startedAt = Number(String(task.id || '').split('_', 1)[0]);
-  const recoveryDeadline = startedAt ? startedAt + 5 * 60 * 1000 : 0;
-  try {
-    const size = await execCmd('wc -c < ' + shQuote(task.logFile) + ' 2>/dev/null || echo 0');
-    last = Number.parseInt(strip(size.stdout || '0').trim(), 10) || 0;
-  } catch (e) { /* start from the beginning if the size probe is unavailable */ }
-  for (;;) {
-    if (recoveryDeadline && Date.now() > recoveryDeadline) {
-      task.status = 'failed';
-      task.output = (task.output || []).concat('后台任务已失联，请重新执行。');
-      renderTaskTabs();
-      break;
-    }
-    await sleep(TASK_POLL_MS);
-    try {
-      const out = await execCmd('tail -c +' + (last + 1) + ' ' + shQuote(task.logFile) + ' 2>/dev/null');
-      const text = strip(out.stdout || '');
-      if (text) {
-        appendTaskOutput(task, text);
-        last += new TextEncoder().encode(out.stdout || '').length;
-      }
-      const done = await execCmd('[ -f ' + shQuote(task.exitFile) + ' ] && cat ' + shQuote(task.exitFile) + ' || true');
-      const code = strip(done.stdout || '').trim();
-      if (code) {
-        task.status = code === '0' ? 'done' : 'failed';
-        renderTaskTabs();
-        break;
-      }
-    } catch (e) { /* retry while the bridge is available */ }
+    if (first) await selectTask(first.id);
   }
 }
 
@@ -1895,18 +2192,31 @@ function setStat(id, text, state) {
   el.className = 'v' + (state ? ' ' + state : '');
 }
 
+let latestStatus = null;
+
+function renderStatusText(s) {
+  if (!s) return;
+  setStat('stRootfs', s.rootfs_ready ? uiText('ready') : uiText('missing'), s.rootfs_ready ? 'ok' : 'bad');
+  setStat('stProot', s.proot_deployed ? uiText('deployed') : uiText('missing'), s.proot_deployed ? 'ok' : 'bad');
+}
+
 async function loadStatus() {
   try {
     const s = JSON.parse(await ancli('status --json', true));
-    document.getElementById('stVer').textContent = 'v' + (s.ancli_version || '?');
-    setStat('stRootfs', s.rootfs_ready ? '就绪' : '缺失', s.rootfs_ready ? 'ok' : 'bad');
-    setStat('stProot', s.proot_deployed ? '已部署' : '缺失', s.proot_deployed ? 'ok' : 'bad');
-    setStat('stCount', (s.installed_count ?? '?') + ' 个');
-    if (s.agent_memory === 'unconfigured') {
+    latestStatus = s;
+    document.getElementById('stVer').textContent = 'v' + String(s.ancli_version || '?').replace(/^v/i, '');
+    renderStatusText(s);
+    setStat('stCount', formatCount(s.installed_count ?? '?'));
+    if (s.container) renderContainerSettings(s.container, s.ancli_version);
+    else renderContainerSettings(s, s.ancli_version);
+    if (s.rootfs_ready && s.agent_memory === 'unconfigured') {
       const anyOverlayOpen = document.querySelector('.overlay.show');
       if (!anyOverlayOpen) {
         openMemoryPrompt();
       }
+    }
+    if (!s.rootfs_ready && (!currentApps || currentApps.length === 0)) {
+      renderApps([]);
     }
   } catch (e) {
     logLine('状态加载失败: ' + e, 'err');
@@ -1915,24 +2225,56 @@ async function loadStatus() {
 
 let lastCheck = 0;
 let lastCheckFailed = 0;
+let checkTtl = 0;
 let supportsCheck = false;
 let autoCheckStarted = false;
 let manualCheckRequested = false;
+let appCatalogRevision = '';
+let appCatalog = new Map();
+let appsRequest = null;
 
-async function loadApps() {
+function mergeAppCatalog(data) {
+  const apps = Array.isArray(data.apps) ? data.apps : [];
+  if (data.catalog_unchanged === true) {
+    if (!appCatalogRevision || data.catalog_revision !== appCatalogRevision ||
+        apps.some(app => !appCatalog.has(app.id))) {
+      throw new Error('应用目录版本不匹配');
+    }
+    return apps.map(app => ({ ...appCatalog.get(app.id), ...app }));
+  }
+
+  appCatalogRevision = /^[a-f0-9]{64}$/.test(data.catalog_revision || '') ? data.catalog_revision : '';
+  const fields = ['name', 'description', 'update_cmd', 'launch', 'required_env_vars', 'optional_env_vars'];
+  appCatalog = new Map(apps.map(app => [app.id, Object.fromEntries(fields.map(key => [key, app[key]]))]));
+  return apps;
+}
+
+function loadApps() {
+  if (!appsRequest) appsRequest = readApps().finally(() => { appsRequest = null; });
+  return appsRequest;
+}
+
+async function readApps() {
   const wrap = document.getElementById('apps');
   if (!wrap.childElementCount) wrap.innerHTML = '<div class="skeleton"></div><div class="skeleton"></div>';
   try {
-    const data = JSON.parse(await ancli('list --json', true));
-    currentApps = data.apps || [];
+    const args = 'list --json' + (appCatalogRevision ? ' --catalog-revision=' + appCatalogRevision : '');
+    let data = JSON.parse(await ancli(args, true));
+    try {
+      currentApps = mergeAppCatalog(data);
+    } catch (e) {
+      data = JSON.parse(await ancli('list --json', true));
+      currentApps = mergeAppCatalog(data);
+    }
     lastCheck = data.last_check || 0;
     lastCheckFailed = data.check_failed || 0;
-    supportsCheck = (typeof data.check_ttl === 'number');
-    if (data.ancli_version) document.getElementById('stVer').textContent = 'v' + data.ancli_version;
+    supportsCheck = Number.isFinite(data.check_ttl) && data.check_ttl >= 0;
+    checkTtl = supportsCheck ? data.check_ttl : 0;
+    if (data.ancli_version) document.getElementById('stVer').textContent = 'v' + String(data.ancli_version).replace(/^v/i, '');
     renderApps(currentApps);
     renderCheckInfo();
   } catch (e) {
-    wrap.innerHTML = '<div class="empty">加载失败：' + esc(e.message || e) + '</div>';
+    if (!currentApps.length) wrap.innerHTML = '<div class="empty">加载失败：' + esc(e.message || e) + '</div>';
     logLine('应用列表加载失败: ' + e, 'err');
   }
 }
@@ -1943,33 +2285,32 @@ function esc(s) {
 }
 
 const SOURCE_LABELS = [
-  [/^github:/, '官方 GitHub'],
-  [/^pypi:/, '官方 PyPI'],
-  [/^npm:/, '官方 npm'],
-  [/^manifest$/, '官方发布清单'],
-  [/^channel$/, '官方通道'],
-  [/^registry$/, '模块声明'],
-  [/^none$/, '无官方接口'],
+  [/^github:/, '官方 GitHub', 'Official GitHub'],
+  [/^pypi:/, '官方 PyPI', 'Official PyPI'],
+  [/^npm:/, '官方 npm', 'Official npm'],
+  [/^manifest$/, '官方发布清单', 'Official manifest'],
+  [/^channel$/, '官方通道', 'Official channel'],
+  [/^registry$/, '模块声明', 'Module catalog'],
+  [/^none$/, '无官方接口', 'No official API'],
 ];
 function srcLabel(src) {
-  for (const pair of SOURCE_LABELS) if (pair[0].test(src || '')) return pair[1];
-  return src || '未知来源';
+  for (const pair of SOURCE_LABELS) if (pair[0].test(src || '')) return pair[uiLang === 'en' ? 2 : 1];
+  return src || (uiLang === 'en' ? 'Unknown source' : '未知来源');
 }
 
 function fmtAge(sec) {
-  if (sec < 60) return sec + ' 秒';
-  if (sec < 3600) return Math.floor(sec / 60) + ' 分钟';
-  if (sec < 86400) return Math.floor(sec / 3600) + ' 小时';
-  return Math.floor(sec / 86400) + ' 天';
+  const n = sec < 60 ? sec : sec < 3600 ? Math.floor(sec / 60) : sec < 86400 ? Math.floor(sec / 3600) : Math.floor(sec / 86400);
+  const unit = sec < 60 ? ['秒', 'second'] : sec < 3600 ? ['分钟', 'minute'] : sec < 86400 ? ['小时', 'hour'] : ['天', 'day'];
+  return uiLang === 'en' ? n + ' ' + unit[1] + (n === 1 ? '' : 's') : n + ' ' + unit[0];
 }
 
 function renderCheckInfo() {
   const el = document.getElementById('checkInfo');
-  if (!supportsCheck) { el.textContent = '当前模块版本不支持版本检查'; return; }
-  if (!lastCheck) { el.textContent = '尚未检查官方版本'; return; }
+  if (!supportsCheck) { el.textContent = uiLang === 'en' ? 'Version checks are not supported by this module' : '当前模块版本不支持版本检查'; return; }
+  if (!lastCheck) { el.textContent = uiLang === 'en' ? 'Official versions not checked yet' : '尚未检查官方版本'; return; }
   const age = Math.max(0, Math.floor(Date.now() / 1000) - lastCheck);
-  let msg = '上次检查 ' + fmtAge(age) + '前';
-  if (lastCheckFailed && manualCheckRequested) msg += ' · ' + lastCheckFailed + ' 项查询失败';
+  let msg = uiLang === 'en' ? 'Last checked ' + fmtAge(age) + ' ago' : '上次检查 ' + fmtAge(age) + '前';
+  if (lastCheckFailed && manualCheckRequested) msg += uiLang === 'en' ? ' · ' + lastCheckFailed + ' check(s) failed' : ' · ' + lastCheckFailed + ' 项查询失败';
   el.textContent = msg;
 }
 
@@ -2009,6 +2350,7 @@ const UI_TEXT = {
     uninstallConfirmLabel: '输入 UNINSTALL 继续',
     uninstallInvalid: '请输入大写的 UNINSTALL 才能继续彻底卸载',
     uninstallStarting: '正在彻底卸载模块与容器数据…',
+    uninstallFailed: '模块卸载失败，请查看日志。',
     uninstallDone: '模块与容器已彻底卸载完毕！请重启手机以应用系统变更。',
     languageSetting: '语言', languageHint: '界面文本', themeSetting: '主题', themeHint: '页面外观', installedCount: '已安装', updatesCount: '可更新', updateBadge: '更新', updateAvailable: '检测到渠道更新',
     agentMemorySetting: 'Agent 全局记忆', agentMemoryHint: 'AGENTS.md 与环境探测',
@@ -2019,20 +2361,24 @@ const UI_TEXT = {
     memSkipTitle: '不添加（纯净模式）', memSkipDesc: '不写入全局 AGENTS.md 文件，由用户或项目自主管理',
     confirm: '确认',
     backend: '运行后端', dataChannel: '数据通道', effectiveCwd: '生效目录', proxyStatus: '代理状态',
+    containerProfile: '容器规格', containerProfileHint: '选择 Ubuntu 工具链与预计占用', containerInstall: '容器状态', containerInstallAction: '安装 / 应用规格', containerInstallStarting: '正在安装或应用容器规格…', containerInstallFailed: '容器安装失败，请查看输出日志',
     defaultCwd: '默认工作目录', cwdHint: '从 / 启动工具时使用；必须是容器内存在的绝对路径。留空使用 /root。',
     proxyHint: '直接填写 IP:端口（如 192.168.1.10:7890）；直连模式清除工具代理。',
     proxyMode: '代理模式', proxyModeHint: '网络连接策略', manualProxyAddress: '代理地址',
     proxyConnected: '已连接', proxyDisconnected: '未连接',
     systemProxy: '系统自动探测', manualProxy: '手动指定', directProxy: '直连',
     autoTheme: '自动', lightTheme: '浅色', darkTheme: '深色',
-    prootBackend: 'Ubuntu / PRoot', ready: '就绪', unavailable: '不可用', notMounted: '未挂载', unknown: '未知',
+    prootBackend: 'Ubuntu / PRoot', ready: '就绪', missing: '缺失', deployed: '已部署', unavailable: '不可用', notMounted: '未挂载', unknown: '未知',
     settingsSaved: '设置已保存', settingsFailed: '设置保存失败，见输出', savingSettings: '保存设置…', invalidProxy: '请输入有效的 IP:端口 或代理地址（如 192.168.1.10:7890）',
     logHistory: '日志历史', logHistoryHint: '任务日志最多保留 10 MB，不按时间自动删除。', clearHistory: '清理历史',
-    historyEmpty: '暂无历史任务', historyView: '查看日志', historyRunning: '运行中', historyDone: '已完成', historyFailed: '失败',
+    historyEmpty: '暂无历史任务', historyView: '查看日志', historyRunning: '运行中', historyUnknown: '结果待确认', historyDone: '已完成', historyFailed: '失败',
+    taskRefresh: '刷新状态', taskInterrupted: '已中断',
+    taskUnknown: '暂时无法确认后台任务结果，请刷新状态。', taskBlocked: '还有后台操作的结果待确认，请先刷新状态。若任务失联且一直没有结果，可重启设备后再检查。',
+    taskRebooted: '设备已重启，未收到该任务的退出结果。',
     historyCleared: '历史日志已清理', historyNothingToClear: '没有可清理的历史日志', logHistoryLoading: '正在读取日志历史…',
     factoryReset: '完全初始化环境', factoryResetTitle: '恢复模块自带的干净 Agent 环境',
-    factoryResetHint: '删除已安装应用、密钥、配置、skills、记忆文件和日志，保留 Ubuntu rootfs 与模块本体。操作完成后需要重新安装应用。',
-    factoryResetWarning: '此操作不可恢复。它会删除容器中的应用、密钥、配置、skills、Agent 记忆和全部旧日志；Ubuntu rootfs 和 AnCLI 模块文件会保留。',
+    factoryResetHint: '删除已安装应用、密钥、配置、skills、记忆文件和日志，保留 Ubuntu 容器、规格和模块本体。操作完成后需要重新安装应用。',
+    factoryResetWarning: '此操作不可恢复。它会删除容器中的应用、密钥、配置、skills、Agent 记忆和全部旧日志；Ubuntu 容器、规格和 AnCLI 模块文件会保留。',
     factoryResetReinstall: '清除后重新配置环境', factoryResetReinstallHint: '保留清理前的应用清单，在干净 PRoot 中重新安装；不会恢复 API key、代理和应用配置。',
     factoryResetConfirmLabel: '输入 RESET 继续', factoryResetAction: '完全初始化', resetStarting: '正在初始化环境…', resetInvalid: '请输入 RESET 才能继续', resetDone: '环境已初始化，请重新安装需要的应用', resetDoneReinstall: '环境已清理并重新安装原应用，密钥和代理未恢复' },
   en: { check: 'Check updates', refresh: 'Refresh', repair: 'Repair', settings: 'Settings', tools: 'Tools', output: 'Output', proxy: 'Proxy',
@@ -2070,6 +2416,7 @@ const UI_TEXT = {
     uninstallConfirmLabel: 'Type UNINSTALL to proceed',
     uninstallInvalid: 'Type uppercase UNINSTALL to confirm purge',
     uninstallStarting: 'Purging module and container data…',
+    uninstallFailed: 'Module uninstall failed. See the task log.',
     uninstallDone: 'Module and container purged! Please reboot your device.',
     languageSetting: 'Language', languageHint: 'Interface text', themeSetting: 'Theme', themeHint: 'Page appearance', installedCount: 'Installed', updatesCount: 'Updates', updateBadge: 'Update', updateAvailable: 'Channel update available',
     agentMemorySetting: 'Agent global memory', agentMemoryHint: 'AGENTS.md and environment probe',
@@ -2086,14 +2433,19 @@ const UI_TEXT = {
     proxyConnected: 'Connected', proxyDisconnected: 'Not connected',
     systemProxy: 'System detection', manualProxy: 'Manual', directProxy: 'Direct',
     autoTheme: 'Auto', lightTheme: 'Light', darkTheme: 'Dark',
-    prootBackend: 'Ubuntu / PRoot', ready: 'Ready', unavailable: 'Unavailable', notMounted: 'Not mounted', unknown: 'Unknown',
+    prootBackend: 'Ubuntu / PRoot', ready: 'Ready', missing: 'Missing', deployed: 'Deployed', unavailable: 'Unavailable', notMounted: 'Not mounted', unknown: 'Unknown',
     settingsSaved: 'Settings saved', settingsFailed: 'Could not save settings; see output', savingSettings: 'Saving settings…', invalidProxy: 'Enter a valid IP:port or proxy URL (e.g. 192.168.1.10:7890)',
     logHistory: 'Log history', logHistoryHint: 'Task logs are kept up to 10 MB total; no time based expiry.', clearHistory: 'Clear history',
-    historyEmpty: 'No task history', historyView: 'View log', historyRunning: 'Running', historyDone: 'Completed', historyFailed: 'Failed',
+    historyEmpty: 'No task history', historyView: 'View log', historyRunning: 'Running', historyUnknown: 'Result unconfirmed', historyDone: 'Completed', historyFailed: 'Failed',
+    taskRefresh: 'Refresh status', taskInterrupted: 'Interrupted',
+    taskUnknown: 'The background result is unconfirmed. Refresh status to check again.',
+    taskBlocked: 'Another background operation is unresolved. Refresh status first. If it never reports a result, restart the device and check again.',
+    taskRebooted: 'The device restarted before this task reported an exit result.',
     historyCleared: 'Task history cleared', historyNothingToClear: 'No completed logs to clear', logHistoryLoading: 'Reading log history…',
     factoryReset: 'Factory reset environment', factoryResetTitle: 'Restore the clean Agent environment from the module',
-    factoryResetHint: 'Delete installed apps, secrets, config, skills, memory and logs while keeping the Ubuntu rootfs and module payload. Reinstall tools after the reset.',
-    factoryResetWarning: 'This cannot be undone. It deletes container apps, secrets, config, skills, Agent memory and all old logs; the Ubuntu rootfs and AnCLI module files remain.',
+     factoryResetHint: 'Delete installed apps, secrets, config, skills, memory and logs while keeping the Ubuntu container, profile and module payload. Reinstall tools after the reset.',
+     factoryResetWarning: 'This cannot be undone. It deletes container apps, secrets, config, skills, Agent memory and all old logs; the Ubuntu container, profile and AnCLI module files remain.',
+     containerProfile: 'Container profile', containerProfileHint: 'Choose the Ubuntu toolchain and estimated size', containerInstall: 'Container status', containerInstallAction: 'Install / apply profile', containerInstallStarting: 'Installing or applying the container profile…', containerInstallFailed: 'Container installation failed; see the output log',
     factoryResetReinstall: 'Reinstall the previous environment', factoryResetReinstallHint: 'Keep the pre-reset app list and reinstall it in the clean PRoot; API keys, proxy settings and app config are not restored.',
     factoryResetConfirmLabel: 'Type RESET to continue', factoryResetAction: 'Factory reset', resetStarting: 'Resetting environment…', resetInvalid: 'Type RESET to continue', resetDone: 'Environment reset; reinstall the tools you need', resetDoneReinstall: 'Environment reset and previous apps reinstalled; secrets and proxy settings were not restored' }
 };
@@ -2135,8 +2487,11 @@ function applyLanguage(lang) {
   if (themeSwitch) themeSwitch.setAttribute('aria-label', uiText('themeSetting'));
   const langSwitch = document.getElementById('langSwitch');
   if (langSwitch) langSwitch.setAttribute('aria-label', uiText('languageSetting'));
+  renderStatusText(latestStatus);
   renderApps(currentApps);
+  renderCheckInfo();
   renderTaskTabs();
+  renderContainerProfileOptions();
   // 2026-11-16：语言切换时同步首页更新提示，避免徽章继续显示旧语言。
   syncModuleUpdateIndicatorText();
   try { localStorage.setItem('ancli_lang', uiLang); } catch (e) { /* ignore */ }
@@ -2181,13 +2536,127 @@ function appIconMarkup(app) {
   return '<div class="app-icon" data-icon-id="' + esc(id || 'fallback') + '"' + style + ' role="img" aria-label="' + name + ' Logo" title="' + name + '">' + image + fallback + '</div>';
 }
 
+function buildContainerInitCardHtml() {
+  const hostArch = latestStatus.host_arch || (latestStatus.container && latestStatus.container.config && latestStatus.container.config.host_arch) || 'x86_64';
+  const curProfile = latestStatus.profile || (latestStatus.container && latestStatus.container.config && latestStatus.container.config.profile) || 'standard';
+  const curNet = latestStatus.network_mode || (latestStatus.container && latestStatus.container.config && latestStatus.container.config.network_mode) || 'system';
+  return '<div class="card container-init-card">' +
+    '<div class="container-init-head">' +
+      '<span class="chip warn"><span class="dot"></span>' + (uiLang === 'en' ? 'Container not installed' : '容器尚未安装') + '</span>' +
+      '<span class="chip plain">' + esc(hostArch) + '</span>' +
+    '</div>' +
+    '<h3 style="margin: 8px 0 4px; font-size: 15px;">' + (uiLang === 'en' ? 'Ubuntu Container Initialization' : 'Ubuntu 容器初始化') + '</h3>' +
+    '<p class="note" style="margin-bottom: 12px;">' + (uiLang === 'en' ? 'AnCLI runs inside an isolated Ubuntu PRoot environment. Choose your toolchain profile and network mode to begin.' : 'AnCLI 运行于轻量 Ubuntu PRoot 容器内。请选择工具链规格和网络模式后开始安装。') + '</p>' +
+    '<div class="fields" style="padding-bottom: 6px;">' +
+      '<div class="field">' +
+        '<label>' + (uiLang === 'en' ? 'Container Profile' : '容器规格') + '</label>' +
+        '<select id="initContainerProfile" class="setting-select" style="max-width: none; width: 100%; text-align: left;">' +
+          '<option value="minimal"' + (curProfile === 'minimal' ? ' selected' : '') + '>' + (uiLang === 'en' ? 'Minimal runtime · 480 MB' : '最小运行环境 · 480 MB (Python, Git, curl)') + '</option>' +
+          '<option value="standard"' + (curProfile === 'standard' ? ' selected' : '') + '>' + (uiLang === 'en' ? 'Standard Agent · 900 MB' : '标准 Agent 环境 · 900 MB (Node.js, npm, Java 17, binutils)') + '</option>' +
+          '<option value="developer"' + (curProfile === 'developer' ? ' selected' : '') + '>' + (uiLang === 'en' ? 'Developer tools · 1120 MB' : '开发工具环境 · 1120 MB (C/C++ build-essential, zip)') + '</option>' +
+          '<option value="full"' + (curProfile === 'full' ? ' selected' : '') + '>' + (uiLang === 'en' ? 'Full development · 1480 MB' : '完整开发环境 · 1480 MB (CJK, 输入法组件)') + '</option>' +
+        '</select>' +
+        '<div class="hint wrap-text" id="initContainerHint"></div>' +
+      '</div>' +
+      '<div class="field">' +
+        '<label>' + (uiLang === 'en' ? 'Network Mode' : '网络模式') + '</label>' +
+        '<select id="initNetworkMode" class="setting-select" style="max-width: none; width: 100%; text-align: left;">' +
+          '<option value="system"' + (curNet === 'system' ? ' selected' : '') + '>' + (uiLang === 'en' ? 'System Proxy (Recommended)' : '跟随系统代理（推荐）') + '</option>' +
+          '<option value="manual"' + (curNet === 'manual' ? ' selected' : '') + '>' + (uiLang === 'en' ? 'Manual HTTP/SOCKS Proxy' : '手动代理地址') + '</option>' +
+          '<option value="direct"' + (curNet === 'direct' ? ' selected' : '') + '>' + (uiLang === 'en' ? 'Direct (No Proxy)' : '直连（不走代理）') + '</option>' +
+        '</select>' +
+      '</div>' +
+      '<div class="field" id="initProxyUrlField" style="display: ' + (curNet === 'manual' ? 'block' : 'none') + ';">' +
+        '<label>' + (uiLang === 'en' ? 'Proxy URL' : '代理地址') + '</label>' +
+        '<input type="text" id="initProxyUrl" placeholder="http://127.0.0.1:7890" value="' + esc(latestStatus.proxy_url || '') + '" />' +
+      '</div>' +
+    '</div>' +
+    '<div style="display: flex; gap: 8px; margin-top: 10px;">' +
+      '<button type="button" class="btn primary" id="btnInitInstall" style="flex: 1;">' + (uiLang === 'en' ? 'Install Container' : '立即安装容器') + '</button>' +
+      '<button type="button" class="btn" id="btnInitSettings">' + (uiLang === 'en' ? 'Settings' : '详细设置') + '</button>' +
+    '</div>' +
+  '</div>';
+}
+
+function wireContainerInitCard() {
+  const selProf = document.getElementById('initContainerProfile');
+  const hintEl = document.getElementById('initContainerHint');
+  const selNet = document.getElementById('initNetworkMode');
+  const proxyField = document.getElementById('initProxyUrlField');
+  const proxyInput = document.getElementById('initProxyUrl');
+  const updateHint = () => {
+    if (!selProf || !hintEl) return;
+    const p = containerProfileCatalog[selProf.value];
+    if (p) hintEl.textContent = (uiLang === 'en' ? (p.description_en || p.description) : p.description) + ' (' + (p.estimated_size_mb || '') + ' MB)';
+  };
+  if (selProf) {
+    selProf.onchange = async () => {
+      updateHint();
+      await ancli('container set --profile=' + selProf.value + ' --network=' + (selNet ? selNet.value : 'system'), true);
+    };
+    updateHint();
+  }
+  if (selNet) {
+    selNet.onchange = async () => {
+      if (proxyField) proxyField.style.display = selNet.value === 'manual' ? 'block' : 'none';
+      await ancli('container set --profile=' + (selProf ? selProf.value : 'standard') + ' --network=' + selNet.value, true);
+    };
+  }
+  const btnInst = document.getElementById('btnInitInstall');
+  if (btnInst) {
+    btnInst.onclick = async () => {
+      if (selNet && selNet.value === 'manual' && proxyInput && proxyInput.value.trim()) {
+        await ancli('config --set proxy_mode=manual --set proxy_url=' + encodeURIComponent(proxyInput.value.trim()));
+      }
+      if (selProf && selNet) {
+        await ancli('container set --profile=' + selProf.value + ' --network=' + selNet.value, true);
+      }
+      void installContainerFromUi();
+    };
+  }
+  const btnSet = document.getElementById('btnInitSettings');
+  if (btnSet) btnSet.onclick = openSettings;
+}
+
+function formatCount(count) { return uiLang === 'en' ? String(count) : count + ' 个'; }
+
 function renderApps(apps) {
   const wrap = document.getElementById('apps');
+  const isDeferred = latestStatus && latestStatus.rootfs_ready === false;
   const pending = apps.filter(a => a.installed && a.update_available).length;
-  setStat('stUpdates', pending ? pending + ' 个' : '无', pending ? null : 'ok');
-  setStat('stCount', apps.filter(a => a.installed).length + ' 个');
+  setStat('stUpdates', pending ? formatCount(pending) : (uiLang === 'en' ? 'None' : '无'), pending ? null : 'ok');
+  setStat('stCount', formatCount(apps.filter(a => a.installed).length));
+
+  if (isDeferred) {
+    let out = buildContainerInitCardHtml();
+    if (apps && apps.length > 0) {
+      out += '<div style="margin: 16px 4px 8px; font-weight: 600; font-size: 13px; color: var(--text-dim);">' +
+        (uiLang === 'en' ? 'Available Tools in Catalog (Container required)' : '可选工具目录（需先安装容器）') + '</div>';
+      out += apps.map(a => {
+        const chips = ['<span class="chip warn"><span class="dot"></span>' + (uiLang === 'en' ? 'Container required' : '待安装容器') + '</span>'];
+        const btns = ['<button class="btn xs" data-act="prompt-init" style="opacity: 0.7;">' + esc(uiText('install')) + '</button>'];
+        return '<div class="app" data-state="idle" data-id="' + esc(a.id) + '">' +
+                 appIconMarkup(a) +
+                 '<div class="app-main">' +
+                   '<div class="app-title"><span class="name">' + esc(a.name) + '</span>' + chips.join('') + '</div>' +
+                   (a.description ? '<div class="desc">' + esc(a.description) + '</div>' : '') +
+                 '</div>' +
+                 '<div class="app-actions">' + btns.join('') + '</div>' +
+               '</div>';
+      }).join('');
+    }
+    wrap.innerHTML = out;
+    wireContainerInitCard();
+    wrap.querySelectorAll('button[data-act="prompt-init"]').forEach(b => {
+      b.onclick = () => {
+        toast(uiLang === 'en' ? 'Please initialize the Ubuntu container first' : '请先完成 Ubuntu 容器初始化', 'err');
+      };
+    });
+    return;
+  }
+
   if (!apps.length) {
-    wrap.innerHTML = '<div class="card empty">模块内置目录中没有可用工具</div>';
+    wrap.innerHTML = '<div class="card empty">' + (uiLang === 'en' ? 'No tools available in module catalog' : '模块内置目录中没有可用工具') + '</div>';
     return;
   }
   wrap.innerHTML = apps.map(a => {
@@ -2198,31 +2667,31 @@ function renderApps(apps) {
       if (a.active) {
         state = a.update_available ? 'update' : 'installed';
         const ver = (a.installed_version && a.installed_version !== 'unknown') ? ' v' + esc(a.installed_version) : '';
-        chips.push('<span class="chip' + (a.version_verified ? ' ok' : ' warn') + '"><span class="dot"></span>已安装' + ver +
-                   (a.version_verified ? '' : ' · 未核实') + '</span>');
+        chips.push('<span class="chip' + (a.version_verified ? ' ok' : ' warn') + '"><span class="dot"></span>' + (uiLang === 'en' ? 'Installed' : '已安装') + ver +
+                   (a.version_verified ? '' : (uiLang === 'en' ? ' · Unverified' : ' · 未核实')) + '</span>');
       } else {
         state = 'broken';
-        chips.push('<span class="chip danger"><span class="dot"></span>已损坏</span>');
+        chips.push('<span class="chip danger"><span class="dot"></span>' + (uiLang === 'en' ? 'Broken' : '已损坏') + '</span>');
       }
       if (a.update_available) {
-        chips.push('<span class="chip update"><span class="dot"></span>可更新 → v' + esc(a.cloud_version) + '</span>');
+        chips.push('<span class="chip update"><span class="dot"></span>' + (uiLang === 'en' ? 'Update available' : '可更新') + ' → v' + esc(a.cloud_version) + '</span>');
       } else if (!a.cloud_version || a.cloud_version === 'unknown' || a.cloud_source === 'none') {
-        chips.push('<span class="chip plain">官方版本未知</span>');
+        chips.push('<span class="chip plain">' + (uiLang === 'en' ? 'Official version unknown' : '官方版本未知') + '</span>');
       }
-      if (a.cloud_error && manualCheckRequested) chips.push('<span class="chip danger">版本查询失败</span>');
+      if (a.cloud_error && manualCheckRequested) chips.push('<span class="chip danger">' + (uiLang === 'en' ? 'Version check failed' : '版本查询失败') + '</span>');
     } else {
-      chips.push('<span class="chip plain">未安装</span>');
+      chips.push('<span class="chip plain">' + (uiLang === 'en' ? 'Not installed' : '未安装') + '</span>');
     }
 
     const details = [];
     if (a.installed && a.cloud_version && a.cloud_version !== 'unknown' && a.cloud_source !== 'none') {
-      const label = a.cloud_checked ? '官方最新' : '参考版本';
+      const label = a.cloud_checked ? (uiLang === 'en' ? 'Official latest' : '官方最新') : (uiLang === 'en' ? 'Reference version' : '参考版本');
       details.push(label + ' <b>v' + esc(a.cloud_version) + '</b> · ' + esc(srcLabel(a.cloud_source)) +
-                   (a.cloud_error && manualCheckRequested ? ' · 查询失败' : ''));
+                   (a.cloud_error && manualCheckRequested ? (uiLang === 'en' ? ' · Check failed' : ' · 查询失败') : ''));
     }
     const keys = a.configured_keys || [];
-    if (keys.length) details.push('已配置 ' + esc(keys.join(' · ')));
-    if (a.installed && !a.version_verified) details.push('本地版本来自旧记录，点「检查更新」读取工具真实版本');
+    if (keys.length) details.push((uiLang === 'en' ? 'Configured ' : '已配置 ') + esc(keys.join(' · ')));
+    if (a.installed && !a.version_verified) details.push(uiLang === 'en' ? 'The local version is from an old record; check for updates to read the installed version.' : '本地版本来自旧记录，点「检查更新」读取工具真实版本');
 
     const hasEnv = (a.required_env_vars && a.required_env_vars.length) ||
                    (a.optional_env_vars && a.optional_env_vars.length);
@@ -2231,13 +2700,13 @@ function renderApps(apps) {
       btns.push('<button class="btn xs primary" data-act="install">' + esc(uiText('install')) + '</button>');
     } else {
       btns.push('<button class="btn xs' + (a.update_available ? ' primary' : '') + '" data-act="update" title="' +
-                esc('从官方源拉取最新：' + (a.update_cmd || ('ancli update ' + a.id))) + '">更新</button>');
+                esc((uiLang === 'en' ? 'Get the latest from the official source: ' : '从官方源拉取最新：') + (a.update_cmd || ('ancli update ' + a.id))) + '">更新</button>');
       btns[btns.length - 1] = btns[btns.length - 1].replace('>更新</button>', '>' + esc(uiText('update')) + '</button>');
       if (hasEnv) btns.push('<button class="btn xs" data-act="config">' + esc(uiText('config')) + '</button>');
       if (a.launch && a.launch.mode === 'web' && a.launch.command) {
         btns.push('<button class="btn xs primary" data-act="launch">' + esc(uiText('openWeb')) + '</button>');
       } else if (a.executable) {
-        btns.push('<button class="btn xs" data-act="copy-command" title="复制后在 Termius 的 su 终端中执行">' + esc(uiText('copyCommand')) + '</button>');
+        btns.push('<button class="btn xs" data-act="copy-command" title="' + (uiLang === 'en' ? 'Copy and run in an su terminal' : '复制后在 Termius 的 su 终端中执行') + '">' + esc(uiText('copyCommand')) + '</button>');
       }
       btns.push('<button class="btn xs danger" data-act="uninstall">' + esc(uiText('uninstall')) + '</button>');
     }
@@ -2250,10 +2719,12 @@ function renderApps(apps) {
                (details.length ? '<div class="detail">' + details.join('<br>') + '</div>' : '') +
              '</div>' +
              '<div class="app-actions">' + btns.join('') + '</div>' +
+             '<div class="app-task" data-task-slot="app:' + esc(a.id) + '"></div>' +
              ((a.installed || Array.from(taskTabs.values()).some(task => task.scope === a.id)) ? '<div class="app-log-wrap"><button class="app-log-toggle" data-act="toggle-log" aria-expanded="false" data-log-id="' + esc(a.id) + '">' + esc(logToggleText(false)) + '</button><pre class="app-log" id="app-log-' + esc(a.id) + '" hidden></pre></div>' : '') +
            '</div>';
   }).join('');
   for (const id of expandedAppLogs) revealAppLog(id);
+  renderTaskFeedback();
   // Re-rendering the cards while a task starts must not re-enable destructive
   // actions; the log toggle remains intentionally available.
   if (busy > 0) {
@@ -2282,27 +2753,56 @@ async function toggleAppLog(id, button) {
 }
 
 async function doInstall(id) {
+  if (busy > 0) return;
+  if (latestStatus && latestStatus.rootfs_ready === false) {
+    toast(uiLang === 'en' ? 'Please initialize the Ubuntu container first' : '请先完成 Ubuntu 容器初始化', 'err');
+    return;
+  }
   const app = currentApps.find(a => a.id === id) || { name: id };
   // 2026-11-16：安装按钮直接启动后台任务，避免移动端出现二次确认界面。
   toast('开始安装 ' + app.name + '，日志已打开');
-  setBusy(true, '开始安装 ' + app.name);
-  try { await runBackground(ANCLI + ' install ' + id, await proxyDownloadNote(app)); }
-  finally { await trimTaskLogs(); setBusy(false); await loadApps(); await loadStatus(); }
+  const release = setBusy(true, '开始安装 ' + app.name);
+  let task;
+  try { task = await runBackground(ANCLI + ' install ' + id, await proxyDownloadNote(app)); }
+  finally {
+    await trimTaskLogs();
+    release();
+    await loadApps();
+    await loadStatus();
+    if (task && task.status === 'done') toast(app.name + ' 安装完成');
+    else if (task && task.status === 'failed') toast(app.name + ' 安装失败，请查看日志', 'err');
+  }
 }
 
 async function doUpdate(id) {
+  if (busy > 0) return;
+  if (latestStatus && latestStatus.rootfs_ready === false) {
+    toast(uiLang === 'en' ? 'Please initialize the Ubuntu container first' : '请先完成 Ubuntu 容器初始化', 'err');
+    return;
+  }
   const app = currentApps.find(a => a.id === id) || { name: id };
   if (!app.update_available) {
     logLine('检测显示 ' + app.name + ' 已是 v' + (app.installed_version || '?') + '，仍将从官方源重新拉取最新版本。', 'dim');
   }
-  setBusy(true, '开始更新 ' + app.name);
-  try { await runBackground(ANCLI + ' update ' + id, await proxyDownloadNote(app)); }
-  finally { await trimTaskLogs(); setBusy(false); await loadApps(); await loadStatus(); }
+  toast('开始更新 ' + app.name);
+  const release = setBusy(true, '开始更新 ' + app.name);
+  let task;
+  try { task = await runBackground(ANCLI + ' update ' + id, await proxyDownloadNote(app)); }
+  finally {
+    await trimTaskLogs();
+    release();
+    await loadApps();
+    await loadStatus();
+    if (task && task.status === 'done') toast(app.name + ' 更新完成');
+    else if (task && task.status === 'failed') toast(app.name + ' 更新失败，请查看日志', 'err');
+  }
 }
 
 let pendingUninstallAppId = null;
 
 function promptUninstall(id) {
+  const btn = document.getElementById('uninstAppConfirm');
+  if (btn) btn.disabled = false;
   const app = currentApps.find(a => a.id === id) || { name: id, id };
   pendingUninstallAppId = id;
   const overlay = document.getElementById('uninstallAppOverlay');
@@ -2324,11 +2824,20 @@ function closeUninstallAppPrompt() {
 }
 
 async function doUninstall(id) {
+  if (busy > 0) return;
   const app = currentApps.find(a => a.id === id) || { name: id };
-  setBusy(true, '开始卸载 ' + app.name);
-  try { await runBackground(ANCLI + ' uninstall ' + id, '卸载任务已开始，日志已打开'); }
+  const release = setBusy(true, '开始卸载 ' + app.name);
+  let task;
+  try { task = await runBackground(ANCLI + ' uninstall ' + id, '卸载任务已开始，日志已打开'); }
   catch (e) { /* 已在输出面板记录 */ }
-  finally { await trimTaskLogs(); setBusy(false); await loadApps(); await loadStatus(); }
+  finally {
+    await trimTaskLogs();
+    release();
+    await loadApps();
+    await loadStatus();
+    if (task && task.status === 'done') toast(app.name + ' 卸载完成');
+    else if (task && task.status === 'failed') toast(app.name + ' 卸载失败，请查看日志', 'err');
+  }
 }
 
 async function doLaunch(id) {
@@ -2337,7 +2846,7 @@ async function doLaunch(id) {
     toast('该工具需要在终端中启动', 'err');
     return;
   }
-  setBusy(true, '启动 ' + app.name + '…');
+  const release = setBusy(true, '启动 ' + app.name + '…');
   try {
     let url = '';
     if (id === 'dsh') {
@@ -2360,7 +2869,7 @@ async function doLaunch(id) {
     toast('启动失败，见输出', 'err');
     logLine(String(e), 'err');
   } finally {
-    setBusy(false);
+    release();
   }
 }
 
@@ -2378,22 +2887,26 @@ async function copyCommand(id) {
 }
 
 async function doCheck() {
+  if (busy > 0) return;
   if (!supportsCheck) { toast('当前模块版本不支持版本检查，请先更新 AnCLI 模块', 'err'); return; }
   manualCheckRequested = true;
-  setBusy(true, '查询官方最新版本…');
+  const release = setBusy(true, '查询官方最新版本…');
   try {
-    await runBackground(ANCLI + ' check');
+    const task = await runBackground(ANCLI + ' check', '', { timeoutMs: 120000 });
+    if (task.status === 'failed') toast('版本查询失败，请查看日志', 'err');
   } catch (e) {
     toast('版本查询失败，请检查网络或代理配置', 'err');
   } finally {
     await trimTaskLogs();
-    setBusy(false);
+    release();
     await loadApps();
     await loadStatus();
   }
 }
 
 function promptRepair() {
+  const btn = document.getElementById('repairConfirm');
+  if (btn) btn.disabled = false;
   const overlay = document.getElementById('repairOverlay');
   overlay.classList.add('show');
   overlay.setAttribute('aria-hidden', 'false');
@@ -2406,23 +2919,39 @@ function closeRepairPrompt() {
 }
 
 async function doRepair() {
-  setBusy(true, '修复环境中…');
-  try { await runBackground(ANCLI + ' repair'); }
-  finally { await trimTaskLogs(); setBusy(false); await loadStatus(); await loadApps(); }
+  if (busy > 0) return;
+  const release = setBusy(true, '修复环境中…');
+  let task;
+  try { task = await runBackground(ANCLI + ' repair'); }
+  finally {
+    await trimTaskLogs();
+    release();
+    await loadStatus();
+    await loadApps();
+    if (task && task.status === 'done') toast('环境修复完成');
+    else if (task && task.status === 'failed') toast('环境修复失败，请查看日志', 'err');
+  }
+}
+
+function versionCacheFresh(checkedAt, ttl, now) {
+  const age = now - checkedAt;
+  return checkedAt > 0 && age >= 0 && age < ttl;
 }
 
 async function maybeAutoCheck() {
-  // 2026-11-16：自动检查只启动后台 shell，不等待网络结果，避免占用 WebUI
-  // 的同步 exec；下次打开页面时由缓存展示结果。
+  // 自动检查受 TTL 控制，未过期不重复请求网络与版本探针
   if (autoCheckStarted || !supportsCheck) return;
   if (!currentApps.some(a => a.installed)) return;
   if (busy > 0) {
     setTimeout(() => { void maybeAutoCheck(); }, 1200);
     return;
   }
+  const nowSec = Math.floor(Date.now() / 1000);
+  if (versionCacheFresh(lastCheck, checkTtl, nowSec)) return;
   autoCheckStarted = true;
   try {
-    await startDetached(ANCLI + ' check');
+    const task = await runBackground(ANCLI + ' check', '', { timeoutMs: 120000, quiet: true });
+    if (task.status === 'done' || task.status === 'failed') await loadApps();
   } catch (e) {
     // 网络不好时保持当前缓存，不弹窗、不污染输出面板。
   }
@@ -2561,6 +3090,8 @@ function openConfig(id) {
   if (!app) return;
   const vars = (app.required_env_vars || []).concat(app.optional_env_vars || []);
   if (!vars.length) { toast('该工具没有可配置的环境变量'); return; }
+  const btn = document.getElementById('cfgSave');
+  if (btn) btn.disabled = false;
   cfgApp = app;
   selectedProvider = null;
   document.getElementById('cfgTitle').textContent = '配置 ' + app.name;
@@ -2582,7 +3113,9 @@ function closeConfig() {
 }
 
 async function saveConfig() {
+  if (busy > 0) return;
   if (!cfgApp) return;
+  const btn = document.getElementById('cfgSave');
   const sets = [];
   document.querySelectorAll('#cfgFields input, #cfgFields select').forEach(el => {
     const v = el.value.trim();
@@ -2590,13 +3123,21 @@ async function saveConfig() {
   });
   const id = cfgApp.id;
   closeConfig();
-  if (!sets.length) { toast('没有填写任何内容，未做修改'); return; }
-  setBusy(true, '写入配置…');
+  if (!sets.length) {
+    if (btn) btn.disabled = false;
+    toast('没有填写任何内容，未做修改');
+    return;
+  }
+  const release = setBusy(true, '写入配置…');
   try {
     await ancli('config ' + id + ' ' + sets.join(' '));
     toast('配置已保存');
   } catch (e) { toast('配置保存失败，见输出', 'err'); }
-  finally { setBusy(false); await loadApps(); }
+  finally {
+    if (btn) btn.disabled = false;
+    release();
+    await loadApps();
+  }
 }
 
 /* ================= 全局设置 ================= */
@@ -2681,7 +3222,99 @@ function setSettingsStatus(cfg, runtime) {
   }
 }
 
+const DEFAULT_CONTAINER_PROFILES = {
+    minimal: { name: '最小运行环境', name_en: 'Minimal runtime', description: 'Python、Git、curl 和证书，适合轻量脚本与基础 CLI。', description_en: 'Python, Git, curl and certificates for lightweight scripts and basic CLI tools.', estimated_size_mb: 480 },
+    standard: { name: '标准 Agent 环境', name_en: 'Standard Agent', description: '包含 Node.js、npm，兼容常用 Agent。', description_en: 'Adds Node.js and npm for common agents.', estimated_size_mb: 900 },
+    developer: { name: '开发工具环境', name_en: 'Developer tools', description: '标准环境加 Java、binutils、zip/unzip。', description_en: 'Adds Java, binutils and archive tools.', estimated_size_mb: 1120 },
+    full: { name: '完整开发环境', name_en: 'Full development', description: '开发工具环境加编译工具和 CJK 组件。', description_en: 'Adds build tools and CJK components.', estimated_size_mb: 1480 }
+};
+let containerProfileCatalog = DEFAULT_CONTAINER_PROFILES;
+let containerCatalogVersion = '';
+let containerOptionsKey = '';
+
+function updateContainerProfileHint() {
+  const select = document.getElementById('setContainerProfile');
+  const hint = document.getElementById('setContainerHint');
+  if (!select || !hint) return;
+  const profile = containerProfileCatalog[select.value];
+  hint.textContent = profile
+    ? (uiLang === 'en' ? (profile.description_en || profile.description) : profile.description) +
+      (profile.estimated_size_mb ? ' · ' + profile.estimated_size_mb + ' MB' : '')
+    : uiText('containerProfileHint');
+}
+
+function renderContainerProfileOptions(selected) {
+  const select = document.getElementById('setContainerProfile');
+  if (!select) return;
+  const previous = selected || select.value || 'standard';
+  const key = JSON.stringify([containerCatalogVersion, uiLang, containerProfileCatalog]);
+  if (key !== containerOptionsKey) {
+    containerOptionsKey = key;
+    select.textContent = '';
+    for (const [id, p] of Object.entries(containerProfileCatalog)) {
+      const option = document.createElement('option');
+      option.value = id;
+      const label = uiLang === 'en' ? p.name_en || p.name || id : p.name || id;
+      option.textContent = label + (p.estimated_size_mb ? ' · ' + p.estimated_size_mb + ' MB' : '');
+      select.appendChild(option);
+    }
+  }
+  if (Object.prototype.hasOwnProperty.call(containerProfileCatalog, previous)) select.value = previous;
+  updateContainerProfileHint();
+}
+
+function renderContainerSettings(data, version = data?.ancli_version) {
+  if (version && version !== containerCatalogVersion) {
+    containerProfileCatalog = DEFAULT_CONTAINER_PROFILES;
+    containerCatalogVersion = version;
+  }
+  const suppliedProfiles = data?.profiles;
+  if (suppliedProfiles && Object.keys(suppliedProfiles).length) containerProfileCatalog = suppliedProfiles;
+  const config = data?.config && typeof data.config === 'object' ? data.config : data || {};
+  renderContainerProfileOptions(config.profile);
+  const status = document.getElementById('setContainerStatus');
+  if (status) {
+    const state = config.rootfs_ready ? (uiLang === 'en' ? 'Installed' : '已安装') : (uiLang === 'en' ? 'Deferred' : '待安装');
+    status.textContent = state + ' · ' + (config.network_mode || 'system');
+    status.style.color = config.rootfs_ready ? 'var(--ok)' : 'var(--warn)';
+  }
+}
+document.getElementById('setContainerProfile').addEventListener('change', updateContainerProfileHint);
+
+async function loadContainerSettings() {
+  try {
+    const data = JSON.parse(await ancli('container status --json', true));
+    renderContainerSettings(data);
+    return data;
+  } catch (e) {
+    const status = document.getElementById('setContainerStatus');
+    if (status) status.textContent = uiLang === 'en' ? 'Unavailable' : '未连接';
+    return null;
+  }
+}
+
+async function installContainerFromUi() {
+  if (busy > 0) return;
+  const release = setBusy(true, uiText('containerInstallStarting'));
+  let task;
+  try {
+    task = await runBackground(ANCLI + ' container install', uiText('containerInstallStarting'), { timeoutMs: 3600000 });
+    await loadContainerSettings();
+    await loadStatus();
+    if (task && task.status === 'done') toast(uiLang === 'en' ? 'Container profile applied' : '容器规格应用完成');
+    else if (task && task.status === 'failed') toast(uiText('containerInstallFailed'), 'err');
+  } catch (e) {
+    toast(uiText('containerInstallFailed'), 'err');
+  } finally {
+    const btn = document.getElementById('btnContainerInstall');
+    if (btn) btn.disabled = false;
+    release();
+  }
+}
+
 async function openSettings() {
+  const btn = document.getElementById('setSave');
+  if (btn) btn.disabled = false;
   const ov = document.getElementById('setOverlay');
   switchSettingsTab('general');
   document.getElementById('setCwd').value = '';
@@ -2709,14 +3342,22 @@ async function openSettings() {
     document.getElementById('setProxyMode').value = cfg.proxy_mode || (cfg.proxy_url ? 'manual' : 'system');
     document.getElementById('setLang').value = cfg.lang === 'en' ? 'en' : uiLang;
     document.getElementById('setAgentMemory').value = cfg.agent_memory === 'disabled' ? 'disabled' : 'enabled';
+    if (cfg.container_profile) {
+      renderContainerProfileOptions(cfg.container_profile);
+    }
     if (cfg.update_channel) {
       updateChannelUI(cfg.update_channel);
     }
-    updateProxyInputVisibility();
     setSettingsStatus(cfg, null);
   } catch (e) {
     // Keep the local defaults if the bridge is temporarily unavailable.
   }
+  try {
+    await loadContainerSettings();
+  } catch (e) {
+    // Keep fallback
+  }
+  updateProxyInputVisibility();
 }
 
 function closeSettings() {
@@ -2745,7 +3386,7 @@ function closeMemoryPrompt() {
 async function confirmMemoryPrompt() {
   const choice = document.querySelector('input[name="memChoice"]:checked')?.value || 'enabled';
   closeMemoryPrompt();
-  setBusy(true, uiText('savingSettings'));
+  const release = setBusy(true, uiText('savingSettings'));
   try {
     await ancli('config --set agent_memory=' + encodeURIComponent(choice));
     toast(uiText('settingsSaved'));
@@ -2753,16 +3394,19 @@ async function confirmMemoryPrompt() {
   } catch (e) {
     toast(uiText('settingsFailed'), 'err');
   } finally {
-    setBusy(false);
+    release();
   }
 }
 
 async function saveSettings() {
+  if (busy > 0) return;
+  const btn = document.getElementById('setSave');
   const v = document.getElementById('setCwd').value.trim();
   const proxyMode = document.getElementById('setProxyMode').value;
   const proxyUrl = document.getElementById('setProxyUrl').value.trim();
   const lang = document.getElementById('setLang').value === 'en' ? 'en' : 'zh';
   const agentMemory = document.getElementById('setAgentMemory').value;
+  const containerProfile = document.getElementById('setContainerProfile')?.value || 'standard';
   const theme = ['auto', 'light', 'dark'].includes(document.getElementById('setTheme').value)
     ? document.getElementById('setTheme').value : 'auto';
 
@@ -2779,26 +3423,31 @@ async function saveSettings() {
       }
       proxyValue = normalized;
     } catch (e) {
+      if (btn) btn.disabled = false;
       toast(uiText('invalidProxy'), 'err');
       return;
     }
   }
 
-  closeSettings();
-  setBusy(true, uiText('savingSettings'));
+  const release = setBusy(true, uiText('savingSettings'));
   try {
     // 空值 = 恢复内置默认 /root；core 侧会校验绝对路径与目录是否存在
     await ancli('config --set default_cwd=' + encodeURIComponent(v) + ' --set lang=' + lang +
       ' --set proxy_mode=' + encodeURIComponent(proxyMode) + ' --set proxy_url=' + encodeURIComponent(proxyValue) +
-      ' --set agent_memory=' + encodeURIComponent(agentMemory));
+      ' --set agent_memory=' + encodeURIComponent(agentMemory) + ' --set container_profile=' + encodeURIComponent(containerProfile));
+    await ancli('container set --profile=' + containerProfile + ' --network=' + proxyMode +
+      (proxyValue ? ' --proxy-url=' + encodeURIComponent(proxyValue) : ''), true);
     applyLanguage(lang);
     applyTheme(theme);
+    await loadContainerSettings();
     await loadStatus();
     toast(uiText('settingsSaved'));
+    closeSettings();
   } catch (e) {
     toast(uiText('settingsFailed'), 'err');
   } finally {
-    setBusy(false);
+    if (btn) btn.disabled = false;
+    release();
   }
 }
 
@@ -2807,6 +3456,8 @@ function openReset() {
     toast(uiText('resetStarting'), 'err');
     return;
   }
+  const btn = document.getElementById('resetApply');
+  if (btn) btn.disabled = false;
   const input = document.getElementById('resetConfirm');
   if (input) input.value = '';
   const reinstall = document.getElementById('resetReinstall');
@@ -2830,6 +3481,8 @@ function openUninstall() {
     toast(uiText('resetStarting'), 'err');
     return;
   }
+  const btn = document.getElementById('uninstallApply');
+  if (btn) btn.disabled = false;
   const input = document.getElementById('uninstallConfirm');
   if (input) input.value = '';
   const ov = document.getElementById('uninstallOverlay');
@@ -2847,76 +3500,70 @@ function closeUninstall() {
 }
 
 async function performUninstall() {
+  if (busy > 0) return;
   const input = document.getElementById('uninstallConfirm');
+  const btn = document.getElementById('uninstallApply');
   if (!input || input.value.trim().toUpperCase() !== 'UNINSTALL') {
+    if (btn) btn.disabled = false;
     toast(uiText('uninstallInvalid'), 'err');
     return;
   }
   closeUninstall();
   closeSettings();
-  setBusy(true, uiText('uninstallStarting'));
+  const release = setBusy(true, uiText('uninstallStarting'));
 
-  // 卸载脚本会删除 /data/local/tmp/ancli，本次任务的日志不能放在该目录内。
-  // 否则脚本执行到 rm -rf 时会把自己的日志、退出码一起删掉，WebUI 会误判
-  // 为备用路径失败，用户也看不到 KernelSU 的 remove 标记是否已经写入。
-  const uninstallTag = Date.now() + '_' + Math.floor(Math.random() * 100000);
-  const uninstallLog = '/data/local/tmp/ancli-uninstall-' + uninstallTag + '.log';
-  const uninstallExit = uninstallLog + '.exit';
-  const uninstallCmd = 'if [ -r /data/adb/modules/ancli/uninstall.sh ]; then sh /data/adb/modules/ancli/uninstall.sh --purge; ' +
+  const uninstallCmd = '( if [ -r /data/adb/modules/ancli/uninstall.sh ]; then sh /data/adb/modules/ancli/uninstall.sh --purge; ' +
     'elif [ -r /data/local/tmp/ancli/uninstall.sh ]; then sh /data/local/tmp/ancli/uninstall.sh --purge; ' +
-    'else echo "AnCLI uninstall script not found" >&2; exit 127; fi';
+    'else echo "AnCLI uninstall script not found" >&2; exit 127; fi ) && ' +
+    '[ ! -e /data/local/tmp/ancli ] && { [ ! -d /data/adb/modules/ancli ] || [ -f /data/adb/modules/ancli/remove ]; }';
   try {
-    const quoted = String(uninstallCmd).replace(/'/g, "'\\''");
-    const detached = "nohup sh -c '" + quoted + " > " + shQuote(uninstallLog) +
-      " 2>&1; echo $? > " + shQuote(uninstallExit) + "' </dev/null &";
-    const launch = await execCmd('sh -c ' + shQuote(detached));
-    if (launch.code !== 0) throw new Error('卸载任务启动失败（exit ' + launch.code + '）');
-    // 给脚本一点时间完成模块标记和容器清理；之后 WebUI 通道可能随模块移除而断开。
-    await sleep(1200);
-  } catch (e) {
-    logLine(String(e), 'err');
+    // The purge removes ANCLI_DIR. Keep this task's evidence outside it.
+    const task = await runBackground(uninstallCmd, '', {
+      moduleUninstall: true, label: uiText('uninstallModuleAction'), timeoutMs: 120000,
+    });
+    if (task.status === 'done') toast(uiText('uninstallDone'));
+    else if (task.status === 'failed') toast(uiText('uninstallFailed'), 'err');
   } finally {
-    setBusy(false);
-    document.body.innerHTML = `
-      <div style="min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 24px; text-align: center; font-family: system-ui, sans-serif; background: var(--bg); color: var(--text);">
-        <div style="width: 56px; height: 56px; border-radius: 50%; background: var(--ok); color: #fff; display: grid; place-items: center; margin-bottom: 16px; font-size: 28px;">✓</div>
-        <h2 style="margin: 0 0 10px; font-size: 19px;">` + esc(uiText('uninstallDone')) + `</h2>
-        <p style="margin: 0; color: var(--muted); font-size: 13px; max-width: 360px; line-height: 1.6;">模块与容器数据已完全抹除。请立即重启手机以清理内核文件系统挂载。</p>
-      </div>
-    `;
+    if (btn) btn.disabled = false;
+    release();
   }
 }
 
 async function performReset() {
+  if (busy > 0) return;
   const input = document.getElementById('resetConfirm');
+  const btn = document.getElementById('resetApply');
   if (!input || input.value.trim().toUpperCase() !== 'RESET') {
+    if (btn) btn.disabled = false;
     toast(uiText('resetInvalid'), 'err');
     return;
   }
   const reinstall = Boolean(document.getElementById('resetReinstall') && document.getElementById('resetReinstall').checked);
   closeReset();
   closeSettings();
-  setBusy(true, uiText('resetStarting'));
+  const release = setBusy(true, uiText('resetStarting'));
   let resetTask = null;
   try {
     const command = ANCLI + ' reset --yes' + (reinstall ? ' --reinstall' : '');
     resetTask = await runBackground(command, uiText('resetStarting'), { keepLog: true });
   } finally {
-    // The reset command intentionally deletes all previous task metadata. Keep
-    // only the reset operation itself in the in-memory tab list as well.
-    taskTabs.clear();
-    expandedAppLogs.clear();
-    if (resetTask) {
-      taskTabs.set(resetTask.id, resetTask);
+    if (resetTask && resetTask.status === 'done') {
+      for (const [id, task] of taskTabs) {
+        if (id !== resetTask.id && !taskUnresolved(task)) taskTabs.delete(id);
+      }
+      expandedAppLogs.clear();
       activeTaskId = resetTask.id;
-    } else {
-      activeTaskId = 'session';
+      renderTaskTabs();
     }
-    renderTaskTabs();
-    setBusy(false);
+    if (btn) btn.disabled = false;
+    release();
     await loadStatus();
     await loadApps();
-    toast(uiText(reinstall ? 'resetDoneReinstall' : 'resetDone'));
+    if (resetTask && resetTask.status === 'done') {
+      toast(uiText(reinstall ? 'resetDoneReinstall' : 'resetDone'));
+    } else if (resetTask && resetTask.status === 'failed') {
+      toast(uiLang === 'en' ? 'Factory reset failed, please check log' : '环境重置失败，请查看日志', 'err');
+    }
   }
 }
 
@@ -2928,6 +3575,10 @@ document.getElementById('apps').addEventListener('click', e => {
   if (!host) return;
   const id = host.dataset.id;
   const act = btn.dataset.act;
+  if (act === 'prompt-init') {
+    toast(uiLang === 'en' ? 'Please initialize the Ubuntu container first' : '请先完成 Ubuntu 容器初始化', 'err');
+    return;
+  }
   if (act === 'toggle-log') { toggleAppLog(id, btn); return; }
   if (busy > 0) {
     toast(uiLang === 'en' ? 'Wait for the current task to finish; its log is still available.' : '当前任务仍在运行，可先展开日志查看进度。', 'err');
@@ -2942,20 +3593,52 @@ document.getElementById('apps').addEventListener('click', e => {
 });
 
 document.getElementById('btnCheck').onclick = doCheck;
-document.getElementById('btnRefresh').onclick = async () => {
-  setBusy(true, '刷新状态…');
-  try { await loadStatus(); await loadApps(); }
-  finally { setBusy(false); }
-};
+async function refreshTaskStatus() {
+  if (busy > 0) return;
+  const release = setBusy(true, '刷新状态…');
+  try {
+    try { await restoreTasks(); }
+    catch (e) { toast(uiText('taskUnknown'), 'err'); }
+    await loadStatus();
+    await loadApps();
+  } finally { release(); }
+}
+document.getElementById('btnRefresh').onclick = refreshTaskStatus;
+document.addEventListener('click', event => {
+  if (event.target.closest('[data-task-refresh]')) { void refreshTaskStatus(); return; }
+  const button = event.target.closest('[data-task-log]');
+  if (!button) return;
+  if (document.getElementById('setOverlay').classList.contains('show')) closeSettings();
+  void selectTask(button.dataset.taskLog);
+  const consoleSection = document.getElementById('taskConsole');
+  consoleSection.focus({ preventScroll: true });
+  consoleSection.scrollIntoView({ block: 'start', behavior: preferredScrollBehavior() });
+});
 document.getElementById('btnRepair').onclick = promptRepair;
 
 document.getElementById('cfgCancel').onclick = closeConfig;
 document.getElementById('cfgClose').onclick = closeConfig;
-document.getElementById('cfgSave').onclick = saveConfig;
+document.getElementById('cfgSave').onclick = () => {
+  if (busy > 0) return;
+  const btn = document.getElementById('cfgSave');
+  if (btn) btn.disabled = true;
+  void saveConfig();
+};
 document.getElementById('btnSettings').onclick = openSettings;
 document.getElementById('setCancel').onclick = closeSettings;
 document.getElementById('setClose').onclick = closeSettings;
-document.getElementById('setSave').onclick = saveSettings;
+document.getElementById('setSave').onclick = () => {
+  if (busy > 0) return;
+  const btn = document.getElementById('setSave');
+  if (btn) btn.disabled = true;
+  void saveSettings();
+};
+document.getElementById('btnContainerInstall').onclick = () => {
+  if (busy > 0) return;
+  const btn = document.getElementById('btnContainerInstall');
+  if (btn) btn.disabled = true;
+  void installContainerFromUi();
+};
 document.getElementById('settingsUpdateIndicator').onclick = () => {
   void openSettings().then(() => switchSettingsTab('about'));
 };
@@ -2966,11 +3649,21 @@ document.getElementById('setProxyMode').addEventListener('change', updateProxyIn
 document.getElementById('btnFactoryReset').onclick = openReset;
 document.getElementById('resetCancel').onclick = closeReset;
 document.getElementById('resetClose').onclick = closeReset;
-document.getElementById('resetApply').onclick = () => { void performReset(); };
+document.getElementById('resetApply').onclick = () => {
+  if (busy > 0) return;
+  const btn = document.getElementById('resetApply');
+  if (btn) btn.disabled = true;
+  void performReset();
+};
 document.getElementById('btnUninstallModule').onclick = openUninstall;
 document.getElementById('uninstallCancel').onclick = closeUninstall;
 document.getElementById('uninstallClose').onclick = closeUninstall;
-document.getElementById('uninstallApply').onclick = () => { void performUninstall(); };
+document.getElementById('uninstallApply').onclick = () => {
+  if (busy > 0) return;
+  const btn = document.getElementById('uninstallApply');
+  if (btn) btn.disabled = true;
+  void performUninstall();
+};
 document.getElementById('aboutGithub').addEventListener('click', e => {
   e.preventDefault();
   void openAndroidUrl('https://github.com/AHLLX/AnCLI').catch(() => {
@@ -3076,7 +3769,7 @@ async function installDownloadedModule(path, button, messageEl) {
   button.disabled = true;
   button.textContent = uiText('aboutInstallStarting');
   messageEl.textContent = uiText('aboutInstallStarting');
-  setBusy(true, uiText('aboutInstallStarting'));
+  const release = setBusy(true, uiText('aboutInstallStarting'));
   // 2026-11-16：安装命令必须保持为完整 shell 语句，不能使用 keepLog。
   // runBackground 的 keepLog 会在命令尾部追加参数，追加到 `fi` 后会让 shell
   // 语法失效，表现为任务只有 meta 文件、没有 exit 文件，按钮一直卡住。
@@ -3094,7 +3787,7 @@ async function installDownloadedModule(path, button, messageEl) {
       // KernelSU may restart this WebUI while applying the ZIP; reload as a fallback.
       setTimeout(() => { try { window.location.reload(); } catch (e) { /* page is already restarting */ } }, 2600);
     } else {
-      messageEl.textContent = uiText('aboutDownloadFailed');
+      messageEl.textContent = uiText(task.status === 'unknown' || task.status === 'blocked' ? 'taskUnknown' : 'aboutDownloadFailed');
       button.disabled = false;
       button.textContent = uiText('aboutInstallNow');
     }
@@ -3105,7 +3798,7 @@ async function installDownloadedModule(path, button, messageEl) {
   } finally {
     moduleDownloadBusy = false;
     setModuleCheckControls(false);
-    setBusy(false);
+    release();
   }
 }
 
@@ -3119,7 +3812,7 @@ async function startModuleDownload(data) {
 
   moduleDownloadBusy = true;
   setModuleCheckControls(true);
-  setBusy(true, uiText('aboutDownloadStarting'));
+  const release = setBusy(true, uiText('aboutDownloadStarting'));
   button.disabled = true;
   button.textContent = uiText('aboutDownloadStarting');
   progress.hidden = false;
@@ -3139,7 +3832,7 @@ async function startModuleDownload(data) {
       button.textContent = uiText('aboutInstallNow');
       button.onclick = () => { void installDownloadedModule(path, button, messageEl); };
     } else {
-      messageEl.textContent = uiText('aboutDownloadFailed');
+      messageEl.textContent = uiText(task.status === 'unknown' || task.status === 'blocked' ? 'taskUnknown' : 'aboutDownloadFailed');
       button.disabled = false;
       button.textContent = uiText('aboutDownloadNow');
       button.onclick = () => { void startModuleDownload(data); };
@@ -3152,7 +3845,7 @@ async function startModuleDownload(data) {
   } finally {
     moduleDownloadBusy = false;
     setModuleCheckControls(false);
-    setBusy(false);
+    release();
   }
 }
 
@@ -3185,7 +3878,7 @@ async function runCheckModuleUpdate() {
       '',
       { timeoutMs: 30000 }
     );
-    if (task.status !== 'done') throw new Error('检查更新超时，请稍后重试');
+    if (task.status !== 'done') throw new Error(task.status === 'unknown' ? uiText('taskUnknown') : uiText('aboutCheckFailed'));
     const raw = (task.output || []).filter(line => line !== '✓ 完成').join('\n');
     let data = null;
     try {
@@ -3289,6 +3982,9 @@ document.getElementById('cfgOverlay').addEventListener('click', e => {
 });
 document.getElementById('uninstAppCancel').onclick = closeUninstallAppPrompt;
 document.getElementById('uninstAppConfirm').onclick = () => {
+  if (busy > 0) return;
+  const btn = document.getElementById('uninstAppConfirm');
+  if (btn) btn.disabled = true;
   const id = pendingUninstallAppId;
   closeUninstallAppPrompt();
   if (id) void doUninstall(id);
@@ -3298,6 +3994,9 @@ document.getElementById('uninstallAppOverlay').addEventListener('click', e => {
 });
 document.getElementById('repairCancel').onclick = closeRepairPrompt;
 document.getElementById('repairConfirm').onclick = () => {
+  if (busy > 0) return;
+  const btn = document.getElementById('repairConfirm');
+  if (btn) btn.disabled = true;
   closeRepairPrompt();
   void doRepair();
 };
@@ -3344,26 +4043,57 @@ document.getElementById('btnLogCopy').onclick = async () => {
 };
 
 // ---------- 软键盘检测（弹出时关掉模糊，避免卡顿/闪屏） ----------
+function preferredScrollBehavior() {
+  return window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth';
+}
+
 function setupImeGuard() {
-  const vv = window.visualViewport;
-  const mark = open => {
-    document.body.classList.toggle('ime-open', open);
+  const viewport = window.visualViewport;
+  let width = window.innerWidth;
+  let restingHeight = viewport?.height || window.innerHeight;
+  let frame = 0;
+
+  const measure = () => {
+    frame = 0;
+    const height = viewport?.height || window.innerHeight;
+    const top = viewport?.offsetTop || 0;
+    const input = document.activeElement;
+    const editing = input?.matches('input:not([type="radio"]):not([type="checkbox"]), textarea') &&
+      input.closest('.overlay.show');
+    if (width !== window.innerWidth) {
+      width = window.innerWidth;
+      restingHeight = height;
+    } else if (!editing || height > restingHeight) {
+      restingHeight = height;
+    }
+    // Also works when interactive-widget resizes the layout viewport itself.
+    const open = Boolean(editing && restingHeight - height > 100);
+    const style = document.body.style;
     if (open) {
-      const inp = document.activeElement;
-      if (inp && (inp.tagName === 'INPUT' || inp.tagName === 'SELECT')) {
-        try { inp.scrollIntoView({ block: 'center', behavior: 'smooth' }); } catch (e) { /* ignore */ }
-      }
+      style.setProperty('--ime-top', top + 'px');
+      style.setProperty('--ime-height', height + 'px');
+    } else {
+      style.removeProperty('--ime-top');
+      style.removeProperty('--ime-height');
+    }
+    document.body.classList.toggle('ime-open', open);
+    if (!open) return;
+
+    const rect = input.getBoundingClientRect();
+    const panel = input.closest('.settings-panel, .dlg-body')?.getBoundingClientRect();
+    if (rect.bottom > Math.min(top + height, panel?.bottom ?? Infinity) ||
+        rect.top < Math.max(top, panel?.top ?? 0)) {
+      // Keyboard resize can fire every animation frame. Keep this correction
+      // immediate so repeated native resize events do not restart a scroll.
+      input.scrollIntoView({ block: 'nearest', behavior: 'auto' });
     }
   };
-  if (!vv) {
-    let lastH = window.innerHeight;
-    window.addEventListener('resize', () => {
-      const h = window.innerHeight;
-      if (Math.abs(lastH - h) > 120) { mark(h < lastH); lastH = h; }
-    });
-    return;
-  }
-  vv.addEventListener('resize', () => { mark(vv.height < window.innerHeight * 0.72); });
+  const schedule = () => { if (!frame) frame = window.requestAnimationFrame(measure); };
+  window.addEventListener('resize', schedule);
+  viewport?.addEventListener('resize', schedule);
+  viewport?.addEventListener('scroll', schedule);
+  document.addEventListener('focusin', schedule);
+  document.addEventListener('focusout', schedule);
 }
 
 // ---------- 主题 ----------
@@ -3411,7 +4141,7 @@ if (window.matchMedia) {
   void firstLoad.finally(() => {
     setTimeout(() => {
       void trimTaskLogs();
-      void restoreTasks();
+      void restoreTasks().catch(() => {});
       // 2026-11-16：把网络自动检查再延后到首屏稳定后，给手动更新检查
       // 留出独占桥接的窗口；自动检查仍在后台进行且不弹窗。
       setTimeout(() => { void maybeAutoCheck(); }, 30000);

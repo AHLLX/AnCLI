@@ -11,6 +11,22 @@ fi
 
 . /data/local/tmp/ancli/bin/ancli_env.sh 2>/dev/null || true
 
+# 容器专用网络模式覆盖全局代理模式；WebUI 和 `ancli container set`
+# 会把两者同步，直接编辑容器配置时也能在这里即时生效。
+_ancli_container_network=$(sed -n 's/^[[:space:]]*"network_mode"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' /data/local/tmp/ancli/container-config.json 2>/dev/null | head -n 1)
+case "$_ancli_container_network" in
+    direct)
+        unset http_proxy https_proxy all_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY ;;
+    manual)
+        _ancli_manual_proxy=$(sed -n 's/^[[:space:]]*"proxy_url"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' /data/local/tmp/ancli/container-config.json 2>/dev/null | head -n 1)
+        [ -n "$_ancli_manual_proxy" ] || _ancli_manual_proxy=$(sed -n 's/^[[:space:]]*"proxy_url"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' /data/local/tmp/ancli/rootfs/root/.ancli-config.json 2>/dev/null | head -n 1)
+        if [ -n "$_ancli_manual_proxy" ]; then
+            export http_proxy="$_ancli_manual_proxy" https_proxy="$_ancli_manual_proxy" HTTP_PROXY="$_ancli_manual_proxy" HTTPS_PROXY="$_ancli_manual_proxy" ALL_PROXY="$_ancli_manual_proxy"
+        else
+            unset http_proxy https_proxy all_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY
+        fi ;;
+esac
+
 # 1. 读取全局配置中的默认工作目录（通过 `ancli config --set default_cwd=...` 或 WebUI 设置）
 #    为空时默认回落至容器内的 /root
 _ancli_default_cwd=""
@@ -29,6 +45,64 @@ esac
 #    若处于未挂载的宿主机路径（如 /cache），回退至小型 TUI 工作目录
 ANCLI_TUI_CWD=/root/.ancli-work
 mkdir -p "/data/local/tmp/ancli/rootfs$ANCLI_TUI_CWD" 2>/dev/null || true
+
+# 容器延迟安装时，rootfs 还不存在，必须在宿主侧直接处理 container
+# 状态、规格和安装请求；其他命令继续走正常 PRoot 入口。
+if [ "${1:-}" = "container" ] || [ "${1:-}" = "container-status" ]; then
+    if [ -x /data/local/tmp/ancli/container-bootstrap.sh ]; then
+        shift
+        exec /system/bin/sh /data/local/tmp/ancli/container-bootstrap.sh "$@"
+    fi
+    echo '{"status":"error","error":"container bootstrap script is missing"}'
+    exit 1
+fi
+if [ "${1:-}" = "android" ]; then
+    shift
+    if [ -x /data/local/tmp/ancli/android-probe.sh ]; then
+        exec /system/bin/sh /data/local/tmp/ancli/android-probe.sh "$@"
+    fi
+    echo '{"status":"error","error":"android probe script is missing"}'
+    exit 1
+fi
+if [ ! -f /data/local/tmp/ancli/rootfs/bin/bash ]; then
+    case "${1:-}" in
+        status|doctor|list|config)
+            if [ -x /data/local/tmp/ancli/container-bootstrap.sh ]; then
+                exec /system/bin/sh /data/local/tmp/ancli/container-bootstrap.sh "$@"
+            fi
+            ;;
+    esac
+    echo "[AnCLI] Ubuntu 容器尚未安装。请先运行：ancli container install" >&2
+    exit 78
+fi
+
+# 确保 Android 宿主桥接守护服务存活（供容器内 ancli android shell IPC 调用）
+_bridge_dir=/data/local/tmp/ancli/.bridge
+if [ ! -f "$_bridge_dir/active" ] || [ ! -f "$_bridge_dir/pid" ] || ! kill -0 "$(cat "$_bridge_dir/pid" 2>/dev/null)" 2>/dev/null; then
+    mkdir -p "$_bridge_dir/reqs" 2>/dev/null || true
+    touch "$_bridge_dir/active" 2>/dev/null || true
+    nohup /system/bin/sh -c '
+        _b=/data/local/tmp/ancli/.bridge
+        echo $$ > "$_b/pid"
+        while [ -f "$_b/active" ]; do
+            for _r in "$_b"/reqs/req_*.sh; do
+                [ -f "$_r" ] || continue
+                _base="${_r##*/}"
+                _id="${_base#req_}"
+                _id="${_id%.sh}"
+                _out="$_b/out_$_id"
+                _err="$_b/err_$_id"
+                _exit="$_b/exit_$_id"
+                /system/bin/sh "$_r" > "$_out" 2> "$_err"
+                echo $? > "$_exit.tmp"
+                mv -f "$_exit.tmp" "$_exit"
+                rm -f "$_r"
+            done
+            /system/bin/sleep 0.1 2>/dev/null || sleep 1
+        done
+        rm -f "$_b/pid"
+    ' </dev/null >/dev/null 2>&1 &
+fi
 PROOT_CWD="$PWD"
 case "$PROOT_CWD" in
     /|/dev*|/proc*|/sys*|/sdcard*|/storage*|/mnt*|/data*|/apex*|/system*|/linkerconfig*)
@@ -78,6 +152,15 @@ for _ancli_bind in /sdcard /storage /mnt /data /apex /linkerconfig /system; do
         ANCLI_BIND_ARGS="$ANCLI_BIND_ARGS -b $_ancli_bind"
     fi
 done
+
+# 5.5 确保 Android /data 真实数据通道挂载在 /mnt/ancli-data（宿主 root 运行且未挂载时执行 bind mount）
+ANCLI_DATA_MNT=/mnt/ancli-data
+if [ "$(id -u 2>/dev/null)" = "0" ]; then
+    if ! grep -qs " $ANCLI_DATA_MNT " /proc/mounts; then
+        mkdir -p "$ANCLI_DATA_MNT" 2>/dev/null || true
+        mount --bind /data "$ANCLI_DATA_MNT" 2>/dev/null || true
+    fi
+fi
 
 # 6. 抹除 seccomp 警告，替换当前进程启动 PRoot 容器并执行 ancli-core.py
 export PROOT_NO_SECCOMP=1

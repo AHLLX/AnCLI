@@ -1,0 +1,38 @@
+{
+  "schema_version": 1,
+  "default_profile": "standard",
+  "profiles": {
+    "minimal": {
+      "name": "最小运行环境",
+      "name_en": "Minimal runtime",
+      "description": "Python、Git、curl 和证书，适合轻量脚本与基础 CLI。",
+      "description_en": "Python, Git, curl and certificates for lightweight scripts and basic CLI tools.",
+      "estimated_size_mb": 480,
+      "packages": ["ca-certificates", "curl", "python3", "python3-pip", "git"]
+    },
+    "standard": {
+      "name": "标准 Agent 环境",
+      "name_en": "Standard Agent",
+      "description": "包含 Node.js、npm，兼容 Codex、AGY、Claude、OpenCode 等常用 Agent。",
+      "description_en": "Adds Node.js and npm for Codex, AGY, Claude, OpenCode and similar agents.",
+      "estimated_size_mb": 900,
+      "packages": ["ca-certificates", "curl", "python3", "python3-pip", "git", "nodejs", "npm", "openjdk-17-jre-headless", "binutils"]
+    },
+    "developer": {
+      "name": "开发工具环境",
+      "name_en": "Developer tools",
+      "description": "标准环境加 Java、binutils、zip/unzip 和 build-essential，适合 Android 逆向与编译。",
+      "description_en": "Adds Java, binutils, archive and build tools for Android and binary analysis.",
+      "estimated_size_mb": 1120,
+      "packages": ["ca-certificates", "curl", "python3", "python3-pip", "git", "nodejs", "npm", "openjdk-17-jre-headless", "binutils", "zip", "unzip", "build-essential"]
+    },
+    "full": {
+      "name": "完整开发环境",
+      "name_en": "Full development",
+      "description": "开发工具环境加编译工具和 CJK 输入法组件，磁盘占用最高。",
+      "description_en": "Adds build tools and CJK input components; uses the most storage.",
+      "estimated_size_mb": 1480,
+      "packages": ["ca-certificates", "curl", "python3", "python3-pip", "git", "nodejs", "npm", "openjdk-17-jre-headless", "binutils", "zip", "unzip", "build-essential", "fcitx5", "fcitx5-chinese-addons"]
+    }
+  }
+}

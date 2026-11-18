@@ -10,6 +10,23 @@ ANCLI_DIR="/data/local/tmp/ancli"
 ROOTFS="${ANCLI_DIR}/rootfs"
 MODULE_DIR="${MODDIR:-/data/adb/modules/ancli}"
 
+# 延迟安装模式也必须保留宿主侧容器控制入口，避免 rootfs 尚未创建时
+# WebUI 把“未安装”误报成“模块损坏”。
+if [ -f "$MODULE_DIR/container-bootstrap.sh" ]; then
+    cp -f "$MODULE_DIR/container-bootstrap.sh" "$ANCLI_DIR/container-bootstrap.sh" 2>/dev/null || true
+    chmod 755 "$ANCLI_DIR/container-bootstrap.sh" 2>/dev/null || true
+fi
+if [ -f "$MODULE_DIR/ancli/container-profiles.json" ]; then
+    cp -f "$MODULE_DIR/ancli/container-profiles.json" "$ANCLI_DIR/container-profiles.json" 2>/dev/null || true
+fi
+if [ -f "$MODULE_DIR/ancli/catalog-cache.json" ]; then
+    cp -f "$MODULE_DIR/ancli/catalog-cache.json" "$ANCLI_DIR/catalog-cache.json" 2>/dev/null || true
+fi
+if [ -f "$MODULE_DIR/android-probe.sh" ]; then
+    cp -f "$MODULE_DIR/android-probe.sh" "$ANCLI_DIR/android-probe.sh" 2>/dev/null || true
+    chmod 755 "$ANCLI_DIR/android-probe.sh" 2>/dev/null || true
+fi
+
 # 1. 重建容器内 /etc/resolv.conf（系统重启后可能被重置）。
 #    优先使用当前网络的真实 DNS（先查 getprop，再查 dumpsys connectivity DnsAddresses），
 #    其后回落至国内友好解析器（223.5.5.5 / 119.29.29.29），最后才是 1.1.1.1 / 8.8.8.8。
@@ -137,3 +154,31 @@ for shim in git bash curl; do
         rm -f "$mod_shim" 2>/dev/null && echo "AnCLI: removed stale module shim $mod_shim"
     fi
 done
+
+# 8. 启动 Android 宿主桥接守护服务（在 PRoot 外部真实执行，供容器内 Agent 通过 IPC 调用宿主命令）
+_bridge_dir="$ANCLI_DIR/.bridge"
+rm -rf "$_bridge_dir"
+mkdir -p "$_bridge_dir/reqs"
+touch "$_bridge_dir/active"
+
+nohup /system/bin/sh -c '
+    _b=/data/local/tmp/ancli/.bridge
+    echo $$ > "$_b/pid"
+    while [ -f "$_b/active" ]; do
+        for _req in "$_b"/reqs/req_*.sh; do
+            [ -f "$_req" ] || continue
+            _base="${_req##*/}"
+            _id="${_base#req_}"
+            _id="${_id%.sh}"
+            _out="$_b/out_$_id"
+            _err="$_b/err_$_id"
+            _exit="$_b/exit_$_id"
+            /system/bin/sh "$_req" > "$_out" 2> "$_err"
+            echo $? > "$_exit.tmp"
+            mv -f "$_exit.tmp" "$_exit"
+            rm -f "$_req"
+        done
+        /system/bin/sleep 0.1 2>/dev/null || sleep 1
+    done
+    rm -f "$_b/pid"
+' </dev/null >/dev/null 2>&1 &
