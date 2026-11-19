@@ -1,3 +1,59 @@
+## v1.2.651-beta (2026-11-19)
+
+- Add KernelSU and APatch instant-access directories to the PRoot process PATH, so AGY's command runner can resolve the bundled `bash` compatibility shim and reach `ancli android` host commands.
+- Keep `/system/bin` as a read-only fallback; do not depend on an overlay-mounted `/system/bin/bash` for the command runner.
+
+## v1.2.650-beta (2026-11-19)
+
+- Show “Update check” for installed apps without a known update; refresh only that app's official version before acting.
+- Change the action to “Update” when a newer version is confirmed; require another tap and a fresh check before installing.
+- Check DSH's installed npm package metadata, CLI entry point, executable, and version probe; expose a repair action after an interrupted update even when the official version lookup is unavailable.
+
+## v1.2.649-beta (2026-11-19)
+
+- Keep failed new-container installs as marked checkpoints instead of deleting partially installed packages and the Ubuntu rootfs stage.
+- Resume a safe, abandoned checkpoint on the next install; report the target-profile packages already installed and still missing.
+- Record the current profile and package-install phase in the rootfs checkpoint and explicitly state whether retry continues or removes content.
+
+## v1.2.648-beta (2026-11-19)
+
+- Keep settings and tab switching responsive by removing network work from tab changes; run the full proxy diagnostics only when the user taps Check.
+- Use a lightweight proxy and VPN identification command at startup, then show that connectivity has not yet been verified.
+- Force the detected proxy for curl, BusyBox wget, APT, Node.js setup, and npm package downloads; log the selected download route.
+
+## v1.2.647-beta (2026-11-19)
+
+- Complete Chinese and English wording for the flash installer, including recovery choices, profile selection, package setup, and final status.
+- Generalize page two of the first-use guide to explain sandbox permission failures for any AI agent and how to switch that tool to Full Access.
+- Automatically detect proxy and VPN state when WebUI opens, show the result in the header, and keep the container initialization network hint synchronized.
+- Localize Ubuntu mirror names in both initialization and settings screens.
+
+## v1.2.646-beta (2026-11-19)
+
+- Flash installer now asks for Chinese or English before setup; it defaults to Chinese when volume-key input is unavailable.
+- Generate installer and container profile helpers from `src/container-profiles.json`; package names shown in the flash menu, installed through APT, and shown in WebUI now share the same catalog.
+- Embed the canonical profile catalog in the packaged WebUI as its offline fallback.
+
+## v1.2.645-beta (2026-11-19)
+
+- Extend the first-use guide with a second page explaining Codex `/permissions` → Full Access for Android PRoot sandbox and app-server mount-isolation errors.
+- Stop the DSH Web backend in a detached task so the WebUI stays responsive; show a stopping state and report success, failure, or continued background cleanup accurately.
+- Launch DSH's managed Web backend directly in its tracked PRoot session, avoiding the interactive terminal wrapper watchdog.
+- Remove unmeasured container-size hints from installation and status screens.
+
+## v1.2.644-beta (2026-11-18)
+
+- Replace the large download speed test with parallel Ping latency cards for the Tsinghua, USTC, and Ubuntu official mirrors.
+- Automatically detect network proxy state when opening Proxy settings and display the detected proxy address beside the network mode.
+- Scroll to installation output when starting a container install; show an immediate spinner while confirming task termination.
+
+## v1.2.644-beta (2026-11-18)
+
+- Use Cloudflare's exact 50,000,000-byte download endpoint for network speed tests, with live byte progress and temporary-file cleanup.
+- Place the speed-test control beside the container mirror selector and clarify that it measures the current route, not the selected Ubuntu mirror.
+- Show proxy, VPN, domestic/international reachability, and HTTPS probe results with status indicators and an overall verdict.
+- Make container profile and network selection respond immediately; save settings when installation starts.
+
 ## v1.2.642-beta (2026-11-18)
 
 - Add a first-use guide showing `su`, then direct `codex` and `agy` launch commands in a root terminal.

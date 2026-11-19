@@ -37,6 +37,42 @@ ancli_begin_rootfs() {
     return 0
 }
 
+# Reuse an abandoned, AnCLI-marked WebUI installation checkpoint. Never resume
+# a tree owned by a live installer PID and never accept an unmarked directory.
+ancli_resume_rootfs() {
+    if [ -e "$ROOTFS" ] || [ -L "$ROOTFS" ]; then return 1; fi
+    for _resume_stage in "$ANCLI_DIR"/.rootfs-install-*; do
+        [ -d "$_resume_stage" ] && [ ! -L "$_resume_stage" ] || continue
+        [ "$(cat "$_resume_stage/.ancli-transaction" 2>/dev/null)" = 'ancli-rootfs-transaction-v1' ] || continue
+        _resume_pid=${_resume_stage##*/.rootfs-install-}
+        case "$_resume_pid" in ''|*[!0-9]*) continue ;; esac
+        kill -0 "$_resume_pid" 2>/dev/null && continue
+        ANCLI_ROOTFS_TARGET="$ROOTFS"
+        ANCLI_ROOTFS_STAGE="$_resume_stage"
+        ANCLI_ROOTFS_ARCHIVE="$ANCLI_DIR/.ubuntu-base-install-$_resume_pid.tar.gz"
+        ROOTFS="$ANCLI_ROOTFS_STAGE"
+        if [ -n "${ANCLI_TASK_ID:-}" ]; then
+            case "$ANCLI_TASK_ID" in *[!0-9_]*|_*) return 1 ;; esac
+            printf '%s\n' "$ANCLI_TASK_ID" > "$ROOTFS/.ancli-task" || return 1
+        fi
+        echo ">> 已找到上次未完成的容器检查点，将从现有文件继续；已安装的软件包不会删除。"
+        return 0
+    done
+    return 1
+}
+
+# A failed package/download step keeps the marked stage so a later install can
+# continue idempotently. Explicit task-stop cleanup still removes its own stage.
+ancli_preserve_rootfs() {
+    if [ -n "${ANCLI_ROOTFS_STAGE:-}" ] && [ ! -L "$ANCLI_ROOTFS_STAGE" ] &&
+       [ "$(cat "$ANCLI_ROOTFS_STAGE/.ancli-transaction" 2>/dev/null)" = 'ancli-rootfs-transaction-v1' ]; then
+        echo ">> 安装未完成；检查点已保留在 $ANCLI_ROOTFS_STAGE，已安装的软件包不会删除。再次执行 ancli container install 可继续补齐。"
+        ROOTFS="${ANCLI_ROOTFS_TARGET:-$ROOTFS}"
+        ANCLI_ROOTFS_STAGE=""
+        ANCLI_ROOTFS_ARCHIVE=""
+    fi
+}
+
 ancli_rollback_rootfs() {
     if [ -n "${ANCLI_ROOTFS_STAGE:-}" ] && [ ! -L "$ANCLI_ROOTFS_STAGE" ] &&
        [ "$(cat "$ANCLI_ROOTFS_STAGE/.ancli-transaction" 2>/dev/null)" = 'ancli-rootfs-transaction-v1' ]; then

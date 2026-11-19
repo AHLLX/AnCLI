@@ -17,6 +17,14 @@ UBUNTU_MIRROR="${ANCLI_MIRROR:-mirrors.tuna.tsinghua.edu.cn}"
 
 say() { if command -v ui_print >/dev/null 2>&1; then ui_print "$1"; else echo "$1"; fi; }
 
+# Profile names, descriptions and package sets are generated from the same
+# canonical JSON catalog used by the installer and embedded WebUI catalog.
+if [ -f "$ANCLI_DIR/container-profile-data.sh" ]; then
+    . "$ANCLI_DIR/container-profile-data.sh"
+elif [ -f "$MODULE_DIR/container-profile-data.sh" ]; then
+    . "$MODULE_DIR/container-profile-data.sh"
+fi
+
 detect_host_arch() {
     _mach=$(uname -m 2>/dev/null)
     case "$_mach" in
@@ -50,12 +58,25 @@ download_tarball() {
     _out="$1"
     _url="$2"
     if command -v curl >/dev/null 2>&1; then
-        curl -f -L -A "curl/7.68.0" --connect-timeout 20 --max-time 600 --progress-bar -o "$_out" "$_url"
+        _download_proxy="${https_proxy:-${http_proxy:-}}"
+        if [ -n "$_download_proxy" ]; then
+            say ">> 下载路由：curl 显式使用 HTTP 代理 $_download_proxy"
+            curl -f -L -A "curl/7.68.0" --proxy "$_download_proxy" --noproxy '' --connect-timeout 20 --max-time 600 --progress-bar -o "$_out" "$_url"
+        else
+            say ">> 下载路由：未配置 HTTP 代理，使用设备网络/VPN 路由"
+            curl -f -L -A "curl/7.68.0" --noproxy '*' --connect-timeout 20 --max-time 600 --progress-bar -o "$_out" "$_url"
+        fi
         return $?
     fi
     for _bb in /data/adb/ksu/bin/busybox /data/adb/ap/bin/busybox /data/adb/magisk/busybox busybox; do
         if [ -x "$_bb" ]; then
-            "$_bb" wget -U "curl/7.68.0" -T 30 -O "$_out" "$_url"
+            if [ -n "${https_proxy:-${http_proxy:-}}" ]; then
+                say ">> 下载路由：BusyBox wget 启用 HTTP 代理 ${https_proxy:-${http_proxy:-}}"
+                "$_bb" wget -Y on -U "curl/7.68.0" -T 30 -O "$_out" "$_url"
+            else
+                say ">> 下载路由：未配置 HTTP 代理，使用设备网络/VPN 路由"
+                "$_bb" wget -Y off -U "curl/7.68.0" -T 30 -O "$_out" "$_url"
+            fi
             return $?
         fi
     done
@@ -91,13 +112,7 @@ json_value() {
 }
 
 profile_name() {
-    case "$1" in
-        minimal) echo "最小运行环境" ;;
-        standard) echo "标准 Agent 环境" ;;
-        developer) echo "开发工具环境" ;;
-        full) echo "完整开发环境" ;;
-        *) echo "未知规格" ;;
-    esac
+    ancli_profile_name_zh "$1" 2>/dev/null || echo "未知规格"
 }
 
 profile_size() {
@@ -111,23 +126,11 @@ profile_size() {
 }
 
 profile_packages() {
-    case "$1" in
-        minimal) echo "ca-certificates curl python3 python3-pip git nodejs npm" ;;
-        standard) echo "ca-certificates curl python3 python3-pip git nodejs npm zip unzip" ;;
-        developer) echo "ca-certificates curl python3 python3-pip git nodejs npm zip unzip build-essential binutils openjdk-17-jre-headless" ;;
-        full) echo "ca-certificates curl python3 python3-pip git nodejs npm zip unzip build-essential binutils openjdk-17-jre-headless jq ripgrep less file procps dnsutils openssh-client tmux vim-tiny fcitx5 fcitx5-chinese-addons" ;;
-        *) return 1 ;;
-    esac
+    ancli_profile_packages "$1"
 }
 
 profile_description() {
-    case "$1" in
-        minimal) echo "Python、pip、Node.js、npm、Git、curl 与证书，用于 Agent 基础安装。" ;;
-        standard) echo "最小环境加 ZIP 与 unzip 归档工具。" ;;
-        developer) echo "标准环境加编译工具、binutils 和 Java 17。" ;;
-        full) echo "开发环境加 JSON、搜索、终端、网络诊断及中文输入组件。" ;;
-        *) echo "" ;;
-    esac
+    ancli_profile_description_zh "$1"
 }
 
 apply_network_mode() {
@@ -417,10 +420,13 @@ install_container() (
         apt_repo_type="ports"
     fi
 
-    ancli_cleanup_stale_rootfs || { say "[X] 无法清理上次中断的临时安装目录"; return 1; }
     if [ ! -f "$ROOTFS/bin/bash" ]; then
-        ancli_begin_rootfs || return 1
-        trap 'ancli_rollback_rootfs' EXIT
+        if ancli_resume_rootfs; then
+            trap 'ancli_preserve_rootfs' EXIT
+        else
+            ancli_begin_rootfs || return 1
+            trap 'ancli_preserve_rootfs' EXIT
+        fi
     fi
 
     if [ -f "$ROOTFS/bin/bash" ]; then
@@ -465,8 +471,9 @@ install_container() (
     packages="$(profile_packages "$profile")"
     setup="$ROOTFS/root/ancli-container-setup.sh"
     proxy_exports=""
+    printf 'profile=%s\nphase=apt\n' "$profile" > "$ROOTFS/.ancli-install-checkpoint"
     if [ -n "${http_proxy:-}" ]; then
-        proxy_exports="export http_proxy=\"${http_proxy:-}\" https_proxy=\"${https_proxy:-}\" HTTP_PROXY=\"${HTTP_PROXY:-}\" HTTPS_PROXY=\"${HTTPS_PROXY:-}\" all_proxy=\"${all_proxy:-}\" ALL_PROXY=\"${ALL_PROXY:-}\""
+        proxy_exports="export http_proxy='${http_proxy:-}' https_proxy='${https_proxy:-${http_proxy:-}}' HTTP_PROXY='${HTTP_PROXY:-${http_proxy:-}}' HTTPS_PROXY='${HTTPS_PROXY:-${https_proxy:-${http_proxy:-}}}'"
     fi
     cat > "$setup" <<EOF
 #!/bin/bash
@@ -476,10 +483,18 @@ export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 export TMPDIR=/tmp
 $proxy_exports
 mkdir -p /etc/apt/apt.conf.d
+if [ -n "\${http_proxy:-}" ]; then
+    printf 'Acquire::http::Proxy "%s";\n' "\$http_proxy" > /etc/apt/apt.conf.d/99ancli-proxy
+    printf 'Acquire::https::Proxy "%s";\n' "\${https_proxy:-\$http_proxy}" >> /etc/apt/apt.conf.d/99ancli-proxy
+fi
 echo 'APT::Sandbox::User "root";' > /etc/apt/apt.conf.d/01sandbox
+printf 'profile=%s\\nphase=apt-update\\n' '$profile' > /.ancli-install-checkpoint
 apt-get update -y
+printf 'profile=%s\\nphase=apt-install\\n' '$profile' > /.ancli-install-checkpoint
 apt-get install -y --no-install-recommends $packages
 apt-get clean
+rm -f /etc/apt/apt.conf.d/99ancli-proxy
+printf 'profile=%s\\nphase=node-setup\\n' '$profile' > /.ancli-install-checkpoint
 /bin/sh /data/local/tmp/ancli/node-setup.sh
 rm -f /usr/lib/python3.12/EXTERNALLY-MANAGED /usr/lib/python3.11/EXTERNALLY-MANAGED
 mkdir -p /usr/local/bin /usr/local/sbin /usr/local/lib/node_modules /usr/local/share /root/.npm/_logs /root/.ancli-work
@@ -487,10 +502,39 @@ chmod 755 /usr/local/bin /usr/local/sbin /usr/local/lib /usr/local/lib/node_modu
 EOF
     chmod 755 "$setup"
     proot="$BIN_DIR/proot -r $ROOTFS -b /dev -b /proc -b /sys -b $ANCLI_DIR -b /data/adb -w /root"
-    say ">> 安装容器规格：$(profile_name "$profile")（占用待实测）"
+    say ">> 安装容器规格：$(profile_name "$profile")"
     say ">> 规格说明：$(profile_description "$profile")"
     say ">> 软件包：$packages"
     say ">> 说明：切换较小规格不会卸载已有软件包。"
+    _installed_packages=""
+    _missing_packages=""
+    if [ -x "$ROOTFS/usr/bin/dpkg-query" ] || [ -x "$ROOTFS/bin/dpkg-query" ]; then
+        for _pkg in $packages; do
+            _pkg_state=$($proot /usr/bin/dpkg-query -W '-f=${db:Status-Abbrev}' "$_pkg" 2>/dev/null || true)
+            case "$_pkg_state" in
+                ii*) _installed_packages="$_installed_packages $_pkg" ;;
+                *) _missing_packages="$_missing_packages $_pkg" ;;
+            esac
+        done
+        if [ -n "$_installed_packages" ]; then
+            say ">> 检查点状态：已安装目标软件包：${_installed_packages# }"
+        else
+            say ">> 检查点状态：已安装目标软件包：无"
+        fi
+        if [ -n "$_missing_packages" ]; then
+            say ">> 检查点状态：待补齐软件包：${_missing_packages# }"
+        else
+            say ">> 检查点状态：待补齐软件包：无"
+        fi
+        say ">> 安装失败会保留已安装内容；再次执行同一规格会由 APT 跳过已完成项并补齐缺失项。"
+    else
+        say ">> 检查点状态：基础系统尚未完成，Ubuntu Base 与 APT 状态会保留供下次续装。"
+    fi
+    if [ -n "${https_proxy:-${http_proxy:-}}" ]; then
+        say ">> APT、Node.js 与基础镜像下载已配置为显式使用代理：${https_proxy:-${http_proxy:-}}"
+    else
+        say ">> 未配置 HTTP 代理；下载使用 Android 网络路由（可能包含 VPN 或透明代理）。"
+    fi
 
     if [ -f "$ANCLI_DIR/apt-key-compat.sh" ]; then
         sh "$ANCLI_DIR/apt-key-compat.sh" "$ROOTFS" || { say "[X] APT 密钥环兼容设置失败"; return 1; }
@@ -499,11 +543,12 @@ EOF
         return 1
     fi
     if ! $proot /root/ancli-container-setup.sh; then
-        say "[X] 容器依赖安装失败；配置已保留，可修复后再次执行 ancli container install"
+        say "[X] 容器依赖安装失败；已安装软件包和安装检查点均保留，可修复网络后再次执行 ancli container install 续装"
         rm -f "$setup"
         return 1
     fi
     rm -f "$setup"
+    rm -f "$ROOTFS/.ancli-install-checkpoint"
     sh "$ANCLI_DIR/apt-key-compat.sh" "$ROOTFS" || return 1
 
     mkdir -p "$ROOTFS/usr/local/bin" "$ROOTFS/usr/local/sbin" "$ROOTFS/usr/local/lib/node_modules" "$ROOTFS/root/.npm/_logs"
@@ -597,10 +642,54 @@ case "$action" in
         case "$(detect_host_arch)" in arm64) _speed_arch=arm64 ;; x86_64) _speed_arch=amd64 ;; *) exit 1 ;; esac
         ancli_mirror_speed_test "$_speed_choice" "$_speed_arch"
         ;;
+    mirror-ping)
+        [ -f "$ANCLI_DIR/container-mirror.sh" ] || exit 1
+        . "$ANCLI_DIR/container-mirror.sh"
+        case "$(detect_host_arch)" in arm64) _ping_official=ports.ubuntu.com ;; x86_64) _ping_official=archive.ubuntu.com ;; *) _ping_official=ports.ubuntu.com ;; esac
+        _mirror_ping_one() {
+            _name=$1 _host=$2 _result=timeout
+            if command -v ping >/dev/null 2>&1 && command -v timeout >/dev/null 2>&1; then
+                _ping_output=$(timeout 4 ping -c 1 -W 2 "$_host" 2>&1)
+                if [ "$?" -eq 0 ]; then
+                    _result=$(printf '%s\n' "$_ping_output" | sed -n 's/.*time[=<]\([0-9.][0-9.]*\)[[:space:]]*ms.*/\1/p' | head -n 1)
+                    [ -n "$_result" ] || _result=ok
+                fi
+            else _result=unavailable; fi
+            printf 'ANCLI_MIRROR_PING_%s=%s\n' "$_name" "$_result"
+        }
+        _mirror_ping_one tuna mirrors.tuna.tsinghua.edu.cn & _p1=$!
+        _mirror_ping_one ustc mirrors.ustc.edu.cn & _p2=$!
+        _mirror_ping_one official "$_ping_official" & _p3=$!
+        wait "$_p1"; wait "$_p2"; wait "$_p3"
+        ;;
     vpn-status)
         [ -f "$ANCLI_DIR/install-network.sh" ] || exit 1
         . "$ANCLI_DIR/install-network.sh"
         ancli_detect_vpn
+        ;;
+    proxy-status)
+        shift
+        _proxy_status_mode="system"
+        _proxy_status_proxy=""
+        for arg in "$@"; do
+            case "$arg" in
+                --network=*) _proxy_status_mode="${arg#*=}" ;;
+                --proxy-url=*) _proxy_status_proxy="$(url_decode "${arg#*=}")" ;;
+                *) say "[X] Unknown proxy status option"; exit 2 ;;
+            esac
+        done
+        case "$_proxy_status_mode" in system|manual|direct) ;; *) say "[X] Invalid network mode"; exit 2 ;; esac
+        [ -f "$ANCLI_DIR/install-network.sh" ] || { say "[X] Network helper missing"; exit 1; }
+        . "$ANCLI_DIR/install-network.sh"
+        export ANCLI_NETWORK_VERBOSE=1 ANCLI_SKIP_PROXY_CONNECTIVITY_TEST=1
+        ancli_detect_vpn
+        ancli_install_network "$_proxy_status_mode" "$_proxy_status_proxy" || exit $?
+        if [ -n "${_ancli_host:-}" ] && [ -n "${_ancli_port:-}" ]; then
+            printf 'ANCLI_PROXY_URL=%s:%s\n' "$_ancli_host" "$_ancli_port"
+        else
+            echo 'ANCLI_PROXY_URL='
+        fi
+        printf 'ANCLI_PROXY_MODE=%s\n' "$_proxy_status_mode"
         ;;
     network-test)
         shift

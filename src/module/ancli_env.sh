@@ -10,7 +10,7 @@
 unset LD_LIBRARY_PATH LD_PRELOAD
 
 # 2. 容器内基础环境变量（所有受管工具均运行在 Ubuntu PRoot 客体中）
-export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/root/.local/bin:/system/bin:/system/xbin
+export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/root/.local/bin:/data/adb/ksu/bin:/data/adb/ap/bin:/system/bin:/system/xbin
 export TMPDIR=/tmp
 export HOME=/root
 export GODEBUG=netdns=go
@@ -45,6 +45,10 @@ export GIT_CONFIG_VALUE_0='*'
 export GTK_IM_MODULE=fcitx
 export QT_IM_MODULE=fcitx
 export XMODIFIERS=@im=fcitx
+
+# Do not inherit a stale npm proxy from the root shell. npm's fetch stack does
+# not consistently honor plain HTTP_PROXY in every packaged Node/npm version.
+unset npm_config_proxy npm_config_https_proxy NPM_CONFIG_PROXY NPM_CONFIG_HTTPS_PROXY
 
 # 9. 读取 AnCLI 全局代理配置（/root/.ancli-config.json），按模式分发处理：
 #    - direct：强制直连，清空代理变量（跳过慢速 dumpsys 探测）
@@ -145,6 +149,13 @@ else
         export no_proxy="localhost,127.0.0.1,::1,0.0.0.0"
         export NO_PROXY="$no_proxy"
     fi
+fi
+
+# Make npm registry/package downloads follow the same effective HTTP proxy as
+# curl and pip. In direct mode both variables remain absent by design.
+if [ -n "${https_proxy:-${http_proxy:-}}" ]; then
+    export npm_config_proxy="${http_proxy:-$https_proxy}"
+    export npm_config_https_proxy="${https_proxy:-$http_proxy}"
 fi
 
 # 10. 容器 DNS 解析器探测与缓存（每小时刷新一次）

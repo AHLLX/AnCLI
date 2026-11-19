@@ -1354,8 +1354,8 @@ class TestBrowserHandoff:
 
         wrapper = (tmp_path / "ancli" / "bin" / "dsh").read_text(encoding="utf-8")
         assert "export PROOT_NO_SECCOMP=1" in wrapper
-        assert "/usr/bin/env ANCLI_IN_CONTAINER=1 PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/system/bin SHELL=/bin/bash BROWSER=/usr/local/bin/xdg-open dsh" in wrapper
-        assert "/data/adb/ksu/bin" not in wrapper.split("PATH=")[1].split()[0]
+        assert "/usr/bin/env ANCLI_IN_CONTAINER=1 PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/data/adb/ksu/bin:/data/adb/ap/bin:/system/bin SHELL=/bin/bash BROWSER=/usr/local/bin/xdg-open dsh" in wrapper
+        assert "/data/adb/ksu/bin:/data/adb/ap/bin" in wrapper.split("PATH=")[1].split()[0]
 
     def test_wrapper_prefers_a_full_browser_over_the_chooser(self, tmp_path, monkeypatch):
         """No default browser => `am start` raises "Open with"; a WebView-based pick

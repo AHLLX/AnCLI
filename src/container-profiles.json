@@ -39,8 +39,8 @@
     "developer": {
       "name": "开发工具环境",
       "name_en": "Developer tools",
-      "description": "标准环境加编译工具、binutils 和 Java 17。",
-      "description_en": "Standard environment plus build tools, binutils and Java 17.",
+      "description": "标准环境加编译工具、binutils、Java 17 和 ADB 客户端。",
+      "description_en": "Standard environment plus build tools, binutils, Java 17 and the ADB client.",
       "estimated_size_mb": 0,
       "packages": [
         "ca-certificates",
@@ -54,7 +54,8 @@
         "unzip",
         "build-essential",
         "binutils",
-        "openjdk-17-jre-headless"
+        "openjdk-17-jre-headless",
+        "adb"
       ]
     },
     "full": {
@@ -76,6 +77,7 @@
         "build-essential",
         "binutils",
         "openjdk-17-jre-headless",
+        "adb",
         "jq",
         "ripgrep",
         "less",

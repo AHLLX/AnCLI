@@ -46,12 +46,25 @@ download_tarball() {
     _out="$1"
     _url="$2"
     if command -v curl >/dev/null 2>&1; then
-        curl -f -L -A "curl/7.68.0" --connect-timeout 20 --max-time 600 --progress-bar -o "$_out" "$_url"
+        _download_proxy="${https_proxy:-${http_proxy:-}}"
+        if [ -n "$_download_proxy" ]; then
+            ui_print "$(installer_text ">> 下载路由：curl 显式使用 HTTP 代理 $_download_proxy" ">> Download route: curl explicitly uses HTTP proxy $_download_proxy")"
+            curl -f -L -A "curl/7.68.0" --proxy "$_download_proxy" --noproxy '' --connect-timeout 20 --max-time 600 --progress-bar -o "$_out" "$_url"
+        else
+            ui_print "$(installer_text '>> 下载路由：未配置 HTTP 代理，使用设备网络/VPN 路由' '>> Download route: no HTTP proxy is configured; using device/VPN routing')"
+            curl -f -L -A "curl/7.68.0" --noproxy '*' --connect-timeout 20 --max-time 600 --progress-bar -o "$_out" "$_url"
+        fi
         return $?
     fi
     for _bb in /data/adb/ksu/bin/busybox /data/adb/ap/bin/busybox /data/adb/magisk/busybox busybox; do
         if [ -x "$_bb" ]; then
-            "$_bb" wget -U "curl/7.68.0" -T 30 -O "$_out" "$_url"
+            if [ -n "${https_proxy:-${http_proxy:-}}" ]; then
+                ui_print "$(installer_text ">> 下载路由：BusyBox wget 启用 HTTP 代理 ${https_proxy:-${http_proxy:-}}" ">> Download route: BusyBox wget enabled HTTP proxy ${https_proxy:-${http_proxy:-}}")"
+                "$_bb" wget -Y on -U "curl/7.68.0" -T 30 -O "$_out" "$_url"
+            else
+                ui_print "$(installer_text '>> 下载路由：未配置 HTTP 代理，使用设备网络/VPN 路由' '>> Download route: no HTTP proxy is configured; using device/VPN routing')"
+                "$_bb" wget -Y off -U "curl/7.68.0" -T 30 -O "$_out" "$_url"
+            fi
             return $?
         fi
     done
@@ -59,9 +72,6 @@ download_tarball() {
 }
 
 HOST_ARCH=$(detect_host_arch)
-if [ "$HOST_ARCH" = "unknown" ]; then
-    abort "Unsupported CPU architecture: $(uname -m 2>/dev/null)"
-fi
 
 if [ "$HOST_ARCH" = "x86_64" ]; then
     ROOTFS_ARCH="amd64"
@@ -83,8 +93,52 @@ ui_print "  AnCLI Bootstrap Installer ${MODULE_VERSION}"
 ui_print "============================================"
 ui_print ""
 
+# Language is the first installer choice. Create only the small input scratch
+# directory before asking; the normal setup banner follows the selection.
+mkdir -p "$ANCLI_DIR"
+read_container_key() {
+    _key_result=""
+    _key_file="$ANCLI_DIR/.container-key.$$"
+    : > "$_key_file" || return 1
+    /system/bin/getevent -ql > "$_key_file" 2>/dev/null &
+    _key_pid=$!
+    _wait=0
+    _timeout="${1:-20}"
+    while [ "$_wait" -lt "$_timeout" ]; do
+        _key_result=$(grep -m 1 -E 'KEY_(VOLUMEUP|VOLUMEDOWN).*DOWN' "$_key_file" 2>/dev/null)
+        [ -n "$_key_result" ] && break
+        kill -0 "$_key_pid" 2>/dev/null || break
+        /system/bin/sleep 1
+        _wait=$((_wait + 1))
+    done
+    kill "$_key_pid" 2>/dev/null || true
+    wait "$_key_pid" 2>/dev/null || true
+    rm -f "$_key_file"
+    [ -n "$_key_result" ]
+}
+ui_print "Select installer language / 选择安装语言"
+ui_print "Volume Up: 中文  |  Volume Down: English"
+if [ -x /system/bin/getevent ] && read_container_key 8; then
+    case "$_key_result" in *KEY_VOLUMEDOWN*) INSTALL_LANG="en" ;; *) INSTALL_LANG="zh" ;; esac
+else
+    INSTALL_LANG="zh"
+    ui_print "No key detected; defaulting to Chinese / 无按键输入，默认中文"
+fi
+installer_text() { if [ "$INSTALL_LANG" = en ]; then printf '%s' "$2"; else printf '%s' "$1"; fi; }
+installer_abort() {
+    _abort_zh="$1"; _abort_en="$2"; shift 2
+    if [ "$INSTALL_LANG" = en ]; then _abort_message=$(printf "$_abort_en" "$@"); else _abort_message=$(printf "$_abort_zh" "$@"); fi
+    abort "$_abort_message"
+}
+if [ "$HOST_ARCH" = "unknown" ]; then
+    installer_abort '不支持的 CPU 架构：%s' 'Unsupported CPU architecture: %s' "$(uname -m 2>/dev/null)"
+fi
+ui_print "--------------------------------------------"
+ui_print "$(installer_text '安装语言：中文' 'Installer language: English')"
+ui_print "--------------------------------------------"
+
 # 1. 创建运行目录与共享内存目录
-ui_print ">> Preparing directories..."
+ui_print "$(installer_text '>> 正在准备目录...' '>> Preparing directories...')"
 mkdir -p "$BIN_DIR" "$ANCLI_DIR/shm"
 # 挂载到容器 /dev/shm 的目录设为 1777（粘滞位），确保普通 shell 用户（uid 2000）可读写
 chmod 1777 "$ANCLI_DIR/shm" 2>/dev/null || true
@@ -97,6 +151,12 @@ if [ -f "$MODPATH/ancli/container-profiles.json" ]; then
     cp -f "$MODPATH/ancli/container-profiles.json" "$ANCLI_DIR/container-profiles.json"
     chmod 644 "$ANCLI_DIR/container-profiles.json" 2>/dev/null || true
 fi
+if [ -f "$MODPATH/container-profile-data.sh" ]; then
+    cp -f "$MODPATH/container-profile-data.sh" "$ANCLI_DIR/container-profile-data.sh"
+    chmod 644 "$ANCLI_DIR/container-profile-data.sh" 2>/dev/null || true
+else
+    installer_abort '缺少生成的容器规格清单' 'Generated container profile catalog is missing'
+fi
 if [ -f "$MODPATH/ancli/catalog-cache.json" ]; then
     cp -f "$MODPATH/ancli/catalog-cache.json" "$ANCLI_DIR/catalog-cache.json"
     chmod 644 "$ANCLI_DIR/catalog-cache.json" 2>/dev/null || true
@@ -106,14 +166,14 @@ if [ -f "$MODPATH/container-bootstrap.sh" ]; then
     cp -f "$MODPATH/container-bootstrap.sh" "$ANCLI_DIR/container-bootstrap.sh"
     chmod 755 "$ANCLI_DIR/container-bootstrap.sh"
 fi
-for _install_helper in install-network.sh install-transaction.sh node-setup.sh task-stop.sh container-mirror.sh; do
-    [ -f "$MODPATH/$_install_helper" ] || abort "Missing installer helper: $_install_helper"
-    cp -f "$MODPATH/$_install_helper" "$ANCLI_DIR/$_install_helper" || abort "Cannot deploy installer helper"
+for _install_helper in install-network.sh install-transaction.sh node-setup.sh task-stop.sh container-mirror.sh dsh-web-control.sh; do
+    [ -f "$MODPATH/$_install_helper" ] || installer_abort '缺少安装辅助脚本：%s' 'Missing installer helper: %s' "$_install_helper"
+    cp -f "$MODPATH/$_install_helper" "$ANCLI_DIR/$_install_helper" || installer_abort '无法部署安装辅助脚本' 'Could not deploy installer helper'
     chmod 755 "$ANCLI_DIR/$_install_helper" 2>/dev/null || true
 done
 . "$ANCLI_DIR/install-network.sh"
 . "$ANCLI_DIR/install-transaction.sh"
-ancli_cleanup_stale_rootfs || abort "Cannot remove abandoned installation staging directory"
+ancli_cleanup_stale_rootfs || installer_abort '无法清理遗留的安装暂存目录' 'Could not clean up the abandoned installation staging directory'
 
 if [ -f "$MODPATH/apt-key-compat.sh" ]; then
     cp -f "$MODPATH/apt-key-compat.sh" "$ANCLI_DIR/apt-key-compat.sh"
@@ -127,43 +187,22 @@ fi
 
 }
 deploy_installer_assets
+. "$ANCLI_DIR/container-profile-data.sh" || installer_abort '无法载入容器规格清单' 'Could not load the container profile catalog'
 
 # 1.2 容器尚未安装时始终提供选择，即使上次已经留下延后安装配置。
 # 已安装的 rootfs 保持原配置，不通过刷入流程覆盖用户环境。
-read_container_key() {
-    _key_result=""
-    _key_file="$ANCLI_DIR/.container-key.$$"
-    : > "$_key_file" || return 1
-    /system/bin/getevent -ql > "$_key_file" 2>/dev/null &
-    _key_pid=$!
-    _wait=0
-    while [ "$_wait" -lt 20 ]; do
-        # getevent also reports SYN, key release and unrelated input events.
-        # Only a key-down is a choice; keep listening through everything else.
-        _key_result=$(grep -m 1 -E 'KEY_(VOLUMEUP|VOLUMEDOWN|POWER).*DOWN' "$_key_file" 2>/dev/null)
-        [ -n "$_key_result" ] && break
-        kill -0 "$_key_pid" 2>/dev/null || break
-        /system/bin/sleep 1
-        _wait=$((_wait + 1))
-    done
-    kill "$_key_pid" 2>/dev/null || true
-    wait "$_key_pid" 2>/dev/null || true
-    rm -f "$_key_file"
-    [ -n "$_key_result" ]
-}
-
 # 旧版本或未完成的 rootfs 必须由用户选择保留修补或彻底清理。
 # The destructive path requires a second physical key confirmation.
 ancli_clean_for_reinstall() {
     [ "$ANCLI_DIR" = "/data/local/tmp/ancli" ] && [ "$ROOTFS" = "$ANCLI_DIR/rootfs" ] || return 1
     [ -d "$ANCLI_DIR" ] && [ ! -L "$ANCLI_DIR" ] && [ ! -L "$ROOTFS" ] || return 1
-    [ -r /proc/mounts ] || { ui_print ">> 无法检查挂载，已取消清理。"; return 1; }
+    [ -r /proc/mounts ] || { ui_print "$(installer_text '>> 无法检查挂载，已取消清理。' '>> Cannot inspect mounts; cleanup cancelled.')"; return 1; }
     if awk -v p="$ANCLI_DIR" '$2 == p || index($2, p "/") == 1 { found=1 } END { exit !found }' /proc/mounts; then
-        ui_print ">> 容器目录仍有挂载，已取消清理；请先卸载挂载后重试。"
+        ui_print "$(installer_text '>> 容器目录仍有挂载，已取消清理；请先卸载挂载后重试。' '>> The container directory is still mounted; cleanup cancelled. Unmount it and retry.')"
         return 1
     fi
     if ps -A -o ARGS 2>/dev/null | grep -q '[p]root.*\/data\/local\/tmp\/ancli\/rootfs'; then
-        ui_print ">> 容器仍在运行，已取消清理；请关闭容器进程后重试。"
+        ui_print "$(installer_text '>> 容器仍在运行，已取消清理；请关闭容器进程后重试。' '>> The container is still running; cleanup cancelled. Stop its processes and retry.')"
         return 1
     fi
     # Remove only wrappers referencing AnCLI's own directory.
@@ -177,48 +216,49 @@ ancli_clean_for_reinstall() {
     mkdir -p "$BIN_DIR" "$ANCLI_DIR/shm" || return 1
     chmod 1777 "$ANCLI_DIR/shm" 2>/dev/null || true
     deploy_installer_assets
-    ui_print ">> 旧容器和配置已清理，重新选择安装方式。"
+    ui_print "$(installer_text '>> 旧容器和配置已清理，重新选择安装方式。' '>> Old container and configuration removed; choose an installation mode again.')"
 }
 
 ancli_discard_empty_placeholder || true
 _repair_existing=false
 _existing_reason=""
+_existing_reason_en=""
 if [ -d "$ROOTFS" ] && [ -n "$(ls -A "$ROOTFS" 2>/dev/null)" ]; then
     _old_prop=/data/adb/modules/ancli/module.prop
     _old_version=$(sed -n 's/^version=//p' "$_old_prop" 2>/dev/null | head -n 1)
     if [ ! -f "$ROOTFS/bin/bash" ] || [ ! -f "$ROOTFS/usr/bin/python3" ]; then
-        _existing_reason="检测到未完成的容器"
+        _existing_reason="检测到未完成的容器"; _existing_reason_en="An incomplete container was detected"
     elif [ -z "$_old_version" ]; then
-        _existing_reason="检测到版本未知的已有容器"
+        _existing_reason="检测到版本未知的已有容器"; _existing_reason_en="A container with an unknown version was detected"
     elif [ "$_old_version" != "$MODULE_VERSION" ]; then
-        _existing_reason="检测到旧版容器（$_old_version）"
+        _existing_reason="检测到旧版容器（$_old_version）"; _existing_reason_en="An older container version was detected ($_old_version)"
     fi
 fi
 if [ -n "$_existing_reason" ]; then
     ui_print "--------------------------------"
-    ui_print "$_existing_reason"
-    ui_print "音量上：清理数据并重新选择规格"
-    ui_print "音量下：保留数据并尝试修补继续"
-    ui_print "20 秒无操作：保留数据并停止安装"
+    ui_print "$(installer_text "$_existing_reason" "$_existing_reason_en")"
+    ui_print "$(installer_text '音量上：清理数据并重新选择规格' 'Volume Up: clean the container and choose a profile again')"
+    ui_print "$(installer_text '音量下：保留数据并尝试修补继续' 'Volume Down: keep data and attempt a repair')"
+    ui_print "$(installer_text '20 秒无操作：保留数据并停止安装' 'No input for 20 seconds: keep data and stop installation')"
     if [ -x /system/bin/getevent ] && read_container_key; then
         case "$_key_result" in
             *KEY_VOLUMEUP*)
                 ui_print "--------------------------------"
-                ui_print "清理将删除容器、已安装工具、配置和密钥。"
-                ui_print "再次按音量上确认清理；音量下取消。"
+                ui_print "$(installer_text '清理将删除容器、已安装工具、配置和密钥。' 'Cleanup deletes the container, installed tools, configuration, and keys.')"
+                ui_print "$(installer_text '再次按音量上确认清理；音量下取消。' 'Press Volume Up again to confirm cleanup; Volume Down cancels.')"
                 if read_container_key && case "$_key_result" in *KEY_VOLUMEUP*) true ;; *) false ;; esac; then
-                    ancli_clean_for_reinstall || abort "清理未完成，安装已停止；请检查上方原因。"
+                    ancli_clean_for_reinstall || installer_abort '清理未完成，安装已停止；请检查上方原因。' 'Cleanup did not finish; installation stopped. See the reason above.'
                 else
-                    abort "已取消清理，保留现有数据并停止安装。"
+                    installer_abort '已取消清理，保留现有数据并停止安装。' 'Cleanup cancelled; existing data was kept and installation stopped.'
                 fi
                 ;;
             *KEY_VOLUMEDOWN*)
-                [ -f "$ROOTFS/bin/bash" ] || abort "容器缺少基础 shell，无法安全修补；请重新安装并选择清理，或手动备份恢复数据。"
-                _repair_existing=true; ui_print ">> 已选择保留数据并修补。" ;;
-            *) abort "未选择处理方式，保留数据并停止安装。" ;;
+                [ -f "$ROOTFS/bin/bash" ] || installer_abort '容器缺少基础 shell，无法安全修补；请重新安装并选择清理，或手动备份恢复数据。' 'The container is missing its base shell and cannot be repaired safely. Reinstall and choose cleanup, or back up and restore it manually.'
+                _repair_existing=true; ui_print "$(installer_text '>> 已选择保留数据并修补。' '>> Keep-data repair selected.')" ;;
+            *) installer_abort '未选择处理方式，保留数据并停止安装。' 'No recovery option selected; data was kept and installation stopped.' ;;
         esac
     else
-        abort "未检测到选择，保留数据并停止安装。"
+        installer_abort '未检测到选择，保留数据并停止安装。' 'No key selection detected; data was kept and installation stopped.'
     fi
     ui_print "--------------------------------"
 fi
@@ -233,53 +273,69 @@ if [ ! -f "$ROOTFS/bin/bash" ]; then
     if [ "$_config_exists" = true ]; then
         _saved_profile=$(sed -n 's/^[[:space:]]*"profile"[[:space:]]*:[[:space:]]*"\([^\"]*\)".*/\1/p' "$_config_file" | head -n 1)
         case "$_saved_profile" in minimal|standard|developer|full) _container_profile="$_saved_profile" ;; esac
-        ui_print ">> 发现已有容器配置，但容器尚未安装。"
+        ui_print "$(installer_text '>> 发现已有容器配置，但容器尚未安装。' '>> Existing container settings found, but the container is not installed.')"
     fi
     while :; do
     _return_to_mode=false
     _container_mode="deferred"
     if [ -x /system/bin/getevent ]; then
-        ui_print "选择容器安装方式：音量上=现在安装；音量下=稍后在 WebUI 安装。"
-        ui_print "20 秒无按键或按键不可用时，将保留配置并稍后安装。"
-        ui_print "刷入时默认使用国内镜像；选择 WebUI 安装可选择下载站点并测速。"
+        ui_print "$(installer_text '选择容器安装方式：音量上=现在安装；音量下=稍后在 WebUI 安装。' 'Container setup: Volume Up = install now; Volume Down = configure in WebUI later.')"
+        ui_print "$(installer_text '20 秒无按键或按键不可用时，将保留配置并稍后安装。' 'No input for 20 seconds: keep configuration and defer installation.')"
+        ui_print "$(installer_text '刷入时默认使用国内镜像；选择 WebUI 安装可选择下载站点并测速。' 'Flashing defaults to a China mirror; WebUI lets you choose and test download mirrors.')"
         if read_container_key; then
             case "$_key_result" in *KEY_VOLUMEUP*) _container_mode="installed" ;; esac
         else
-            ui_print ">> 未检测到音量按键，稍后在 WebUI 安装容器。"
+            ui_print "$(installer_text '>> 未检测到音量按键，稍后在 WebUI 安装容器。' '>> No volume key detected; defer container setup to WebUI.')"
         fi
     else
-        ui_print ">> 无法读取音量按键，稍后在 WebUI 安装容器。"
+        ui_print "$(installer_text '>> 无法读取音量按键，稍后在 WebUI 安装容器。' '>> Volume keys unavailable; defer container setup to WebUI.')"
     fi
     if [ "$_container_mode" = "installed" ]; then
-        case "$_container_profile" in minimal) _profile_index=1 ;; standard) _profile_index=2 ;; developer) _profile_index=3 ;; full) _profile_index=4 ;; esac
+        case "$_container_profile" in
+            minimal) _profile_index=1 ;;
+            standard) _profile_index=2 ;;
+            developer) _profile_index=3 ;;
+            full) _profile_index=4 ;;
+            *) _profile_index=2 ;;
+        esac
         ui_print ""
         ui_print "--------------------------------"
-        ui_print "选择 Ubuntu 容器规格"
-        ui_print "1 最小 Agent：Python、pip、Node.js、npm、Git、curl、证书"
-        ui_print "--------------------------------"
-        ui_print "2 标准（包含最小全部）：增加 zip、unzip"
-        ui_print "--------------------------------"
-        ui_print "3 开发（包含标准全部）：增加 build-essential、binutils、Java 17"
-        ui_print "--------------------------------"
-        ui_print "4 完整（包含开发全部）：增加 jq、ripgrep、less、file、procps、dnsutils、openssh-client、tmux、vim-tiny、fcitx5、fcitx5-chinese-addons"
-        ui_print "--------------------------------"
-        ui_print "5 返回上一级：重新选择安装方式"
-        ui_print "各规格的安装后占用待实测。"
-        ui_print "音量上：切换  |  音量下：确认安装"
-        ui_print "20 秒未操作则延后安装"
+        ui_print "$(installer_text '选择 Ubuntu 容器规格' 'Choose Ubuntu container profile')"
+        _profile_line=1
+        for _profile_id in minimal standard developer full; do
+            _profile_name_fn="ancli_profile_name_${INSTALL_LANG}"
+            _profile_desc_fn="ancli_profile_description_${INSTALL_LANG}"
+            _profile_label=$($_profile_name_fn "$_profile_id")
+            _profile_desc=$($_profile_desc_fn "$_profile_id")
+            _profile_display_packages=$(ancli_profile_display_packages "$_profile_id" "$INSTALL_LANG")
+            ui_print "${_profile_line}. ${_profile_label}"
+            ui_print "   ${_profile_desc}"
+            ui_print "   $(installer_text '包含软件包：' 'Packages: ')${_profile_display_packages}"
+            ui_print "--------------------------------"
+            _profile_line=$((_profile_line + 1))
+        done
+        ui_print "$(installer_text '5 返回上一级：重新选择安装方式' '5 Back: return to container setup mode')"
+        ui_print "$(installer_text '音量上：切换  |  音量下：确认安装' 'Volume Up: next  |  Volume Down: select')"
+        ui_print "$(installer_text '20 秒未操作则延后安装' 'No input for 20 seconds: defer installation')"
         ui_print "--------------------------------"
         while :; do
             case "$_profile_index" in
-                1) _profile_name="minimal"; _profile_label="精简" ;;
-                2) _profile_name="standard"; _profile_label="标准" ;;
-                3) _profile_name="developer"; _profile_label="开发" ;;
-                4) _profile_name="full"; _profile_label="完整" ;;
-                5) _profile_name="back"; _profile_label="返回上一级" ;;
+                1) _profile_name="minimal" ;;
+                2) _profile_name="standard" ;;
+                3) _profile_name="developer" ;;
+                4) _profile_name="full" ;;
+                5) _profile_name="back" ;;
             esac
-            ui_print "> 已选 [$_profile_index/5] $_profile_label"
+            if [ "$_profile_name" = back ]; then
+                _profile_label=$(installer_text '返回上一级' 'Back')
+            else
+                _profile_name_fn="ancli_profile_name_${INSTALL_LANG}"
+                _profile_label=$($_profile_name_fn "$_profile_name")
+            fi
+            ui_print "$(installer_text '> 已选' '> Selected') [$_profile_index/5] $_profile_label"
             if ! read_container_key; then
                 _container_mode="deferred"
-                ui_print ">> 未确认容器规格，稍后在 WebUI 安装。"
+                ui_print "$(installer_text '>> 未确认容器规格，稍后在 WebUI 安装。' '>> No profile selected; defer installation to WebUI.')"
                 break
             fi
             case "$_key_result" in
@@ -287,13 +343,13 @@ if [ ! -f "$ROOTFS/bin/bash" ]; then
                 *KEY_VOLUMEDOWN*)
                     if [ "$_profile_name" = "back" ]; then
                         _return_to_mode=true
-                        ui_print ">> 返回容器安装方式选择。"
+                        ui_print "$(installer_text '>> 返回容器安装方式选择。' '>> Returning to container setup mode.')"
                     else
                         _container_profile="$_profile_name"
-                        ui_print ">> 已确认：$_profile_label"
+                        ui_print "$(installer_text '>> 已确认：' '>> Selected: ')$_profile_label"
                     fi
                     ui_print "--------------------------------"; break ;;
-                *) _container_mode="deferred"; ui_print ">> 已取消，稍后在 WebUI 安装。"; break ;;
+                    *) _container_mode="deferred"; ui_print "$(installer_text '>> 已取消，稍后在 WebUI 安装。' '>> Cancelled; defer installation to WebUI.')"; break ;;
             esac
         done
     fi
@@ -310,11 +366,11 @@ if [ ! -f "$ROOTFS/bin/bash" ]; then
                 sed -e "s/\(\"profile\"[[:space:]]*:[[:space:]]*\"\)[^\"]*\"/\1$_container_profile\"/" \
                     -e 's/\("install_mode"[[:space:]]*:[[:space:]]*"\)[^"]*"/\1installed"/' \
                     -e "s/\(\"estimated_size_mb\"[[:space:]]*:[[:space:]]*\)[0-9][0-9]*/\1$_container_size/" \
-                    "$_config_file" > "$_config_file.tmp.$$" || abort "无法更新容器配置"
-                mv -f "$_config_file.tmp.$$" "$_config_file" || abort "无法保存容器配置"
+                    "$_config_file" > "$_config_file.tmp.$$" || installer_abort '无法更新容器配置' 'Could not update container configuration'
+                mv -f "$_config_file.tmp.$$" "$_config_file" || installer_abort '无法保存容器配置' 'Could not save container configuration'
                 chmod 600 "$_config_file" 2>/dev/null || true
             else
-                abort "已有容器配置不完整；请在 WebUI 中配置，未修改原配置。"
+                installer_abort '已有容器配置不完整；请在 WebUI 中配置，未修改原配置。' 'The existing container configuration is incomplete. Configure it in WebUI; the original was not changed.'
             fi
         fi
     else
@@ -323,9 +379,9 @@ if [ ! -f "$ROOTFS/bin/bash" ]; then
     fi
 else
     if [ -f "$ROOTFS/usr/bin/python3" ]; then
-        ui_print ">> 已检测到现有容器，保留原有数据和配置。"
+    ui_print "$(installer_text '>> 已检测到现有容器，保留原有数据和配置。' '>> Existing container found; keeping its data and configuration.')"
     else
-        ui_print ">> 检测到未完成的旧 rootfs，将保留数据并继续修复。"
+        ui_print "$(installer_text '>> 检测到未完成的旧 rootfs，将保留数据并继续修复。' '>> Incomplete rootfs found; keeping data and continuing with repair.')"
     fi
 fi
 
@@ -338,17 +394,17 @@ _container_profile=$(sed -n 's/^[[:space:]]*"profile"[[:space:]]*:[[:space:]]*"\
 if [ "$_container_mode" = "installed" ]; then
     _network_mode=$(sed -n 's/^[[:space:]]*"network_mode"[[:space:]]*:[[:space:]]*"\([^\"]*\)".*/\1/p' "$ANCLI_DIR/container-config.json" 2>/dev/null | head -n 1)
     _proxy_url=$(sed -n 's/^[[:space:]]*"proxy_url"[[:space:]]*:[[:space:]]*"\([^\"]*\)".*/\1/p' "$ANCLI_DIR/container-config.json" 2>/dev/null | head -n 1)
-    ancli_install_network "${_network_mode:-system}" "$_proxy_url" || abort "代理配置无效，请先在 WebUI 中检查网络设置"
+    ancli_install_network "${_network_mode:-system}" "$_proxy_url" || installer_abort '代理配置无效，请先在 WebUI 中检查网络设置' 'Proxy configuration is invalid. Check the network settings in WebUI first.'
 fi
 
 # 2. 从模块包部署静态编译的 PRoot 二进制
-ui_print ">> Detected host architecture: $HOST_ARCH (container: $ROOTFS_ARCH)"
-ui_print ">> Deploying PRoot for $HOST_ARCH..."
+ui_print "$(installer_text ">> 已检测主机架构：$HOST_ARCH（容器：$ROOTFS_ARCH）" ">> Detected host architecture: $HOST_ARCH (container: $ROOTFS_ARCH)")"
+ui_print "$(installer_text ">> 正在部署 $HOST_ARCH 版 PRoot..." ">> Deploying PRoot for $HOST_ARCH...")"
 install_runtime_file() {
     _src="$1"; _dst="$2"; _tmp="${_dst}.new.$$"
     cp -f "$_src" "$_tmp" && chmod 755 "$_tmp" && mv -f "$_tmp" "$_dst" || {
         rm -f "$_tmp"
-        abort "无法部署运行文件：$_dst"
+        installer_abort '无法部署运行文件：%s' 'Could not deploy runtime file: %s' "$_dst"
     }
 }
 if [ "$HOST_ARCH" = "x86_64" ]; then
@@ -361,7 +417,7 @@ if [ "$HOST_ARCH" = "x86_64" ]; then
     elif [ -f "$MODPATH/bin/proot" ]; then
         install_runtime_file "$MODPATH/bin/proot" "$BIN_DIR/proot"
     else
-        abort "缺少 x86_64 PRoot"
+        installer_abort '缺少 x86_64 PRoot' 'Missing x86_64 PRoot binary'
     fi
 else
     if [ -f "$MODPATH/bin/arm64/proot" ]; then
@@ -369,15 +425,15 @@ else
     elif [ -f "$MODPATH/bin/proot" ]; then
         install_runtime_file "$MODPATH/bin/proot" "$BIN_DIR/proot"
     else
-        abort "缺少 arm64 PRoot"
+        installer_abort '缺少 arm64 PRoot' 'Missing arm64 PRoot binary'
     fi
 fi
-ui_print ">> PRoot deployed successfully."
+ui_print "$(installer_text '>> PRoot 部署成功。' '>> PRoot deployed successfully.')"
 
 # A fresh install is built in a marked sibling directory. Only that directory
 # is removed on failure; an existing user rootfs is never deleted.
 if [ "$_container_mode" = "installed" ] && [ ! -f "$ROOTFS/bin/bash" ]; then
-    ancli_begin_rootfs || abort "无法创建容器安装临时目录（已有数据已保留）"
+    ancli_begin_rootfs || installer_abort '无法创建容器安装临时目录（已有数据已保留）' 'Could not create the container staging directory; existing data was kept.'
 fi
 ancli_install_abort() { ancli_rollback_rootfs; abort "$1"; }
 
@@ -386,15 +442,15 @@ ancli_install_abort() { ancli_rollback_rootfs; abort "$1"; }
 if [ -f "$ROOTFS/bin/bash" ]; then
     _existing_arch=$(get_rootfs_arch "$ROOTFS")
     if [ "$_existing_arch" != "none" ] && [ "$_existing_arch" != "$HOST_ARCH" ]; then
-        abort "Existing rootfs architecture ($_existing_arch) does not match host architecture ($HOST_ARCH)! Refusing to overwrite."
+        installer_abort '现有 rootfs 架构（%s）与主机架构（%s）不匹配；拒绝覆盖。' 'Existing rootfs architecture (%s) does not match host architecture (%s); refusing to overwrite.' "$_existing_arch" "$HOST_ARCH"
     fi
 fi
 
 if [ "$_container_mode" != "installed" ]; then
-    ui_print ">> Container installation deferred; configure it in WebUI."
+ui_print "$(installer_text '>> 容器安装已延后；请在 WebUI 中配置。' '>> Container installation deferred; configure it in WebUI.')"
 else
 if [ ! -f "$ROOTFS/bin/bash" ]; then
-    ui_print ">> Downloading Ubuntu Base ($ROOTFS_ARCH)..."
+    ui_print "$(installer_text ">> 正在下载 Ubuntu Base（$ROOTFS_ARCH）..." ">> Downloading Ubuntu Base ($ROOTFS_ARCH)...")"
     TAR_PATH="${ANCLI_ROOTFS_ARCHIVE:-$ANCLI_DIR/ubuntu-base.tar.gz}"
     success=0
     
@@ -404,7 +460,7 @@ if [ ! -f "$ROOTFS/bin/bash" ]; then
             "https://mirrors.tuna.tsinghua.edu.cn/${_path}" \
             "https://mirrors.ustc.edu.cn/${_path}" \
             "https://cdimage.ubuntu.com/${_path#ubuntu-cdimage/}"; do
-            ui_print ">> Trying mirror: $mirror"
+            ui_print "$(installer_text ">> 正在尝试镜像：$mirror" ">> Trying mirror: $mirror")"
             if download_tarball "$TAR_PATH" "$mirror" && [ -s "$TAR_PATH" ]; then
                 success=1
                 break 2
@@ -413,12 +469,12 @@ if [ ! -f "$ROOTFS/bin/bash" ]; then
     done
     
     if [ "$success" -ne 1 ]; then
-        ancli_install_abort "Failed to download Ubuntu Base ($ROOTFS_ARCH) from all available mirrors"
+        ancli_install_abort "$(installer_text "所有镜像均无法下载 Ubuntu Base（$ROOTFS_ARCH）" "Failed to download Ubuntu Base ($ROOTFS_ARCH) from all available mirrors")"
     fi
-    ui_print ">> Ubuntu Base downloaded successfully."
+    ui_print "$(installer_text '>> Ubuntu Base 下载完成。' '>> Ubuntu Base downloaded successfully.')"
 
-    ui_print ">> Extracting rootfs (this may take a minute)..."
-    tar -xf "$TAR_PATH" -C "$ROOTFS" || ancli_install_abort "Failed to extract rootfs (corrupted download?)"
+    ui_print "$(installer_text '>> 正在解压 rootfs（可能需要一些时间）...' '>> Extracting rootfs (this may take a minute)...')"
+    tar -xf "$TAR_PATH" -C "$ROOTFS" || ancli_install_abort "$(installer_text 'rootfs 解压失败，下载文件可能已损坏' 'Failed to extract rootfs; the downloaded archive may be corrupted')"
     rm -f "$TAR_PATH"
 
     # 初始化容器内 resolv.conf：优先写入宿主机 net.dns1/2，随后追加备用公共 DNS（去重且最多 3 条）
@@ -438,45 +494,49 @@ if [ ! -f "$ROOTFS/bin/bash" ]; then
         _dns_count=$((_dns_count + 1))
         [ "$_dns_count" -ge 3 ] && break
     done
-    ui_print ">> Rootfs extracted and configured."
+    ui_print "$(installer_text '>> Rootfs 已解压并完成配置。' '>> Rootfs extracted and configured.')"
 else
-    ui_print ">> Rootfs already present, skipping download."
+    ui_print "$(installer_text '>> Rootfs 已存在，跳过下载。' '>> Rootfs already present; skipping download.')"
 fi
 fi
 
 # Fix ARM64 PRoot access checks before APT reads its signed keyring.
 if [ "$_container_mode" = "installed" ] && [ -f "$ROOTFS/bin/bash" ]; then
-    sh "$ANCLI_DIR/apt-key-compat.sh" "$ROOTFS" || ancli_install_abort "APT keyring compatibility setup failed"
+    sh "$ANCLI_DIR/apt-key-compat.sh" "$ROOTFS" || ancli_install_abort "$(installer_text 'APT 密钥环兼容性配置失败' 'APT keyring compatibility setup failed')"
 fi
 
 # 4. 通过 PRoot 引导或补齐容器内 APT 基础依赖（带幂等检查）
 PROOT_CMD="$BIN_DIR/proot -r $ROOTFS -b /dev -b /proc -b /sys -b $ANCLI_DIR -w /root"
 
-# APT 依赖脚本生成（幂等）：基础工具链 = python/git/node + Java 17 + binutils
+# APT 依赖脚本生成（幂等）；软件包清单与安装菜单、WebUI 共用 container-profiles.json。
 # Java 17 供 jadx 等反编译工具；binutils 提供 strings/readelf/objdump；
 # 并解锁 PEP 668（Ubuntu 24.04 默认拒绝 pip install）以允许直接 pip 装库。
-case "$_container_profile" in
-    minimal) _profile_packages="ca-certificates curl python3 python3-pip git nodejs npm" ;;
-    standard) _profile_packages="ca-certificates curl python3 python3-pip git nodejs npm zip unzip" ;;
-    developer) _profile_packages="ca-certificates curl python3 python3-pip git nodejs npm zip unzip build-essential binutils openjdk-17-jre-headless" ;;
-    full) _profile_packages="ca-certificates curl python3 python3-pip git nodejs npm zip unzip build-essential binutils openjdk-17-jre-headless jq ripgrep less file procps dnsutils openssh-client tmux vim-tiny fcitx5 fcitx5-chinese-addons" ;;
-    *) _container_profile="standard"; _profile_packages="ca-certificates curl python3 python3-pip git nodejs npm zip unzip" ;;
-esac
+_profile_packages=$(ancli_profile_packages "$_container_profile") || installer_abort '无效的容器规格：%s' 'Invalid container profile: %s' "$_container_profile"
 write_setup_script() {
+    _setup_proxy_exports=""
+    if [ -n "${http_proxy:-}" ]; then
+        _setup_proxy_exports="export http_proxy='${http_proxy}' https_proxy='${https_proxy:-${http_proxy}}' HTTP_PROXY='${HTTP_PROXY:-${http_proxy}}' HTTPS_PROXY='${HTTPS_PROXY:-${https_proxy:-${http_proxy}}}'"
+    fi
     cat > "$ROOTFS/root/setup.sh" << SETUP
 #!/bin/bash
 set -eu
 export DEBIAN_FRONTEND=noninteractive
 export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 export TMPDIR=/tmp
+$_setup_proxy_exports
 
 # PRoot 环境下配置 APT sandbox 为 root，实现安全规范的 GPG 签名校验
 mkdir -p /etc/apt/apt.conf.d
+if [ -n "\${http_proxy:-}" ]; then
+    printf 'Acquire::http::Proxy "%s";\n' "\$http_proxy" > /etc/apt/apt.conf.d/99ancli-proxy
+    printf 'Acquire::https::Proxy "%s";\n' "\${https_proxy:-\$http_proxy}" >> /etc/apt/apt.conf.d/99ancli-proxy
+fi
 echo 'APT::Sandbox::User "root";' > /etc/apt/apt.conf.d/01sandbox
 apt-get update -y
 apt-get install -y --no-install-recommends \\
     $_profile_packages
 apt-get clean
+rm -f /etc/apt/apt.conf.d/99ancli-proxy
 /bin/sh /data/local/tmp/ancli/node-setup.sh
 
 # 移除 PEP 668 限制标记并配置清华 PyPI 镜像，允许在容器系统 Python 中直接 pip install
@@ -487,7 +547,9 @@ SETUP
 }
 
 if [ "$_container_mode" = "installed" ] && ! $PROOT_CMD /usr/bin/python3 --version >/dev/null 2>&1; then
-    ui_print ">> 安装容器规格 ${_container_profile} 所需的 APT 软件包..."
+    _profile_name_fn="ancli_profile_name_${INSTALL_LANG}"
+    _profile_install_name=$($_profile_name_fn "$_container_profile")
+    ui_print "$(installer_text ">> 正在安装容器规格“$_profile_install_name”所需的软件包..." ">> Installing packages for container profile '$_profile_install_name'...")"
 
     # 宿主机侧预先替换 Ubuntu APT 源为国内镜像（使用 http 避免初期无 ca-certificates 时校验报错）
     if [ "$APT_REPO_TYPE" = "main" ]; then
@@ -511,36 +573,36 @@ if [ "$_container_mode" = "installed" ] && ! $PROOT_CMD /usr/bin/python3 --versi
         sed -i "s|http://ports.ubuntu.com/ubuntu-ports|http://${UBUNTU_MIRROR}/ubuntu-ports|g" \
             "$ROOTFS/etc/apt/sources.list" 2>/dev/null || true
     fi
-    ui_print ">> APT mirror: ${UBUNTU_MIRROR} ($APT_REPO_TYPE)"
+    ui_print "$(installer_text ">> APT 镜像：${UBUNTU_MIRROR}（$APT_REPO_TYPE）" ">> APT mirror: ${UBUNTU_MIRROR} ($APT_REPO_TYPE)")"
 
     write_setup_script
-    $PROOT_CMD /root/setup.sh || ancli_install_abort "APT bootstrap failed"
-    sh "$ANCLI_DIR/apt-key-compat.sh" "$ROOTFS" || ancli_install_abort "APT keyring compatibility setup failed"
+    $PROOT_CMD /root/setup.sh || ancli_install_abort "$(installer_text 'APT 引导安装失败' 'APT bootstrap failed')"
+    sh "$ANCLI_DIR/apt-key-compat.sh" "$ROOTFS" || ancli_install_abort "$(installer_text 'APT 密钥环兼容性配置失败' 'APT keyring compatibility setup failed')"
     rm -f "$ROOTFS/root/setup.sh"
-    ui_print ">> Dependencies installed successfully."
+    ui_print "$(installer_text '>> 依赖安装成功。' '>> Dependencies installed successfully.')"
 elif [ "$_container_mode" = "installed" ]; then
-    ui_print ">> Dependencies already installed, skipping APT."
+    ui_print "$(installer_text '>> 依赖已安装，跳过 APT。' '>> Dependencies already installed; skipping APT.')"
     # 模块覆盖升级路径：若旧版 rootfs 缺失新版本追加的 Java 17 或 binutils，则幂等补装
     if [ "$_repair_existing" = true ] || ! $PROOT_CMD /usr/bin/python3 --version >/dev/null 2>&1; then
-        ui_print ">> 修补所选规格的软件包和 Node.js..."
+        ui_print "$(installer_text '>> 正在补齐所选规格的软件包和 Node.js...' '>> Repairing the selected profile packages and Node.js...')"
         write_setup_script
         if $PROOT_CMD /root/setup.sh; then
-            sh "$ANCLI_DIR/apt-key-compat.sh" "$ROOTFS" || ancli_install_abort "APT keyring compatibility setup failed"
-            ui_print ">> Base toolchain backfill complete."
+        sh "$ANCLI_DIR/apt-key-compat.sh" "$ROOTFS" || ancli_install_abort "$(installer_text 'APT 密钥环兼容性配置失败' 'APT keyring compatibility setup failed')"
+        ui_print "$(installer_text '>> 基础工具链补齐完成。' '>> Base toolchain repair complete.')"
         else
-            ui_print ">> [WARN] Backfill failed — run 'ancli repair' or reinstall the module."
+        ui_print "$(installer_text ">> [警告] 补齐失败；请运行 'ancli repair' 或重新安装模块。" ">> [WARN] Repair failed; run 'ancli repair' or reinstall the module.")"
         fi
         rm -f "$ROOTFS/root/setup.sh"
     fi
 fi
 
 if [ -n "${ANCLI_ROOTFS_STAGE:-}" ]; then
-    ancli_commit_rootfs || ancli_install_abort "无法提交容器安装；已有数据未被覆盖"
+    ancli_commit_rootfs || ancli_install_abort "$(installer_text '无法提交容器安装；已有数据未被覆盖' 'Could not commit the container installation; existing data was not overwritten')"
 fi
 
 # 4b. 确保 /usr/local 目录结构存在（Ubuntu Base 24.04 默认不带 /usr/local/lib/node_modules，npm -g 依赖它）
 if [ "$_container_mode" = "installed" ] || [ -f "$ROOTFS/bin/bash" ]; then
-ui_print ">> Ensuring npm global install paths..."
+ui_print "$(installer_text '>> 正在设置 npm 全局安装路径...' '>> Ensuring npm global install paths...')"
 mkdir -p "$ROOTFS/usr/local/bin" \
          "$ROOTFS/usr/local/sbin" \
          "$ROOTFS/usr/local/lib/node_modules" \
@@ -550,11 +612,11 @@ chmod 755 "$ROOTFS/usr/local/bin" \
           "$ROOTFS/usr/local/sbin" \
           "$ROOTFS/usr/local/lib" \
           "$ROOTFS/usr/local/lib/node_modules"
-ui_print ">> npm paths ready."
+ui_print "$(installer_text '>> npm 路径已就绪。' '>> npm paths ready.')"
 fi
 
 # 5. 部署 AnCLI 核心脚本、环境桥接脚本、宿主机 bash 兼容模板与运行时上下文模板
-ui_print ">> Deploying AnCLI Core..."
+ui_print "$(installer_text '>> 正在部署 AnCLI 核心...' '>> Deploying AnCLI Core...')"
 cp "$MODPATH/ancli/ancli-core.py" "$BIN_DIR/ancli-core.py"
 cp "$MODPATH/ancli/ancli_env.sh" "$BIN_DIR/ancli_env.sh"
 chmod 755 "$BIN_DIR/ancli-core.py" "$BIN_DIR/ancli_env.sh"
@@ -614,14 +676,14 @@ for INSTANT_BIN in /data/adb/ksu/bin /data/adb/ap/bin; do
         if [ "$replace_host_bash" -eq 1 ]; then
             cp -f "$MODPATH/ancli/bash-host-compat" "$host_bash"
             chmod 755 "$host_bash"
-            ui_print ">> AGY host bash compatibility: $host_bash"
+ui_print "$(installer_text ">> AGY 宿主 bash 兼容入口：$host_bash" ">> AGY host bash compatibility: $host_bash")"
         fi
     fi
 
     # 注入主命令 ancli
     cp "$MODPATH/system/bin/ancli" "$INSTANT_BIN/ancli"
     chmod 755 "$INSTANT_BIN/ancli"
-    ui_print ">> Instant access: $INSTANT_BIN/ancli"
+ui_print "$(installer_text ">> 快捷命令：$INSTANT_BIN/ancli" ">> Instant access: $INSTANT_BIN/ancli")"
 
     # 为注册表中的每个工具预置占位入口（后续由 ancli install / ancli repair 生成真实包装器）
     if [ -f "$REGISTRY_FILE" ]; then
@@ -639,7 +701,7 @@ for INSTANT_BIN in /data/adb/ksu/bin /data/adb/ap/bin; do
                     printf 'exec sh "$target" "$@"\n'
                 } > "$placeholder"
                 chmod 755 "$placeholder"
-                ui_print ">> Pre-seeded placeholder: $INSTANT_BIN/$exe"
+ui_print "$(installer_text ">> 已创建命令占位入口：$INSTANT_BIN/$exe" ">> Created command placeholder: $INSTANT_BIN/$exe")"
             fi
         done
     fi
@@ -655,6 +717,6 @@ fi
 
 ui_print ""
 ui_print "=========================================="
-ui_print "  Installation complete!"
-ui_print "  Type 'ancli' in any root shell to start."
+ui_print "$(installer_text '  安装完成！' '  Installation complete!')"
+ui_print "$(installer_text "  在任意 root 终端输入 'ancli' 启动。" "  Type 'ancli' in any root shell to start.")"
 ui_print "=========================================="

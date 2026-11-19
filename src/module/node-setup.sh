@@ -12,7 +12,20 @@ node_tmp=$(mktemp -d /tmp/ancli-node.XXXXXX)
 trap 'rm -rf "$node_tmp"' EXIT HUP INT TERM
 for base in "https://registry.npmmirror.com/-/binary/node/${NODE_VERSION}" "https://nodejs.org/dist/${NODE_VERSION}"; do
     echo ">> Downloading Node ${NODE_VERSION} ($node_arch)..."
-    if curl -fLsS --connect-timeout 20 --max-time 600 --speed-limit 32768 --speed-time 30 "$base/$node_file" -o "$node_tmp/$node_file"; then
+    if [ -n "${https_proxy:-${http_proxy:-}}" ]; then
+        echo ">> Download route: explicit HTTP proxy ${https_proxy:-${http_proxy:-}}"
+        if curl -fLsS --proxy "${https_proxy:-${http_proxy:-}}" --noproxy '' --connect-timeout 20 --max-time 600 --speed-limit 32768 --speed-time 30 "$base/$node_file" -o "$node_tmp/$node_file"; then
+            actual=$(sha256sum "$node_tmp/$node_file" | cut -d' ' -f1)
+            if [ -n "$expected" ] && [ "$expected" = "$actual" ]; then
+                tar -xzf "$node_tmp/$node_file" -C /usr/local --strip-components=1
+                hash -r
+                node --version
+                npm --version
+                exit 0
+            fi
+            echo '[X] Node checksum mismatch' >&2
+        fi
+    elif curl -fLsS --noproxy '*' --connect-timeout 20 --max-time 600 --speed-limit 32768 --speed-time 30 "$base/$node_file" -o "$node_tmp/$node_file"; then
         actual=$(sha256sum "$node_tmp/$node_file" | cut -d' ' -f1)
         if [ -n "$expected" ] && [ "$expected" = "$actual" ]; then
             tar -xzf "$node_tmp/$node_file" -C /usr/local --strip-components=1

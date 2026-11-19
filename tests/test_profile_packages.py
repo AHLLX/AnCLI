@@ -11,6 +11,10 @@ def test_flash_and_webui_profile_packages_agree():
         assert f'{profile}) echo "{expected}"' in bootstrap
         assert f'{profile}) _profile_packages="{expected}"' in flash
     assert all(name in catalog['minimal']['packages'] for name in ('nodejs','npm','python3','python3-pip'))
+    assert 'adb' not in catalog['minimal']['packages']
+    assert 'adb' not in catalog['standard']['packages']
+    assert 'adb' in catalog['developer']['packages']
+    assert 'adb' in catalog['full']['packages']
     previous = set()
     for profile in ('minimal','standard','developer','full'):
         current = set(catalog[profile]['packages'])

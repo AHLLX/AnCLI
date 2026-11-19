@@ -36,6 +36,8 @@ KernelSU_install_log_*.log
 
 # WebUI screenshot harness scratch (build.js itself is committed)
 .webui-preview/chrome-profile/
+.webui-preview/chrome-profile-*/
+.webui-preview/ui.xml
 .webui-preview/preview-*.html
 .webui-preview/shot-*.png
 

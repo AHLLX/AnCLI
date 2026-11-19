@@ -10,7 +10,7 @@ const install = script.slice(script.indexOf('async function installContainerFrom
 function setup(result) {
   const calls = [], notices = [];
   const ctx = vm.createContext({ busy: 0, ANCLI: 'ancli', uiLang: 'zh', uiText: k => k,
-    document: {getElementById: id => id === 'setContainerProfile' ? {value:'standard'} : {disabled:true}},
+    document: {getElementById: id => id === 'setContainerProfile' ? {value:'standard'} : (id === 'taskConsole' ? {scrollIntoView() {}} : {disabled:true})},
     setBusy: () => () => {}, toast: (...args) => notices.push(args),
     runBackground: async cmd => {calls.push(cmd); return {status:'done'};},
     loadContainerSettings: async () => result, loadStatus: async () => { calls.push('status'); },

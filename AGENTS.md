@@ -6,9 +6,9 @@ Welcome, fellow AI Assistant. If you are reading this, you have been tasked with
 AnCLI is a unified, systemless environment manager and plugin-based installer designed to bring full Linux command-line tools (like Node.js, Go, or Python-based AI agents) to rooted Android devices.
 Because Android uses the Bionic C library, native Linux binaries often crash. AnCLI solves this by using `proot` to run a pure Ubuntu `glibc` base system transparently on Android.
 
-## 当前交接（2026-11-18，v1.2.642-beta）
+## 当前交接（2026-11-19，v1.2.651-beta）
 
-- 当前工作区版本 `v1.2.642-beta` 使用 `versionCode=54`；平板竖屏布局和 Codex 强制退出恢复尚未在真机上回归。
+- 当前工作区版本 `v1.2.651-beta` 使用 `versionCode=63`；PRoot 启动 PATH 包含 KSU/APatch 即时命令目录，使 Agent 的 `bash -c` 可解析兼容入口并使用 `ancli android shell` 桥接。应用按钮默认执行官方版本检查，发现更新后才显示“更新”，本地完整性探测失败时显示“修复”。容器安装失败会保留安全标记的检查点，下次安装可续装并显示目标规格已安装/待补齐软件包。
 - 保持单一 `proot-ubuntu` 后端。容器内提供原生 `/usr/local/bin/ancli`，宿主 bash 兼容入口仍使用 `$MODPATH/system/bin/bash`（Path A）和 `/data/adb/ksu/bin/bash`、`/data/adb/ap/bin/bash`（Path B）。
 - 容器 wrapper 的 PATH 仍为 `/usr/local/bin:/usr/bin:/bin:/data/adb/ksu/bin:/data/adb/ap/bin:/system/bin`，`/system/bin` 只能作为 Android 安全只读工具的回退路径。
 - PRoot 容器命令不能启用 Linux User Namespace 或 Seccomp sandbox；Android 内核下会产生 `EINVAL`。不要引入嵌套 PRoot。

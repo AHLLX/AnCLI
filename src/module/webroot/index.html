@@ -78,9 +78,8 @@ body {
   position: sticky; top: 8px; z-index: 20;
   display: flex; align-items: center; justify-content: space-between; gap: 10px;
   padding: calc(10px + env(safe-area-inset-top)) 16px 10px;
-  background: color-mix(in srgb, var(--surface) 86%, transparent);
-  backdrop-filter: blur(12px) saturate(1.4);
-  -webkit-backdrop-filter: blur(12px) saturate(1.4);
+  /* Keep the sticky header cheap to composite on Android WebView. */
+  background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--r-lg);
   box-shadow: var(--shadow-sm);
@@ -114,6 +113,7 @@ body.ime-open .topbar { backdrop-filter: none; -webkit-backdrop-filter: none; ba
 }
 .seg button.active { background: var(--surface); color: var(--text); box-shadow: var(--shadow-sm); }
 .lang-seg { margin-left: auto; }
+button, select { touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
 
 /* ============================ 布局 ============================ */
 .wrap {
@@ -153,6 +153,7 @@ body.ime-open .topbar { backdrop-filter: none; -webkit-backdrop-filter: none; ba
 .btn svg { width: 15px; height: 15px; flex: none; }
 .btn:hover:not(:disabled) { background: var(--surface-2); border-color: var(--border-strong); }
 .btn:active:not(:disabled) { background: var(--surface-3); }
+.btn:active:not(:disabled) { transform: translateY(1px) scale(.99); }
 .btn:disabled { opacity: .5; cursor: default; }
 .btn.primary { background: var(--accent); border-color: transparent; color: var(--accent-ink); font-weight: 600; }
 .btn.primary:hover:not(:disabled) { background: color-mix(in srgb, var(--accent) 88%, #000 12%); border-color: transparent; }
@@ -329,7 +330,8 @@ body.ime-open .topbar { backdrop-filter: none; -webkit-backdrop-filter: none; ba
   padding: 20px 14px; background: rgba(12, 14, 18, .48);
   opacity: 0; visibility: hidden; pointer-events: none;
   transition: opacity .18s ease, visibility 0s linear .18s;
-  backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px);
+  /* Keep full-screen settings transitions cheap on older Android WebViews. */
+  backdrop-filter: none; -webkit-backdrop-filter: none;
   box-sizing: border-box; overflow-y: auto;
 }
 .overlay.show {
@@ -343,7 +345,7 @@ body.ime-open .topbar { backdrop-filter: none; -webkit-backdrop-filter: none; ba
   background: var(--surface); border: 1px solid var(--border);
   border-radius: var(--r-lg); box-shadow: var(--shadow);
   transform: scale(0.96) translateY(8px);
-  transition: transform .22s cubic-bezier(0.16, 1, 0.3, 1), opacity .22s ease;
+  transition: transform .15s cubic-bezier(0.16, 1, 0.3, 1), opacity .15s ease;
   min-width: 0; overflow: hidden; box-sizing: border-box; flex-shrink: 0;
 }
 .overlay.show .dialog { transform: scale(1) translateY(0); }
@@ -365,6 +367,9 @@ body.ime-open .topbar { backdrop-filter: none; -webkit-backdrop-filter: none; ba
 }
 .dlg-foot .btn { min-width: 84px; }
 .guide-intro { color: var(--muted); margin-bottom: 12px; }
+.guide-page[hidden] { display: none; }
+.guide-page-title { margin: 0 0 8px; font-size: 14px; font-weight: 650; }
+.guide-page-indicator { color: var(--faint); font-size: 12px; min-width: 44px; text-align: center; }
 .guide-steps { display: grid; gap: 10px; }
 .guide-step { display: grid; grid-template-columns: 28px minmax(0, 1fr); gap: 9px; align-items: start; padding: 11px; border: 1px solid var(--border); border-radius: var(--r); background: var(--surface-2); }
 .guide-step-num { display: grid; place-items: center; width: 24px; height: 24px; border-radius: 50%; background: var(--accent-soft); color: var(--accent); font-weight: 700; }
@@ -493,7 +498,7 @@ body.ime-open .topbar { backdrop-filter: none; -webkit-backdrop-filter: none; ba
   padding: 6px 2px;
   border-radius: var(--r-sm);
   cursor: pointer;
-  transition: all .15s ease;
+  transition: color .15s ease, background-color .15s ease, box-shadow .15s ease;
   text-align: center;
   white-space: nowrap;
   overflow: hidden;
@@ -526,7 +531,7 @@ body.ime-open .topbar { backdrop-filter: none; -webkit-backdrop-filter: none; ba
   width: 500%;
   max-width: 500%;
   height: 100%;
-  transition: transform 0.28s cubic-bezier(0.22, 1, 0.36, 1);
+  transition: transform 0.16s cubic-bezier(0.22, 1, 0.36, 1);
   will-change: transform;
 }
 .settings-panel {
@@ -701,6 +706,29 @@ body.ime-open .topbar { backdrop-filter: none; -webkit-backdrop-filter: none; ba
   align-items: center;
   margin-bottom: 6px;
 }
+.mirror-ping-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; margin-top: 7px; }
+.mirror-ping-card { min-width: 0; padding: 7px 5px; border: 1px solid var(--border); border-radius: 11px; background: var(--surface-2); text-align: center; }
+.mirror-ping-name { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); font-size: 11px; font-weight: 600; }
+.mirror-ping-value { display: block; margin-top: 2px; color: var(--muted); font-size: 10px; font-variant-numeric: tabular-nums; }
+.mirror-ping-value.ok { color: var(--ok); }
+.mirror-ping-value.fail { color: var(--danger); }
+.proxy-inline-badge { margin-left: 6px; color: var(--ok); font-size: 11px; font-weight: 600; overflow-wrap: anywhere; }
+.proxy-inline-badge[hidden] { display: none; }
+.stop-loading { display: inline-flex; align-items: center; gap: 7px; }
+.stop-spinner { width: 13px; height: 13px; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: stopSpin .7s linear infinite; }
+@keyframes stopSpin { to { transform: rotate(360deg); } }
+.proxy-probe-card { margin-top: 9px; padding: 10px; border: 1px solid var(--border); border-radius: var(--r-sm); background: var(--surface-2); }
+.proxy-probe-verdict { margin-bottom: 8px; padding: 8px 10px; border-radius: 8px; font-size: 12px; font-weight: 650; }
+.proxy-probe-verdict.ok { color: var(--ok); background: color-mix(in srgb, var(--ok) 10%, var(--surface)); }
+.proxy-probe-verdict.warn { color: var(--warn); background: color-mix(in srgb, var(--warn) 12%, var(--surface)); }
+.proxy-probe-verdict.fail { color: var(--danger); background: color-mix(in srgb, var(--danger) 10%, var(--surface)); }
+.proxy-probe-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px 10px; }
+.proxy-probe-item { display: flex; align-items: flex-start; gap: 7px; min-width: 0; color: var(--muted); font-size: 11px; line-height: 1.4; overflow-wrap: anywhere; }
+.proxy-probe-led { width: 8px; height: 8px; margin-top: 3px; flex: 0 0 auto; border-radius: 50%; background: var(--faint); }
+.proxy-probe-item.ok .proxy-probe-led { background: var(--ok); box-shadow: 0 0 0 2px color-mix(in srgb, var(--ok) 18%, transparent); }
+.proxy-probe-item.warn .proxy-probe-led { background: var(--warn); box-shadow: 0 0 0 2px color-mix(in srgb, var(--warn) 18%, transparent); }
+.proxy-probe-item.fail .proxy-probe-led { background: var(--danger); box-shadow: 0 0 0 2px color-mix(in srgb, var(--danger) 18%, transparent); }
+@media (max-width: 420px) { .proxy-probe-grid { grid-template-columns: 1fr; } }
 .setting-select {
   flex: 0 0 auto;
   width: auto;
@@ -757,6 +785,8 @@ body.ime-open .topbar { backdrop-filter: none; -webkit-backdrop-filter: none; ba
   background: var(--surface-2);
   color: var(--faint);
 }
+.proxy-badge.header-proxy-badge { max-width: 150px; font-size: 10px; }
+@media (max-width: 619px) { .proxy-badge.header-proxy-badge { max-width: 92px; padding: 2px 6px; } }
 .proxy-input {
   margin-top: 8px;
 }
@@ -886,6 +916,7 @@ body.ime-open .settings-viewport { min-height: 0; }
       <b>AnCLI</b>
       <small id="stVer">…</small>
     </span>
+    <span class="proxy-badge disconnected header-proxy-badge" id="mainProxyBadge" role="status" aria-live="polite" data-i18n="proxyDetecting" title="代理检测中">代理检测中</span>
   </div>
   <div class="seg" id="themeSwitch" role="group" aria-label="主题">
     <button data-theme="auto" data-i18n="autoTheme">自动</button>
@@ -977,6 +1008,7 @@ body.ime-open .settings-viewport { min-height: 0; }
       </button>
     </div>
     <div class="dlg-body">
+      <section class="guide-page" id="welcomeGuidePage1">
       <p class="guide-intro" data-i18n="welcomeGuideIntro">通过终端启动 AnCLI 或 AI 工具前，请先切换到 root 权限。</p>
       <div class="guide-steps">
         <div class="guide-step">
@@ -995,8 +1027,24 @@ body.ime-open .settings-viewport { min-height: 0; }
         </div>
       </div>
       <p class="guide-note" data-i18n="welcomeGuideNote">需要管理应用或调整配置时，再运行 ancli 打开管理菜单。只使用当前 WebUI 页面不需要另开终端。</p>
+      </section>
+      <section class="guide-page" id="welcomeGuidePage2" hidden>
+        <h4 class="guide-page-title" data-i18n="welcomeGuideSandboxTitle">Agent 沙盒与权限提示</h4>
+        <p class="guide-intro" data-i18n="welcomeGuideSandboxIntro">如果 AI 工具报告沙盒无法启动、命令被沙盒拦截或隔离初始化失败，请在该工具的权限设置中切换运行权限。</p>
+        <div class="guide-steps">
+          <div class="guide-step"><span class="guide-step-num">1</span><div><p data-i18n="welcomeGuideSandboxStep1">打开该工具的权限或沙盒设置，将运行权限切换为：</p><code class="guide-command">Full Access / 完全访问</code></div></div>
+          <div class="guide-step"><span class="guide-step-num">2</span><div><p data-i18n="welcomeGuideSandboxStep2">重新运行刚才的命令。不同工具的设置入口名称可能不同。</p></div></div>
+        </div>
+        <p class="guide-note" data-i18n="welcomeGuideSandboxNote">Android PRoot 无法提供某些 Linux 沙盒所需的内核隔离能力，安装 bubblewrap 也不能补上缺少的能力。Full Access 会关闭该工具自身的沙盒，请只在信任的工作区使用；它只适用于沙盒隔离导致的问题。</p>
+      </section>
     </div>
-    <div class="dlg-foot"><span class="spacer"></span><button type="button" class="btn primary" id="welcomeGuideDone" data-i18n="welcomeGuideDone">知道了</button></div>
+    <div class="dlg-foot">
+      <button type="button" class="btn" id="welcomeGuidePrev" data-i18n="welcomeGuidePrev" disabled>上一步</button>
+      <span class="guide-page-indicator" id="welcomeGuidePageIndicator" aria-live="polite">1 / 2</span>
+      <span class="spacer"></span>
+      <button type="button" class="btn primary" id="welcomeGuideNext" data-i18n="welcomeGuideNext">下一步</button>
+      <button type="button" class="btn primary" id="welcomeGuideDone" data-i18n="welcomeGuideDone" hidden>知道了</button>
+    </div>
   </div>
 </div>
 
@@ -1089,7 +1137,7 @@ body.ime-open .settings-viewport { min-height: 0; }
                 <span class="setting-icon" aria-hidden="true">▣</span>
                 <div class="setting-item-text">
                   <b data-i18n="containerProfile">容器规格</b>
-                  <small id="setContainerHint" data-i18n="containerProfileHint">选择 Ubuntu 工具链与预计占用</small>
+                  <small id="setContainerHint"></small>
                 </div>
               </div>
               <select id="setContainerProfile" class="setting-select">
@@ -1099,10 +1147,9 @@ body.ime-open .settings-viewport { min-height: 0; }
             </div>
 
             <div class="setting-item wrap">
-              <div class="setting-item-left"><span class="setting-icon" aria-hidden="true">⇩</span><div class="setting-item-text"><b>容器下载站点</b><small>仅用于 Ubuntu 容器基础镜像和软件包，不改变 Agent 下载源。</small></div></div>
+              <div class="setting-item-left"><span class="setting-icon" aria-hidden="true">⇩</span><div class="setting-item-text"><b>容器下载站点</b><small>仅用于 Ubuntu 容器基础镜像和软件包。下方显示各站点 Ping 延迟。</small></div></div>
               <select id="setContainerMirror" class="setting-select"><option value="tuna">清华镜像（国内）</option><option value="ustc">中科大镜像（国内）</option><option value="official">Ubuntu 官方（国外）</option></select>
-              <button type="button" class="btn xs" id="btnMirrorSpeed">测试选中站点速度</button>
-              <small id="mirrorSpeedResult" class="hint" role="status">最多下载 1 MiB，测试后自动删除。</small>
+              <div class="mirror-ping-grid" data-mirror-pings role="status" aria-live="polite"></div>
             </div>
 
             <div class="setting-item wrap">
@@ -1145,7 +1192,7 @@ body.ime-open .settings-viewport { min-height: 0; }
               <div class="setting-item-left">
                 <span class="setting-icon" aria-hidden="true">⇄</span>
                 <div class="setting-item-text">
-                  <b data-i18n="proxyMode">代理模式</b>
+                  <b data-i18n="proxyMode">代理模式</b><span class="proxy-inline-badge" id="setProxyIpBadge" hidden></span>
                   <small data-i18n="proxyModeHint">网络连接策略</small>
                 </div>
               </div>
@@ -1158,7 +1205,7 @@ body.ime-open .settings-viewport { min-height: 0; }
 
             <div style="margin-top: 10px;">
               <button type="button" class="btn xs" id="btnProxyProbe">手动检测网络 / 代理</button>
-              <div class="hint" id="proxyProbeResult" role="status" style="white-space:pre-line;margin-top:8px;"></div>
+              <div id="proxyProbeResult" role="status" aria-live="polite"></div>
             </div>
 
             <div class="fields" id="setProxyUrlField" style="margin-top: 8px;">
@@ -1844,7 +1891,7 @@ function updateBusyUI() {
   document.body.classList.toggle('busy', busy > 0);
   const spin = document.getElementById('busySpin');
   if (spin) spin.hidden = busy === 0;
-  ['btnCheck', 'btnRefresh', 'btnRepair', 'btnContainerInstall', 'btnUninstallModule', 'repairConfirm', 'resetApply', 'uninstallApply', 'uninstAppConfirm'].forEach(id => {
+  ['btnCheck', 'btnRefresh', 'btnRepair', 'btnContainerInstall', 'btnInitInstall', 'btnUninstallModule', 'repairConfirm', 'resetApply', 'uninstallApply', 'uninstAppConfirm'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.disabled = busy > 0;
   });
@@ -2273,6 +2320,11 @@ async function runDetached(cmd) {
   return logFile;
 }
 
+let dshBackendState = 'unknown';
+let dshBackendUrl = '';
+let dshBackendProbe = null;
+const DSH_LOG_FILE_POINTER = '/data/local/tmp/ancli/.dsh-web.logfile';
+
 function shQuote(value) {
   return "'" + String(value).replace(/'/g, "'\\''") + "'";
 }
@@ -2282,8 +2334,93 @@ async function dshPortInUse() {
   return r.code === 0;
 }
 
+async function probeDshBackend() {
+  if (dshBackendProbe) return dshBackendProbe;
+  dshBackendProbe = (async () => {
+    if (!(await dshPortInUse())) return { state: 'stopped', url: '' };
+    // The DSH process can keep port 3080 open while its request handler is
+    // blocked. A listening socket alone is not enough to expose the UI link.
+    const r = await execCmd("code=$(curl --noproxy 127.0.0.1 -sS --connect-timeout 1 --max-time 3 -o /dev/null -w '%{http_code}' http://127.0.0.1:3080/ 2>/dev/null); case \"$code\" in [1-5][0-9][0-9]) printf '%s' \"$code\";; *) printf timeout;; esac");
+    const responds = /^[1-5][0-9][0-9]$/.test((r.stdout || '').trim());
+    const url = responds ? await dshUrlFromLog() : '';
+    return { state: responds && url ? 'running' : 'unresponsive', url };
+  })().finally(() => { dshBackendProbe = null; });
+  return dshBackendProbe;
+}
+
+async function refreshDshBackendState(render = true) {
+  if (!currentApps.some(a => a.id === 'dsh' && a.installed)) return;
+  try {
+    const result = await probeDshBackend();
+    const changed = dshBackendState !== result.state || dshBackendUrl !== result.url;
+    dshBackendState = result.state;
+    dshBackendUrl = result.url;
+    if (changed && render && currentApps.length) renderApps(currentApps);
+  } catch (e) {
+    dshBackendState = 'unknown';
+    dshBackendUrl = '';
+  }
+}
+
+async function startDshBackend() {
+  const tag = Date.now() + '_' + Math.floor(Math.random() * 100000);
+  const logFile = TASK_LOG_DIR + tag + '.log';
+  const r = await execCmd('/system/bin/sh /data/local/tmp/ancli/dsh-web-control.sh start ' + tag + ' ' + shQuote(logFile));
+  if (r.code !== 0) throw new Error('启动命令失败（exit ' + r.code + '）');
+  logLine('$ dsh web --no-open  （后台启动）', 'cmd');
+  logLine('服务输出：' + logFile, 'dim');
+  const deadline = Date.now() + 30000;
+  while (Date.now() < deadline) {
+    const result = await probeDshBackend();
+    dshBackendState = result.state;
+    dshBackendUrl = result.url;
+    if (result.state === 'running') return;
+    await sleep(1000);
+  }
+  const result = await probeDshBackend();
+  dshBackendState = result.state;
+  dshBackendUrl = result.url;
+  if (result.state !== 'running') throw new Error(result.state === 'unresponsive' ? 'DSH 占用端口但没有响应；可以停止后端再重启。' : 'DSH 后端启动超时，请检查输出日志：' + logFile);
+}
+
+async function stopDshBackend() {
+  const tag = Date.now() + '_' + Math.floor(Math.random() * 100000);
+  const stopLog = '/data/local/tmp/ancli/.dsh-web-stop_' + tag + '.log';
+  const stopExit = stopLog + '.exit';
+  const stopExitTmp = stopExit + '.tmp';
+  const worker = '/system/bin/sh /data/local/tmp/ancli/dsh-web-control.sh stop; rc=$?; printf "%s\\n" "$rc" > ' +
+    shQuote(stopExitTmp) + ' && mv -f ' + shQuote(stopExitTmp) + ' ' + shQuote(stopExit) + '; exit "$rc"';
+  const launch = 'rm -f ' + shQuote(stopExit) + ' ' + shQuote(stopExitTmp) + '; nohup /system/bin/sh -c ' +
+    shQuote(worker) + ' > ' + shQuote(stopLog) + ' 2>&1 </dev/null &';
+  const launched = await execCmd(launch);
+  if (launched.code !== 0) throw new Error('无法提交 DSH 后端停止任务（exit ' + launched.code + '）');
+  logLine('停止请求已提交，等待后端释放端口…', 'dim');
+  const deadline = Date.now() + 20000;
+  while (Date.now() < deadline) {
+    const status = await execCmd('if [ -f ' + shQuote(stopExit) + ' ]; then cat ' + shQuote(stopExit) + '; else printf pending; fi');
+    const result = (status.stdout || '').trim();
+    if (result && result !== 'pending') {
+      if (!/^\d{1,3}$/.test(result) || result !== '0') {
+        const details = strip((await execCmd('cat ' + shQuote(stopLog) + ' 2>/dev/null')).stdout || '').trim();
+        throw new Error(details || 'DSH 后端停止失败（exit ' + result + '），日志：' + stopLog);
+      }
+      if (!(await dshPortInUse())) {
+        const details = strip((await execCmd('cat ' + shQuote(stopLog) + ' 2>/dev/null')).stdout || '').trim();
+        if (details) logLine(details, 'dim');
+        await execCmd('rm -f ' + [stopLog, stopExit, stopExitTmp].map(shQuote).join(' '));
+        dshBackendState = 'stopped';
+        dshBackendUrl = '';
+        return;
+      }
+    }
+    await sleep(400);
+  }
+  throw new Error('停止仍在后台执行，页面保持可用；请稍后刷新 DSH 状态。日志：' + stopLog);
+}
+
 async function dshUrlFromLog(logFile) {
-  const file = logFile || (await execCmd("ls -t /data/local/tmp/ancli/.webui_launch_*.log 2>/dev/null | head -1")).stdout.trim();
+  const pointer = await execCmd('cat ' + shQuote(DSH_LOG_FILE_POINTER) + ' 2>/dev/null');
+  const file = logFile || (pointer.stdout || '').trim() || (await execCmd("ls -t /data/local/tmp/ancli/.webui_launch_*.log 2>/dev/null | head -1")).stdout.trim();
   if (!file) return '';
   const r = await execCmd("grep -Eo 'https?://127\\.0\\.0\\.1:3080/\\?token=[^[:space:]]+' " + shQuote(file) + " 2>/dev/null | tail -1");
   return strip(r.stdout || '').trim();
@@ -2394,6 +2531,7 @@ async function readApps() {
     checkTtl = supportsCheck ? data.check_ttl : 0;
     if (data.ancli_version) document.getElementById('stVer').textContent = 'v' + String(data.ancli_version).replace(/^v/i, '');
     renderApps(currentApps);
+    void refreshDshBackendState();
     renderCheckInfo();
   } catch (e) {
     if (!currentApps.length) wrap.innerHTML = '<div class="empty">加载失败：' + esc(e.message || e) + '</div>';
@@ -2438,7 +2576,7 @@ function renderCheckInfo() {
 
 const UI_TEXT = {
   zh: { check: '检查更新', refresh: '刷新', repair: '修复环境', settings: '设置', tools: '工具', output: '输出', proxy: '代理',
-    copyAll: '复制全部', clear: '清空输出', follow: '自动滚动到底部', notChecked: '尚未检查', install: '安装', update: '更新',
+    copyAll: '复制全部', clear: '清空输出', follow: '自动滚动到底部', notChecked: '尚未检查', install: '安装', update: '更新', checkUpdate: '更新检查',
     config: '配置', uninstall: '卸载', openWeb: '打开 Web UI', copyCommand: '复制命令', running: '运行中', done: '完成', failed: '失败', cancel: '取消', save: '保存', close: '关闭', footer: 'AnCLI · Android CLI 环境管理器',
     tabGeneral: '常规', tabProxy: '代理', tabLogs: '日志', tabReset: '重置', tabAbout: '关于',
     aboutDesc: '统一的 Android 命令行与 AI Agent 环境管理器',
@@ -2482,6 +2620,12 @@ const UI_TEXT = {
     welcomeGuideStep2: '进入 root 终端后，直接输入对应命令启动 Agent：',
     welcomeGuideNote: '需要管理应用或调整配置时，再运行 ancli 打开管理菜单。只使用当前 WebUI 页面不需要另开终端。',
     welcomeGuideCodex: 'Codex', welcomeGuideAntigravity: '反重力', welcomeGuideDone: '知道了',
+    welcomeGuidePrev: '上一步', welcomeGuideNext: '下一步',
+    welcomeGuideSandboxTitle: 'Agent 沙盒与权限提示',
+    welcomeGuideSandboxIntro: '如果 AI 工具报告沙盒无法启动、命令被沙盒拦截或隔离初始化失败，请在该工具的权限设置中切换运行权限。',
+    welcomeGuideSandboxStep1: '打开该工具的权限或沙盒设置，将运行权限切换为：',
+    welcomeGuideSandboxStep2: '重新运行刚才的命令。不同工具的设置入口名称可能不同。',
+    welcomeGuideSandboxNote: 'Android PRoot 无法提供某些 Linux 沙盒所需的内核隔离能力，安装 bubblewrap 也不能补上缺少的能力。Full Access 会关闭该工具自身的沙盒，请只在信任的工作区使用；它只适用于沙盒隔离导致的问题。',
     languageSetting: '语言', languageHint: '界面文本', themeSetting: '主题', themeHint: '页面外观', installedCount: '已安装', updatesCount: '可更新', updateBadge: '更新', updateAvailable: '检测到渠道更新',
     agentMemorySetting: 'Agent 全局记忆', agentMemoryHint: 'AGENTS.md 与环境探测',
     agentMemoryEnabled: '添加（推荐）', agentMemoryDisabled: '不添加（纯净模式）',
@@ -2491,11 +2635,11 @@ const UI_TEXT = {
     memSkipTitle: '不添加（纯净模式）', memSkipDesc: '不写入全局 AGENTS.md 文件，由用户或项目自主管理',
     confirm: '确认',
     backend: '运行后端', dataChannel: '数据通道', effectiveCwd: '生效目录', proxyStatus: '代理状态',
-    containerProfile: '容器规格', containerProfileHint: '选择 Ubuntu 工具链与预计占用', containerInstall: '容器状态', containerInstallAction: '安装 / 应用规格', containerInstallStarting: '正在安装或应用容器规格…', containerInstallFailed: '容器安装失败，请查看输出日志',
+    containerProfile: '容器规格', containerInstall: '容器状态', containerInstallAction: '安装 / 应用规格', containerInstallStarting: '正在安装或应用容器规格…', containerInstallFailed: '容器安装失败，请查看输出日志',
     defaultCwd: '默认工作目录', cwdHint: '从 / 启动工具时使用；必须是容器内存在的绝对路径。留空使用 /root。',
     proxyHint: '直接填写 IP:端口（如 192.168.1.10:7890）；直连模式清除工具代理。',
     proxyMode: '代理模式', proxyModeHint: '网络连接策略', manualProxyAddress: '代理地址',
-    proxyConnected: '已连接', proxyDisconnected: '未连接',
+    proxyConnected: '已连接', proxyDisconnected: '未连接', proxyDetecting: '代理检测中…',
     systemProxy: '系统自动探测', manualProxy: '手动指定', directProxy: '直连',
     autoTheme: '自动', lightTheme: '浅色', darkTheme: '深色',
     prootBackend: 'Ubuntu / PRoot', ready: '就绪', missing: '缺失', deployed: '已部署', unavailable: '不可用', notMounted: '未挂载', unknown: '未知',
@@ -2512,7 +2656,7 @@ const UI_TEXT = {
     factoryResetReinstall: '清除后重新配置环境', factoryResetReinstallHint: '保留清理前的应用清单，在干净 PRoot 中重新安装；不会恢复 API key、代理和应用配置。',
     factoryResetConfirmLabel: '输入 RESET 继续', factoryResetAction: '完全初始化', resetStarting: '正在初始化环境…', resetInvalid: '请输入 RESET 才能继续', resetDone: '环境已初始化，请重新安装需要的应用', resetDoneReinstall: '环境已清理并重新安装原应用，密钥和代理未恢复' },
   en: { check: 'Check updates', refresh: 'Refresh', repair: 'Repair', settings: 'Settings', tools: 'Tools', output: 'Output', proxy: 'Proxy',
-    copyAll: 'Copy all', clear: 'Clear output', follow: 'Follow output', notChecked: 'Not checked', install: 'Install', update: 'Update',
+    copyAll: 'Copy all', clear: 'Clear output', follow: 'Follow output', notChecked: 'Not checked', install: 'Install', update: 'Update', checkUpdate: 'Check update',
     config: 'Configure', uninstall: 'Uninstall', openWeb: 'Open Web UI', copyCommand: 'Copy command', running: 'Running', done: 'Done', failed: 'Failed', cancel: 'Cancel', save: 'Save', close: 'Close', footer: 'AnCLI · Android CLI environment manager',
     tabGeneral: 'General', tabProxy: 'Proxy', tabLogs: 'Logs', tabReset: 'Reset', tabAbout: 'About',
     aboutDesc: 'Unified CLI and AI Agent environment manager for Android',
@@ -2556,6 +2700,12 @@ const UI_TEXT = {
     welcomeGuideStep2: 'Once you are at a root prompt, enter the command for the Agent you want to start:',
     welcomeGuideNote: 'Run ancli to manage installed apps or change settings. You do not need another terminal just to use this WebUI.',
     welcomeGuideCodex: 'Codex', welcomeGuideAntigravity: 'Antigravity', welcomeGuideDone: 'Got it',
+    welcomeGuidePrev: 'Back', welcomeGuideNext: 'Next',
+    welcomeGuideSandboxTitle: 'Agent sandbox and permissions',
+    welcomeGuideSandboxIntro: 'If an AI tool cannot start its sandbox, blocks a command, or fails to initialize isolation, change its execution permission in that tool’s settings.',
+    welcomeGuideSandboxStep1: 'Open the tool’s permission or sandbox settings and switch its execution permission to:',
+    welcomeGuideSandboxStep2: 'Retry the command. The settings entry can have a different name in each tool.',
+    welcomeGuideSandboxNote: 'Android PRoot cannot provide some kernel isolation features required by Linux sandboxes; installing bubblewrap cannot add missing kernel capabilities. Full Access disables the tool’s own sandbox, so use it only in a trusted workspace. This applies to sandbox isolation errors.',
     languageSetting: 'Language', languageHint: 'Interface text', themeSetting: 'Theme', themeHint: 'Page appearance', installedCount: 'Installed', updatesCount: 'Updates', updateBadge: 'Update', updateAvailable: 'Channel update available',
     agentMemorySetting: 'Agent global memory', agentMemoryHint: 'AGENTS.md and environment probe',
     agentMemoryEnabled: 'Add (Recommended)', agentMemoryDisabled: 'Do not add (Clean mode)',
@@ -2568,7 +2718,7 @@ const UI_TEXT = {
     defaultCwd: 'Default working directory', cwdHint: 'Used when a tool starts from /. Use an absolute path inside the container; blank uses /root.',
     proxyHint: 'Enter IP:port (e.g. 192.168.1.10:7890); direct mode clears tool proxy variables.',
     proxyMode: 'Proxy mode', proxyModeHint: 'Network routing policy', manualProxyAddress: 'Proxy address',
-    proxyConnected: 'Connected', proxyDisconnected: 'Not connected',
+    proxyConnected: 'Connected', proxyDisconnected: 'Not connected', proxyDetecting: 'Detecting proxy…',
     systemProxy: 'System detection', manualProxy: 'Manual', directProxy: 'Direct',
     autoTheme: 'Auto', lightTheme: 'Light', darkTheme: 'Dark',
     prootBackend: 'Ubuntu / PRoot', ready: 'Ready', missing: 'Missing', deployed: 'Deployed', unavailable: 'Unavailable', notMounted: 'Not mounted', unknown: 'Unknown',
@@ -2583,7 +2733,7 @@ const UI_TEXT = {
     factoryReset: 'Factory reset environment', factoryResetTitle: 'Restore the clean Agent environment from the module',
      factoryResetHint: 'Delete installed apps, secrets, config, skills, memory and logs while keeping the Ubuntu container, profile and module payload. Reinstall tools after the reset.',
      factoryResetWarning: 'This cannot be undone. It deletes container apps, secrets, config, skills, Agent memory and all old logs; the Ubuntu container, profile and AnCLI module files remain.',
-     containerProfile: 'Container profile', containerProfileHint: 'Choose the Ubuntu toolchain and estimated size', containerInstall: 'Container status', containerInstallAction: 'Install / apply profile', containerInstallStarting: 'Installing or applying the container profile…', containerInstallFailed: 'Container installation failed; see the output log',
+     containerProfile: 'Container profile', containerInstall: 'Container status', containerInstallAction: 'Install / apply profile', containerInstallStarting: 'Installing or applying the container profile…', containerInstallFailed: 'Container installation failed; see the output log',
     factoryResetReinstall: 'Reinstall the previous environment', factoryResetReinstallHint: 'Keep the pre-reset app list and reinstall it in the clean PRoot; API keys, proxy settings and app config are not restored.',
     factoryResetConfirmLabel: 'Type RESET to continue', factoryResetAction: 'Factory reset', resetStarting: 'Resetting environment…', resetInvalid: 'Type RESET to continue', resetDone: 'Environment reset; reinstall the tools you need', resetDoneReinstall: 'Environment reset and previous apps reinstalled; secrets and proxy settings were not restored' }
 };
@@ -2622,6 +2772,15 @@ function applyLanguage(lang) {
   if (cwdHint) cwdHint.textContent = uiText('cwdHint');
   const proxyHint = document.getElementById('setProxyHint');
   if (proxyHint) proxyHint.textContent = uiText('proxyHint');
+  const mirrorOptions = {
+    tuna: uiLang === 'en' ? 'Tsinghua mirror (China)' : '清华镜像（国内）',
+    ustc: uiLang === 'en' ? 'USTC mirror (China)' : '中科大镜像（国内）',
+    official: uiLang === 'en' ? 'Ubuntu official (international)' : 'Ubuntu 官方（国外）'
+  };
+  ['setContainerMirror', 'initContainerMirror'].forEach(id => {
+    const select = document.getElementById(id);
+    if (select) Array.from(select.options).forEach(option => { if (mirrorOptions[option.value]) option.textContent = mirrorOptions[option.value]; });
+  });
   document.querySelectorAll('#langSwitch button').forEach(b => b.classList.toggle('active', b.dataset.lang === uiLang));
   const themeSwitch = document.getElementById('themeSwitch');
   if (themeSwitch) themeSwitch.setAttribute('aria-label', uiText('themeSetting'));
@@ -2634,6 +2793,12 @@ function applyLanguage(lang) {
   renderContainerProfileOptions();
   // 2026-11-16：语言切换时同步首页更新提示，避免徽章继续显示旧语言。
   syncModuleUpdateIndicatorText();
+  if (lastProxyCheck) updateMainProxyBadge(lastProxyCheck.proxyUrl, lastProxyCheck.mode, lastProxyCheck.vpn, lastProxyCheck.proxyUrl ? lastProxyCheck.proxyOk : null);
+  else if (latestStatus) updateMainProxyBadge(latestStatus.detected_proxy || '', latestStatus.proxy_mode || 'system', null);
+  else {
+    const headerBadge = document.getElementById('mainProxyBadge');
+    if (headerBadge) headerBadge.title = uiText('proxyDetecting');
+  }
   try { localStorage.setItem('ancli_lang', uiLang); } catch (e) { /* ignore */ }
 }
 document.querySelectorAll('#langSwitch button').forEach(b => {
@@ -2701,21 +2866,21 @@ function buildContainerInitCardHtml() {
       '</div>' +
       '<div class="field">' +
         '<label>' + (uiLang === 'en' ? 'Container download site' : '容器下载站点') + '</label>' +
-        '<select id="initContainerMirror" class="setting-select" style="max-width:none;width:100%;text-align:left;">' +
-          '<option value="tuna"' + (curMirror === 'tuna' ? ' selected' : '') + '>清华镜像（国内）</option>' +
-          '<option value="ustc"' + (curMirror === 'ustc' ? ' selected' : '') + '>中科大镜像（国内）</option>' +
-          '<option value="official"' + (curMirror === 'official' ? ' selected' : '') + '>Ubuntu 官方（国外）</option>' +
+        '<select id="initContainerMirror" class="setting-select" style="max-width:none;text-align:left;">' +
+            '<option value="tuna"' + (curMirror === 'tuna' ? ' selected' : '') + '>' + (uiLang === 'en' ? 'Tsinghua mirror (China)' : '清华镜像（国内）') + '</option>' +
+            '<option value="ustc"' + (curMirror === 'ustc' ? ' selected' : '') + '>' + (uiLang === 'en' ? 'USTC mirror (China)' : '中科大镜像（国内）') + '</option>' +
+            '<option value="official"' + (curMirror === 'official' ? ' selected' : '') + '>' + (uiLang === 'en' ? 'Ubuntu official (international)' : 'Ubuntu 官方（国外）') + '</option>' +
         '</select>' +
-        '<button type="button" class="btn xs" id="initMirrorSpeed">测试选中站点速度</button>' +
-        '<div class="hint" id="initMirrorSpeedResult">最多下载 1 MiB，测试后自动删除；只影响容器。</div>' +
+        '<div class="mirror-ping-grid" data-mirror-pings role="status" aria-live="polite"></div>' +
       '</div>' +
       '<div class="field">' +
-        '<label>' + (uiLang === 'en' ? 'Network Mode' : '网络模式') + '</label>' +
+        '<label>' + (uiLang === 'en' ? 'Network Mode' : '网络模式') + '<span class="proxy-inline-badge" id="initProxyIpBadge" hidden></span></label>' +
         '<select id="initNetworkMode" class="setting-select" style="max-width: none; width: 100%; text-align: left;">' +
           '<option value="system"' + (curNet === 'system' ? ' selected' : '') + '>' + (uiLang === 'en' ? 'System Proxy (Recommended)' : '跟随系统代理（推荐）') + '</option>' +
           '<option value="manual"' + (curNet === 'manual' ? ' selected' : '') + '>' + (uiLang === 'en' ? 'Manual HTTP Proxy' : '手动 HTTP 代理') + '</option>' +
           '<option value="direct"' + (curNet === 'direct' ? ' selected' : '') + '>' + (uiLang === 'en' ? 'Direct (No Proxy)' : '直连（不走代理）') + '</option>' +
         '</select>' +
+        '<small class="hint" id="initProxyAutoStatus">' + (uiLang === 'en' ? 'Detecting current proxy automatically…' : '正在自动检测当前代理…') + '</small>' +
       '</div>' +
       '<div class="field" id="initProxyUrlField" style="display: ' + (curNet === 'manual' ? 'block' : 'none') + ';">' +
         '<label>' + (uiLang === 'en' ? 'Proxy URL' : '代理地址') + '</label>' +
@@ -2734,8 +2899,7 @@ function wireContainerInitCard() {
   const hintEl = document.getElementById('initContainerHint');
   const selNet = document.getElementById('initNetworkMode');
   const selMirror = document.getElementById('initContainerMirror');
-  const speedButton = document.getElementById('initMirrorSpeed');
-  if (speedButton) speedButton.onclick = () => { void measureContainerMirror(true); };
+  scheduleMirrorPingRefresh();
   const proxyField = document.getElementById('initProxyUrlField');
   const proxyInput = document.getElementById('initProxyUrl');
   const updateHint = () => {
@@ -2745,27 +2909,42 @@ function wireContainerInitCard() {
     if (p) hintEl.textContent = containerProfileDetails(p, selProf.value);
   };
   if (selProf) {
-    selProf.onchange = async () => {
-      updateHint();
-      await ancli('container set --profile=' + selProf.value + ' --network=' + (selNet ? selNet.value : 'system'), true);
-    };
+    selProf.onchange = updateHint;
     updateHint();
   }
   if (selNet) {
-    selNet.onchange = async () => {
+    selNet.onchange = () => {
       if (proxyField) proxyField.style.display = selNet.value === 'manual' ? 'block' : 'none';
-      await ancli('container set --profile=' + (selProf ? selProf.value : 'standard') + ' --network=' + selNet.value, true);
+      updateProxyIpBadges(selNet.value === 'manual' ? (proxyInput?.value.trim() || '') : (selNet.value === 'direct' ? '' : lastDetectedProxyUrl), selNet.value);
     };
+    updateProxyIpBadges(lastDetectedProxyUrl, selNet.value);
   }
+  if (proxyInput) proxyInput.addEventListener('input', () => {
+    if (selNet?.value === 'manual') updateProxyIpBadges(proxyInput.value.trim(), 'manual');
+  });
   const btnInst = document.getElementById('btnInitInstall');
   if (btnInst) {
     btnInst.onclick = async () => {
-      if (selNet && selNet.value === 'manual' && proxyInput && proxyInput.value.trim()) {
-        await ancli('config --set proxy_mode=manual --set proxy_url=' + encodeURIComponent(proxyInput.value.trim()));
+      if (btnInst.disabled) return;
+      const originalText = btnInst.textContent;
+      btnInst.disabled = true;
+      btnInst.textContent = uiLang === 'en' ? 'Preparing…' : '正在准备…';
+      document.getElementById('taskConsole')?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+      try {
+        if (selNet && selNet.value === 'manual' && proxyInput && proxyInput.value.trim()) {
+          await ancli('config --set proxy_mode=manual --set proxy_url=' + encodeURIComponent(proxyInput.value.trim()));
+        }
+        if (selProf && selNet) {
+          await ancli('container set --profile=' + selProf.value + ' --network=' + selNet.value + ' --mirror=' + (selMirror ? selMirror.value : 'tuna'), true);
+        }
+      } catch (e) {
+        toast(uiLang === 'en' ? 'Could not save container settings; see output.' : '容器设置保存失败，请查看输出。', 'err');
+        btnInst.disabled = false;
+        btnInst.textContent = originalText;
+        return;
       }
-      if (selProf && selNet) {
-        await ancli('container set --profile=' + selProf.value + ' --network=' + selNet.value + ' --mirror=' + (selMirror ? selMirror.value : 'tuna'), true);
-      }
+      btnInst.disabled = false;
+      btnInst.textContent = originalText;
       void installContainerFromUi(selProf ? selProf.value : 'standard', selMirror ? selMirror.value : 'tuna');
     };
   }
@@ -2819,7 +2998,7 @@ function renderApps(apps) {
     let state = 'idle';
 
     if (a.installed) {
-      if (a.active) {
+      if (a.active && a.integrity_ok !== false) {
         state = a.update_available ? 'update' : 'installed';
         const ver = (a.installed_version && a.installed_version !== 'unknown') ? ' v' + esc(a.installed_version) : '';
         chips.push('<span class="chip' + (a.version_verified ? ' ok' : ' warn') + '"><span class="dot"></span>' + (uiLang === 'en' ? 'Installed' : '已安装') + ver +
@@ -2854,11 +3033,29 @@ function renderApps(apps) {
     if (!a.installed) {
       btns.push('<button class="btn xs primary" data-act="install">' + esc(uiText('install')) + '</button>');
     } else {
-      btns.push('<button class="btn xs' + (a.update_available ? ' primary' : '') + '" data-act="update" title="' +
-                esc((uiLang === 'en' ? 'Get the latest from the official source: ' : '从官方源拉取最新：') + (a.update_cmd || ('ancli update ' + a.id))) + '">更新</button>');
-      btns[btns.length - 1] = btns[btns.length - 1].replace('>更新</button>', '>' + esc(uiText('update')) + '</button>');
+      const integrityIssue = a.active === false || a.integrity_ok === false;
+      const updateLabel = integrityIssue ? (uiLang === 'en' ? 'Repair' : '修复') : (a.update_available ? uiText('update') : uiText('checkUpdate'));
+      btns.push('<button class="btn xs' + (a.update_available || integrityIssue ? ' primary' : '') + '" data-act="update" title="' +
+                esc(integrityIssue
+                  ? (uiLang === 'en' ? 'Repair incomplete installation: ' : '修复未完成的安装：') + (a.update_cmd || ('ancli update ' + a.id))
+                  : (uiLang === 'en' ? 'Check the official version: ' : '检查官方版本：') + (a.update_cmd || ('ancli update ' + a.id))) + '">' + esc(updateLabel) + '</button>');
       if (hasEnv) btns.push('<button class="btn xs" data-act="config">' + esc(uiText('config')) + '</button>');
-      if (a.launch && a.launch.mode === 'web' && a.launch.command) {
+      if (a.id === 'dsh' && a.launch && a.launch.mode === 'web') {
+        if (dshBackendState === 'running') {
+          btns.push('<button class="btn xs primary" data-act="dsh-open">' + esc(uiText('openWeb')) + '</button>');
+          btns.push('<button class="btn xs" data-act="dsh-stop">' + (uiLang === 'en' ? 'Stop backend' : '停止后端') + '</button>');
+        } else if (dshBackendState === 'unresponsive') {
+          btns.push('<button class="btn xs primary" data-act="dsh-restart">' + (uiLang === 'en' ? 'Restart backend' : '重启后端') + '</button>');
+          btns.push('<button class="btn xs" data-act="dsh-stop">' + (uiLang === 'en' ? 'Stop backend' : '停止后端') + '</button>');
+        } else if (dshBackendState === 'starting' || dshBackendState === 'stopping') {
+          const progressText = dshBackendState === 'starting'
+            ? (uiLang === 'en' ? 'Starting…' : '正在启动…')
+            : (uiLang === 'en' ? 'Stopping…' : '正在停止…');
+          btns.push('<button class="btn xs" disabled><span class="stop-loading"><span class="stop-spinner" aria-hidden="true"></span>' + esc(progressText) + '</span></button>');
+        } else {
+          btns.push('<button class="btn xs primary" data-act="dsh-start">' + (uiLang === 'en' ? 'Start backend' : '启动后端') + '</button>');
+        }
+      } else if (a.launch && a.launch.mode === 'web' && a.launch.command) {
         btns.push('<button class="btn xs primary" data-act="launch">' + esc(uiText('openWeb')) + '</button>');
       } else if (a.executable) {
         btns.push('<button class="btn xs" data-act="copy-command" title="' + (uiLang === 'en' ? 'Copy and run in an su terminal' : '复制后在 Termius 的 su 终端中执行') + '">' + esc(uiText('copyCommand')) + '</button>');
@@ -2961,20 +3158,65 @@ async function doUpdate(id) {
     return;
   }
   const app = currentApps.find(a => a.id === id) || { name: id };
-  if (!app.update_available) {
-    logLine('检测显示 ' + app.name + ' 已是 v' + (app.installed_version || '?') + '，仍将从官方源重新拉取最新版本。', 'dim');
-  }
-  toast('开始更新 ' + app.name);
-  const release = setBusy(true, '开始更新 ' + app.name);
-  let task;
-  try { task = await runBackground(ANCLI + ' update ' + id, await proxyDownloadNote(app)); }
-  finally {
+  const wasMarkedAvailable = !!app.update_available;
+  const release = setBusy(true, uiLang === 'en' ? 'Checking the official version…' : '正在二次检查官方版本…');
+  let updateTask;
+  try {
+    const checkTask = await runBackground(ANCLI + ' check --app=' + encodeURIComponent(id) + ' --json',
+      uiLang === 'en' ? 'Refreshing the official version before updating' : '更新前重新检查该应用的官方版本与安装状态',
+      { timeoutMs: 180000 });
+    if (!checkTask) {
+      toast(uiLang === 'en' ? 'Could not start the app check; update was not started.' : '无法启动应用检查，本次未启动更新。', 'err');
+      return;
+    }
+    let report = null;
+    try {
+      const r = await execCmd('cat ' + shQuote(checkTask.logFile) + ' 2>/dev/null');
+      for (const line of strip(r.stdout || '').split(/\r?\n/).reverse()) {
+        if (!line.trim().startsWith('{')) continue;
+        try { report = JSON.parse(line.trim()); break; } catch (_) { /* continue */ }
+      }
+    } catch (_) { /* report the missing result below */ }
+    const checkedApp = report && Array.isArray(report.apps) ? report.apps.find(item => item.id === id) : null;
+    const integrityIssue = !!checkedApp && (checkedApp.active === false ||
+      checkedApp.integrity_ok === false || report.integrity_results?.[id] === false);
+    await loadApps();
+    if (!checkedApp) {
+      toast(uiLang === 'en' ? 'App integrity/version check returned no result; update was not started.' : '未取得应用完整性或版本检查结果，本次未启动更新。', 'err');
+      return;
+    }
+    if (!integrityIssue && checkTask.status !== 'done') {
+      toast(uiLang === 'en' ? 'Could not verify the app; update was not started.' : '检查未完成，本次未启动更新。请查看日志后重试。', 'err');
+      return;
+    }
+    if (!integrityIssue && (checkedApp.cloud_error || !checkedApp.cloud_checked)) {
+      toast(uiLang === 'en' ? 'Official version could not be verified; update was not started.' : '官方版本查询失败或没有官方版本接口，本次未启动更新。', 'err');
+      return;
+    }
+    if (!integrityIssue && !checkedApp.update_available) {
+      logLine(app.name + ' 已是官方最新版本 v' + (checkedApp.cloud_version || '?') + '。', 'dim');
+      toast(uiLang === 'en' ? app.name + ' is already up to date.' : app.name + ' 已是官方最新版本，无需更新。');
+      return;
+    }
+    if (!wasMarkedAvailable && !integrityIssue) {
+      logLine('发现 ' + app.name + ' 官方新版本 v' + checkedApp.cloud_version + '。再点“更新”开始安装。', 'ok');
+      toast(uiLang === 'en' ? 'Update found: v' + checkedApp.cloud_version + '. Tap Update again to install.' : '发现官方新版本 v' + checkedApp.cloud_version + '，按钮已切换为“更新”，再点一次开始安装。');
+      return;
+    }
+    if (integrityIssue) {
+      logLine(app.name + ' 完整性检查未通过，将重新安装以修复中断的文件。', 'dim');
+      toast(uiLang === 'en' ? 'Repairing ' + app.name + '…' : app.name + ' 检测到安装不完整，正在修复…');
+    } else {
+      toast(uiLang === 'en' ? 'Updating ' + app.name + ' to v' + checkedApp.cloud_version + '…' : '已确认有更新，开始更新 ' + app.name + ' 至 v' + checkedApp.cloud_version);
+    }
+    updateTask = await runBackground(ANCLI + ' update ' + id, await proxyDownloadNote(app));
+  } finally {
     await trimTaskLogs();
     release();
     await loadApps();
     await loadStatus();
-    if (task && task.status === 'done') toast(app.name + ' 更新完成');
-    else if (task && task.status === 'failed') toast(app.name + ' 更新失败，请查看日志', 'err');
+    if (updateTask && updateTask.status === 'done') toast(app.name + ' 更新完成');
+    else if (updateTask && updateTask.status === 'failed') toast(app.name + ' 更新失败，请查看日志', 'err');
   }
 }
 
@@ -3050,6 +3292,58 @@ async function doLaunch(id) {
     logLine(String(e), 'err');
   } finally {
     release();
+  }
+}
+
+async function doDshBackendAction(action) {
+  if (action === 'open') {
+    if (dshBackendState !== 'running' || !dshBackendUrl) {
+      await refreshDshBackendState();
+      if (dshBackendState !== 'running' || !dshBackendUrl) {
+        toast(uiLang === 'en' ? 'DSH backend is not ready' : 'DSH 后端尚未就绪', 'err');
+        return;
+      }
+    }
+    try {
+      await openAndroidUrl(dshBackendUrl);
+      toast(uiLang === 'en' ? 'DSH Web UI opened' : 'dsh Web UI 已打开');
+    } catch (e) { toast(String(e), 'err'); }
+    return;
+  }
+  const starting = action === 'start';
+  dshBackendState = starting ? 'starting' : 'stopping';
+  dshBackendUrl = '';
+  renderApps(currentApps);
+  logLine((starting ? '启动' : '停止') + ' DSH 后端…', 'dim');
+  try {
+    if (action === 'stop' || action === 'restart') await stopDshBackend();
+    if (action === 'stop') {
+      dshBackendState = 'stopped';
+      dshBackendUrl = '';
+      logLine('✓ DSH 后端已停止', 'ok');
+      toast(uiLang === 'en' ? 'DSH backend stopped' : 'DSH 后端已停止');
+      return;
+    }
+    if (action === 'start' || action === 'restart') {
+      dshBackendState = 'starting';
+      renderApps(currentApps);
+      await startDshBackend();
+    }
+    await refreshDshBackendState(false);
+    if (dshBackendState === 'running') toast(uiLang === 'en' ? 'DSH backend is ready. Open Web UI is now available.' : 'DSH 后端已就绪，现在可以打开 Web UI');
+    else toast(uiLang === 'en' ? 'DSH backend did not become ready' : 'DSH 后端未能就绪，请检查输出日志', 'err');
+  } catch (e) {
+    dshBackendState = (await dshPortInUse().catch(() => false)) ? 'unresponsive' : 'stopped';
+    logLine(String(e), 'err');
+    if (action === 'stop' && dshBackendState === 'stopped') {
+      toast(uiLang === 'en' ? 'DSH process stopped; cleanup needs attention' : 'DSH 进程已停止，但清理步骤未完成，请查看输出', 'err');
+    } else if (action === 'stop' && String(e).includes('仍在后台执行')) {
+      toast(uiLang === 'en' ? 'DSH backend is still stopping in the background' : 'DSH 后端仍在后台停止，页面可继续操作');
+    } else {
+      toast(uiLang === 'en' ? 'DSH backend action failed; see output' : 'DSH 后端操作失败，请查看输出', 'err');
+    }
+  } finally {
+    renderApps(currentApps);
   }
 }
 
@@ -3334,11 +3628,13 @@ function switchSettingsTab(tabName) {
   document.querySelectorAll('.settings-tabs .tab-btn').forEach(btn => {
     btn.classList.toggle('active', btn.dataset.tab === tabName);
   });
-  if (tabName === 'proxy') void refreshVpnStatus();
   const slider = document.getElementById('settingsSlider');
   if (slider) {
     slider.style.transform = 'translateX(-' + (index * 20) + '%)';
   }
+  // Merely changing tabs never launches a network command. The full probe is
+  // explicit on the Proxy screen so it cannot hold up subsequent UI actions.
+  if (tabName === 'proxy') detectProxyOnSettingsOpen();
 }
 
 function updateProxyInputVisibility() {
@@ -3388,6 +3684,7 @@ function setSettingsStatus(cfg, runtime) {
       proxyStatus.style.color = 'var(--faint)';
     }
   }
+  updateMainProxyBadge(currentProxy, mode, null);
 
   // 2. 设置弹窗内代理区标题旁边的状态徽章
   if (proxyBadge) {
@@ -3403,105 +3700,15 @@ function setSettingsStatus(cfg, runtime) {
   }
 }
 
-const DEFAULT_CONTAINER_PROFILES = {
-  "minimal": {
-    "name": "最小运行环境",
-    "name_en": "Minimal runtime",
-    "description": "Python、pip、Node.js、npm、Git、curl 与证书，用于 Agent 基础安装。",
-    "description_en": "Python, pip, Node.js, npm, Git, curl and certificates for agent installation.",
-    "estimated_size_mb": 0
-  },
-  "standard": {
-    "name": "标准 Agent 环境",
-    "name_en": "Standard Agent",
-    "description": "最小环境加 ZIP 与 unzip 归档工具。",
-    "description_en": "Minimal environment plus ZIP archive tools.",
-    "estimated_size_mb": 0
-  },
-  "developer": {
-    "name": "开发工具环境",
-    "name_en": "Developer tools",
-    "description": "标准环境加编译工具、binutils 和 Java 17。",
-    "description_en": "Standard environment plus build tools, binutils and Java 17.",
-    "estimated_size_mb": 0
-  },
-  "full": {
-    "name": "完整开发环境",
-    "name_en": "Full development",
-    "description": "开发环境加 JSON、搜索、终端、网络诊断及中文输入组件。",
-    "description_en": "Developer environment plus JSON, search, terminal, network diagnostics and Chinese input tools.",
-    "estimated_size_mb": 0
-  }
-};
+const DEFAULT_CONTAINER_PROFILES = /* ANCLI_PROFILE_CATALOG */ {};
 let containerProfileCatalog = DEFAULT_CONTAINER_PROFILES;
 let containerCatalogVersion = '';
 let containerOptionsKey = '';
-const CONTAINER_PACKAGES = {
-  "minimal": [
-    "ca-certificates",
-    "curl",
-    "python3",
-    "python3-pip",
-    "git",
-    "nodejs",
-    "npm"
-  ],
-  "standard": [
-    "ca-certificates",
-    "curl",
-    "python3",
-    "python3-pip",
-    "git",
-    "nodejs",
-    "npm",
-    "zip",
-    "unzip"
-  ],
-  "developer": [
-    "ca-certificates",
-    "curl",
-    "python3",
-    "python3-pip",
-    "git",
-    "nodejs",
-    "npm",
-    "zip",
-    "unzip",
-    "build-essential",
-    "binutils",
-    "openjdk-17-jre-headless"
-  ],
-  "full": [
-    "ca-certificates",
-    "curl",
-    "python3",
-    "python3-pip",
-    "git",
-    "nodejs",
-    "npm",
-    "zip",
-    "unzip",
-    "build-essential",
-    "binutils",
-    "openjdk-17-jre-headless",
-    "jq",
-    "ripgrep",
-    "less",
-    "file",
-    "procps",
-    "dnsutils",
-    "openssh-client",
-    "tmux",
-    "vim-tiny",
-    "fcitx5",
-    "fcitx5-chinese-addons"
-  ]
-};
 function containerProfileDetails(profile, id) {
-  const packages = profile.packages || CONTAINER_PACKAGES[id] || [];
+  const packages = profile.packages || [];
   return (uiLang === 'en' ? (profile.description_en || profile.description) : profile.description) +
     (profile.estimated_size_mb ? ' · ' + profile.estimated_size_mb + ' MB' : '') +
-    (packages.length ? '\n' + (uiLang === 'en' ? 'Packages: ' : '包含软件包：') + packages.join('、') : '');
+    (packages.length ? '\n' + (uiLang === 'en' ? 'Packages: ' : '包含软件包：') + packages.join(uiLang === 'en' ? ', ' : '、') : '');
 }
 
 function updateContainerProfileHint() {
@@ -3512,7 +3719,7 @@ function updateContainerProfileHint() {
   const additive = document.getElementById('containerProfileAdditive');
   if (additive) additive.textContent = uiLang === 'en' ? 'Switching to a smaller profile does not remove installed packages.' : '切换较小规格不会卸载已有软件包。';
   hint.style.whiteSpace = 'pre-line';
-  hint.textContent = profile ? containerProfileDetails(profile, select.value) : uiText('containerProfileHint');
+  hint.textContent = profile ? containerProfileDetails(profile, select.value) : '';
 }
 
 function renderContainerProfileOptions(selected) {
@@ -3572,11 +3779,14 @@ async function installContainerFromUi(requestedProfile, requestedMirror) {
   const profile = requestedProfile || document.getElementById('setContainerProfile')?.value || 'standard';
   const mirror = requestedMirror || document.getElementById('setContainerMirror')?.value || 'tuna';
   if (!['tuna', 'ustc', 'official'].includes(mirror)) { toast(uiText('containerInstallFailed'), 'err'); return; }
-  if (!Object.prototype.hasOwnProperty.call(CONTAINER_PACKAGES, profile)) { toast(uiText('containerInstallFailed'), 'err'); return; }
+  if (!Object.prototype.hasOwnProperty.call(containerProfileCatalog, profile)) { toast(uiText('containerInstallFailed'), 'err'); return; }
   const release = setBusy(true, uiText('containerInstallStarting'));
+  const outputPanel = document.getElementById('taskConsole');
+  if (outputPanel) outputPanel.scrollIntoView({ behavior: 'smooth', block: 'end' });
   let task;
   try {
     task = await runBackground(ANCLI + ' container install --profile=' + profile + ' --mirror=' + mirror, uiText('containerInstallStarting'), { timeoutMs: 3600000 });
+    if (outputPanel) outputPanel.scrollIntoView({ behavior: 'smooth', block: 'end' });
     const result = await loadContainerSettings();
     await loadStatus();
     await loadApps();
@@ -3614,8 +3824,13 @@ async function openSettings() {
     const aboutVer = document.getElementById('aboutVer');
     if (aboutVer) aboutVer.textContent = stVer.textContent;
   }
+  // The dialog is fully interactive immediately. Fetch its values after paint;
+  // slow KernelSU bridge reads must not make the settings tap feel unresponsive.
+  requestAnimationFrame(() => { void refreshSettingsInBackground(); });
+}
+
+async function refreshSettingsInBackground() {
   try {
-    // 2026-11-16：配置读取必须单独完成；诊断命令较重且会与更新检查争用桥接。
     const cfg = JSON.parse(await ancli('config --json', true));
     document.getElementById('setCwd').value = cfg.default_cwd || '';
     const cleanUrl = (cfg.proxy_url || '').replace(/^https?:\/\//i, '').replace(/\/$/, '');
@@ -3623,21 +3838,11 @@ async function openSettings() {
     document.getElementById('setProxyMode').value = cfg.proxy_mode || (cfg.proxy_url ? 'manual' : 'system');
     document.getElementById('setLang').value = cfg.lang === 'en' ? 'en' : uiLang;
     document.getElementById('setAgentMemory').value = cfg.agent_memory === 'disabled' ? 'disabled' : 'enabled';
-    if (cfg.container_profile) {
-      renderContainerProfileOptions(cfg.container_profile);
-    }
-    if (cfg.update_channel) {
-      updateChannelUI(cfg.update_channel);
-    }
+    if (cfg.container_profile) renderContainerProfileOptions(cfg.container_profile);
+    if (cfg.update_channel) updateChannelUI(cfg.update_channel);
     setSettingsStatus(cfg, null);
-  } catch (e) {
-    // Keep the local defaults if the bridge is temporarily unavailable.
-  }
-  try {
-    await loadContainerSettings();
-  } catch (e) {
-    // Keep fallback
-  }
+  } catch (e) { /* Keep the immediate local defaults if the bridge is busy. */ }
+  try { await loadContainerSettings(); } catch (e) { /* Keep fallback */ }
   updateProxyInputVisibility();
 }
 
@@ -3725,6 +3930,7 @@ async function saveSettings() {
     await loadStatus();
     toast(uiText('settingsSaved'));
     closeSettings();
+    void autoDetectProxyOnWebOpen(true);
   } catch (e) {
     toast(uiText('settingsFailed'), 'err');
   } finally {
@@ -3870,6 +4076,10 @@ document.getElementById('apps').addEventListener('click', e => {
   else if (act === 'update') doUpdate(id);
   else if (act === 'config') openConfig(id);
   else if (act === 'launch') doLaunch(id);
+  else if (act === 'dsh-start') void doDshBackendAction('start');
+  else if (act === 'dsh-stop') void doDshBackendAction('stop');
+  else if (act === 'dsh-restart') void doDshBackendAction('restart');
+  else if (act === 'dsh-open') void doDshBackendAction('open');
   else if (act === 'copy-command') copyCommand(id);
   else if (act === 'uninstall') promptUninstall(id);
 });
@@ -3903,16 +4113,30 @@ document.getElementById('stopTaskCancel').onclick = closeStopTask;
 document.getElementById('stopTaskConfirm').onclick = async () => {
   const id = pendingStopTask;
   if (!id || !/^\d+_\d+$/.test(id)) return;
-  const btn = document.getElementById('stopTaskConfirm'); btn.disabled = true;
+  const btn = document.getElementById('stopTaskConfirm');
+  if (btn.disabled) return;
+  const cancel = document.getElementById('stopTaskCancel');
+  const originalText = btn.textContent;
+  btn.disabled = true;
+  btn.setAttribute('aria-busy', 'true');
+  btn.innerHTML = '<span class="stop-loading"><span class="stop-spinner" aria-hidden="true"></span>' + esc(uiLang === 'en' ? 'Stopping…' : '正在停止…') + '</span>';
+  if (cancel) cancel.disabled = true;
+  const stopButton = document.getElementById('btnStopTask');
+  if (stopButton) { stopButton.disabled = true; stopButton.innerHTML = '<span class="stop-loading"><span class="stop-spinner" aria-hidden="true"></span>' + esc(uiLang === 'en' ? 'Stopping…' : '正在停止…') + '</span>'; }
+  await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
   try {
     const r = await execCmd('/system/bin/sh /data/local/tmp/ancli/task-stop.sh ' + id);
     const message = strip((r.stdout || '') + (r.stderr || '')).trim();
-    if (r.code !== 0) { toast(uiLang === 'en' ? 'Could not safely stop; check log' : '无法安全确认停止，请查看日志', 'err'); logLine(message, 'err'); }
-    else { toast(uiLang === 'en' ? 'Task stopped' : '停止请求已处理'); logLine(message, 'dim'); }
+    if (r.code !== 0) { toast(uiLang === 'en' ? 'Could not safely stop; check log' : '无法安全确认停止，请查看日志', 'err'); logLine(message || '停止命令未能确认任务已结束。', 'err'); }
+    else { toast(uiLang === 'en' ? 'Task stopped' : '安装任务已停止，正在清理'); logLine(message || '停止请求已执行；正在核对任务和临时文件。', 'dim'); }
     closeStopTask();
     await restoreTasks();
   } catch (e) { toast(uiLang === 'en' ? 'Stop failed' : '停止失败', 'err'); logLine(String(e), 'err'); }
-  finally { btn.disabled = false; }
+  finally {
+    btn.disabled = false; btn.removeAttribute('aria-busy'); btn.textContent = originalText;
+    if (cancel) cancel.disabled = false;
+    if (stopButton) { stopButton.disabled = false; stopButton.textContent = uiLang === 'en' ? 'Force stop' : '强制停止'; }
+  }
 };
 
 document.addEventListener('click', event => {
@@ -3973,67 +4197,277 @@ async function refreshVpnStatus() {
   } catch (_) { updateVpnStatus('unknown'); }
 }
 async function measureContainerMirror(initial) {
-  const prefix = initial ? 'init' : '';
   const select = document.getElementById(initial ? 'initContainerMirror' : 'setContainerMirror');
   const button = document.getElementById(initial ? 'initMirrorSpeed' : 'btnMirrorSpeed');
   const result = document.getElementById(initial ? 'initMirrorSpeedResult' : 'mirrorSpeedResult');
   const mode = document.getElementById(initial ? 'initNetworkMode' : 'setProxyMode')?.value || 'system';
   const proxy = document.getElementById(initial ? 'initProxyUrl' : 'setProxyUrl')?.value.trim() || '';
   if (!select || !button || !result || !['tuna','ustc','official'].includes(select.value)) return;
-  button.disabled = true; result.textContent = uiLang === 'en' ? 'Testing…' : '正在下载最多 1 MiB 测试…';
-  try {
-    const r = await execCmd(ANCLI + ' container speed-test --mirror=' + select.value + ' --network=' + mode + (proxy ? ' --proxy-url=' + encodeURIComponent(proxy) : ''));
-    const output = strip((r.stdout || '') + (r.stderr || ''));
-    const speed = output.match(/ANCLI_SPEED_BPS=(\d+)/);
-    const bytes = output.match(/ANCLI_SPEED_BYTES=(\d+)/);
-    const seconds = output.match(/ANCLI_SPEED_SECONDS=([0-9.]+)/);
-    if (r.code !== 0 || !speed || !bytes || !seconds) throw new Error(uiLang === 'en' ? 'Download failed; check network or proxy.' : '测速失败，请检查网络或代理。');
-    result.textContent = (uiLang === 'en' ? 'Approx. ' : '约 ') + (Number(speed[1])/1048576).toFixed(2) + ' MiB/s · ' + (Number(bytes[1])/1048576).toFixed(2) + ' MiB / ' + seconds[1] + ' s' + (uiLang === 'en' ? ' · temporary data removed' : ' · 临时文件已删除');
-  } catch (e) { result.textContent = String(e.message || e); }
-  finally { button.disabled = false; }
-}
-document.getElementById('btnMirrorSpeed').onclick = () => { void measureContainerMirror(false); };
-document.getElementById('btnProxyProbe').onclick = async () => {
-  const button = document.getElementById('btnProxyProbe');
-  const result = document.getElementById('proxyProbeResult');
-  const mode = document.getElementById('setProxyMode').value;
-  const proxy = document.getElementById('setProxyUrl').value.trim();
+  const limitBytes = 50000000;
+  const metrics = {};
+  const setProgress = bytes => {
+    const safeBytes = Math.max(0, Math.min(limitBytes, Number(bytes) || 0));
+    const pct = safeBytes / limitBytes * 100;
+    result.innerHTML = '<div class="speed-progress"><div class="speed-progress-track"><div class="speed-progress-fill" style="width:' + pct.toFixed(1) + '%"></div></div><span class="speed-progress-label">' + (safeBytes / 1000000).toFixed(1) + ' / 50 MB</span></div><div class="hint" style="margin-top:4px">' + (uiLang === 'en' ? 'Downloading a temporary sample; it will be removed automatically.' : '正在下载临时测速文件，完成后自动删除。') + '</div>';
+  };
+  const originalText = button.textContent;
   button.disabled = true;
-  result.textContent = uiLang === 'en' ? 'Checking…' : '正在检测…';
+  button.textContent = uiLang === 'en' ? 'Testing…' : '测速中…';
+  setProgress(0);
+  try {
+    const cmd = ANCLI + ' container speed-test --mirror=' + select.value + ' --network=' + mode + (proxy ? ' --proxy-url=' + encodeURIComponent(proxy) : '');
+    const task = await runBackground(cmd, '', {
+      quiet: true,
+      label: uiLang === 'en' ? 'Mirror speed test' : '容器镜像测速',
+      timeoutMs: 180000,
+      onOutput(chunk) {
+        for (const line of String(chunk || '').split(/\r?\n/)) {
+          let match = line.match(/ANCLI_SPEED_PROGRESS=(\d+)\/(\d+)/);
+          if (match) setProgress(Number(match[1]));
+          match = line.match(/ANCLI_SPEED_(MIRROR|BYTES|SECONDS|BPS)=([^\s]+)/);
+          if (match) metrics[match[1]] = match[2];
+        }
+        return '';
+      }
+    });
+    if (!task || task.status !== 'done' || !metrics.BPS || !metrics.BYTES || !metrics.SECONDS) throw new Error(uiLang === 'en' ? 'Download failed; check network or proxy.' : '测速失败，请检查网络或代理。');
+    result.innerHTML = '<b style="color:var(--ok)">' + (uiLang === 'en' ? 'Download complete' : '测速完成') + '</b><div>' +
+      (uiLang === 'en' ? 'Average: ' : '平均速度：') + (Number(metrics.BPS) / 1000000).toFixed(2) + ' MB/s · ' +
+      (uiLang === 'en' ? 'Sample: ' : '样本：') + (Number(metrics.BYTES) / 1000000).toFixed(2) + ' MB · ' + Number(metrics.SECONDS).toFixed(2) + ' s</div><small>' +
+      (uiLang === 'en' ? 'Temporary file removed.' : '临时测速文件已自动删除。') + '</small>';
+  } catch (e) { result.textContent = String(e.message || e); }
+  finally { button.disabled = false; button.textContent = originalText; }
+}
+const MIRROR_PING_NAMES = () => uiLang === 'en'
+  ? { tuna: 'Tsinghua', ustc: 'USTC', official: 'Ubuntu official' }
+  : { tuna: '清华', ustc: '中科大', official: 'Ubuntu 官方' };
+let mirrorPingPromise = null;
+let mirrorPingScheduled = false;
+let mirrorPingLastAttempt = 0;
+function scheduleMirrorPingRefresh() {
+  if (mirrorPingScheduled || Date.now() - mirrorPingLastAttempt < 60000) return;
+  mirrorPingScheduled = true;
+  const runWhenIdle = callback => {
+    if (typeof window.requestIdleCallback === 'function') window.requestIdleCallback(callback, { timeout: 3000 });
+    else setTimeout(callback, 1800);
+  };
+  runWhenIdle(() => {
+    mirrorPingScheduled = false;
+    if (document.visibilityState === 'visible') {
+      mirrorPingLastAttempt = Date.now();
+      void refreshMirrorPings();
+    }
+  });
+}
+async function refreshMirrorPings() {
+  const targets = Array.from(document.querySelectorAll('[data-mirror-pings]'));
+  if (!targets.length || mirrorPingPromise) return mirrorPingPromise;
+  const names = MIRROR_PING_NAMES();
+  targets.forEach(el => { el.innerHTML = Object.keys(names).map(key => '<div class="mirror-ping-card"><span class="mirror-ping-name">' + esc(names[key]) + '</span><span class="mirror-ping-value">Ping…</span></div>').join(''); });
+  mirrorPingPromise = (async () => {
+    let values = {};
+    try {
+      const r = await execCmd(ANCLI + ' container mirror-ping');
+      const raw = (r.stdout || '') + '\n' + (r.stderr || '');
+      for (const key of Object.keys(names)) {
+        const m = raw.match(new RegExp('ANCLI_MIRROR_PING_' + key + '=([^\\s]+)'));
+        values[key] = r.code === 0 && m ? m[1] : 'unavailable';
+      }
+    } catch (_) { values = { tuna: 'unavailable', ustc: 'unavailable', official: 'unavailable' }; }
+    targets.forEach(el => {
+      const names = MIRROR_PING_NAMES();
+      el.innerHTML = Object.keys(names).map(key => {
+        const value = values[key] || 'unavailable', ok = /^\d+(?:\.\d+)?$/.test(value);
+        const shown = ok ? value + ' ms' : (value === 'unavailable' ? (uiLang === 'en' ? 'Unavailable' : '不可用') : (uiLang === 'en' ? 'Timeout' : '超时'));
+        return '<div class="mirror-ping-card"><span class="mirror-ping-name">' + esc(names[key]) + '</span><span class="mirror-ping-value ' + (ok ? 'ok' : 'fail') + '">Ping ' + esc(shown) + '</span></div>';
+      }).join('');
+    });
+  })().finally(() => { mirrorPingPromise = null; });
+  return mirrorPingPromise;
+}
+let lastDetectedProxyUrl = '';
+let lastProxyCheck = null;
+let lastProxyMarkup = '';
+function updateMainProxyBadge(proxyUrl, mode, vpn, verified) {
+  const badge = document.getElementById('mainProxyBadge');
+  if (!badge) return;
+  let label = proxyUrl || '';
+  let connected = !!proxyUrl && verified !== false && verified !== null;
+  if (!label && mode === 'direct') label = uiLang === 'en' ? 'Direct' : '直连';
+  else if (!label && vpn === 'connected') { label = uiLang === 'en' ? 'VPN connected' : 'VPN 已连接'; connected = true; }
+  else if (!label) label = uiLang === 'en' ? 'No proxy detected' : '未检测到代理';
+  badge.textContent = label;
+  badge.className = 'proxy-badge header-proxy-badge ' + (connected ? 'connected' : 'disconnected');
+  badge.title = proxyUrl ? (verified === false ? (uiLang === 'en' ? 'Proxy detected, connection test failed' : '已发现代理，连通性测试失败') : (verified === null ? (uiLang === 'en' ? 'Proxy address detected; connectivity not tested' : '已识别代理地址，尚未测试连通性') : (uiLang === 'en' ? 'Current proxy; connectivity verified' : '当前代理，连通性已验证'))) : label;
+}
+function updateProxyIpBadges(proxyUrl, mode) {
+  lastDetectedProxyUrl = mode === 'direct' ? '' : (proxyUrl || '');
+  ['setProxyIpBadge', 'initProxyIpBadge'].forEach(id => {
+    const badge = document.getElementById(id);
+    if (!badge) return;
+    badge.hidden = !lastDetectedProxyUrl || mode === 'direct';
+    badge.textContent = badge.hidden ? '' : ' · ' + (uiLang === 'en' ? 'Proxy IP: ' : '代理 IP：') + lastDetectedProxyUrl;
+  });
+  const status = document.getElementById('initProxyAutoStatus');
+  if (status) {
+    if (lastDetectedProxyUrl) status.textContent = (uiLang === 'en' ? 'Detected HTTP proxy: ' : '已检测到 HTTP 代理：') + lastDetectedProxyUrl;
+    else if (mode === 'direct') status.textContent = uiLang === 'en' ? 'Direct connection selected.' : '当前选择直连。';
+    else status.textContent = uiLang === 'en' ? 'No explicit HTTP proxy detected; VPN or transparent routing may still be active.' : '未发现显式 HTTP 代理；系统 VPN 或透明代理仍可能生效。';
+  }
+}
+function detectProxyOnSettingsOpen() {
+  const result = document.getElementById('proxyProbeResult');
+  if (!result || !document.getElementById('setOverlay').classList.contains('show')) return;
+  const mode = document.getElementById('setProxyMode').value, proxy = document.getElementById('setProxyUrl').value.trim();
+  if (mode === 'direct') {
+    updateProxyIpBadges('', 'direct');
+    result.innerHTML = '<div class="proxy-probe-card"><div class="proxy-probe-verdict warn">' + esc(uiLang === 'en' ? 'Direct mode selected. Proxy checks will run only when requested.' : '当前选择直连。点击“检测”后才会执行网络检查。') + '</div></div>';
+    return;
+  }
+  if (lastProxyCheck && lastProxyCheck.fullProbe && lastProxyCheck.mode === mode &&
+      (mode !== 'manual' || lastProxyCheck.requestedProxy === proxy) &&
+      Date.now() - lastProxyCheck.checkedAt < 60000) {
+    result.innerHTML = lastProxyMarkup;
+    return;
+  }
+  const currentProxy = mode === 'manual' ? proxy : (lastProxyCheck?.mode === mode ? lastProxyCheck.proxyUrl : '');
+  const vpn = lastProxyCheck?.mode === mode ? lastProxyCheck.vpn : 'unknown';
+  const title = currentProxy
+    ? (uiLang === 'en' ? 'Proxy address detected; reachability has not been tested.' : '已识别代理地址，尚未测试连通性。')
+    : (vpn === 'connected'
+      ? (uiLang === 'en' ? 'System VPN detected; no separate HTTP proxy address is available.' : '检测到系统 VPN；没有可显示的独立 HTTP 代理地址。')
+      : (uiLang === 'en' ? 'Proxy has not been verified. Tap Check to run the network tests.' : '代理尚未验证。点击“检测”运行网络测试。'));
+  result.innerHTML = '<div class="proxy-probe-card"><div class="proxy-probe-verdict warn">' + esc(title) + '</div>' +
+    (currentProxy ? '<div class="proxy-probe-item warn"><span class="proxy-probe-led"></span><span><b>' + esc(uiLang === 'en' ? 'HTTP proxy' : 'HTTP 代理') + '</b> · ' + esc(currentProxy) + '</span></div>' : '') +
+    (vpn !== 'unknown' ? '<div class="proxy-probe-item ' + (vpn === 'connected' ? 'ok' : 'warn') + '"><span class="proxy-probe-led"></span><span><b>VPN</b> · ' + esc(vpn === 'connected' ? (uiLang === 'en' ? 'Connected' : '已连接') : (uiLang === 'en' ? 'Not detected' : '未检测到')) + '</span></div>' : '') +
+    '<div class="hint" style="margin-top:8px">' + esc(uiLang === 'en' ? 'The Check button tests the selected proxy and network reachability.' : '“检测”按钮会测试当前代理连接和网络可达性。') + '</div></div>';
+}
+let proxyNetworkProbePromise = null;
+function runProxyNetworkProbe(mode, proxy, showError) {
+  if (proxyNetworkProbePromise) return proxyNetworkProbePromise;
+  proxyNetworkProbePromise = (async () => {
+  const button = document.getElementById('btnProxyProbe'), result = document.getElementById('proxyProbeResult');
+  if (button) button.disabled = true;
   try {
     const r = await execCmd(ANCLI + ' container network-test --network=' + mode + (proxy ? ' --proxy-url=' + encodeURIComponent(proxy) : ''));
-    result.textContent = strip((r.stdout || '') + (r.stderr || '')).trim() || (uiLang === 'en' ? 'No result' : '未返回检测结果');
-    const rawProbe = result.textContent;
-    const ping = {};
-    for (const name of ['baidu', 'qq', 'google', 'cloudflare']) {
-      const match = rawProbe.match(new RegExp('ANCLI_PING_' + name + '=(ok|failed|unknown)'));
-      ping[name] = match ? match[1] : 'unknown';
-    }
-    const pingSummary = (uiLang === 'en' ? 'Ping (domestic / international): ' : 'Ping 国内 / 国外：') +
-      ['baidu', 'qq', 'google', 'cloudflare'].map(name => name + ' ' + (ping[name] === 'ok' ? '✓' : (ping[name] === 'failed' ? '×' : '?'))).join(' · ');
-    result.textContent = result.textContent.replace(/ANCLI_PING_[a-z]+=(?:ok|failed|unknown)\s*/g, '').replace(/ANCLI_PING=unavailable\s*/, '');
-    const vpn = rawProbe.match(/ANCLI_VPN=(connected|not_detected|unknown)/);
+    const raw = (r.stdout || '') + '\n' + (r.stderr || '');
+    const vpn = raw.match(/ANCLI_VPN=(connected|not_detected|unknown)/);
     updateVpnStatus(vpn ? vpn[1] : 'unknown');
-    result.textContent = result.textContent.replace(/ANCLI_VPN=(connected|not_detected|unknown)\s*/, '');
-    const route = result.textContent.match(/ANCLI_ROUTE=(reachable|failed|unknown)/);
-    const routes = uiLang === 'en' ? {reachable:'HTTPS route: reachable',failed:'HTTPS route: target unreachable',unknown:'HTTPS route: no usable test tool'} : {reachable:'HTTPS 线路：目标可达',failed:'HTTPS 线路：目标不可达',unknown:'HTTPS 线路：缺少可用检测工具'};
-    result.textContent = result.textContent.replace(/ANCLI_ROUTE=(reachable|failed|unknown)\s*/, (route ? routes[route[1]] : routes.unknown) + '\n');
-    result.textContent += uiLang === 'en' ? '\nUpstream transparent proxy address cannot be inferred; reachability does not identify the route.' : '\n上游透明代理地址无法从设备可靠推断；目标可达不代表已确认经过代理。';
-    const badge = document.getElementById('setProxyCurrentBadge');
-    const detected = result.textContent.match(/HTTP 代理：(https?:\/\/[^\s]+)/);
-    const tested = /代理连接测试成功/.test(result.textContent);
-    const foreignReachable = ping.google === 'ok' || ping.cloudflare === 'ok';
-    const routeHint = !detected && vpn && vpn[1] === 'not_detected' && foreignReachable
-      ? (uiLang === 'en' ? 'Transparent upstream proxy: possible (inferred from reachability)' : '透明代理：可能存在（根据可达性推测）')
-      : (uiLang === 'en' ? 'Transparent upstream proxy: cannot determine' : '透明代理：无法确定');
-    result.textContent = pingSummary + '\n' + routeHint + '\n' + result.textContent;
-    result.textContent += uiLang === 'en' ? '\nICMP may be blocked; reachability does not prove a proxy or route.' : '\nPing 可能被屏蔽；站点可达也不能证明代理或实际路由。';
-    if (badge) { badge.textContent = detected ? detected[1].replace(/^https?:\/\//, '') + (tested ? '' : (uiLang === 'en' ? ' (untested/failed)' : '（未通过检测）')) : (uiLang === 'en' ? 'No HTTP proxy detected' : '未检测到 HTTP 代理'); badge.className = 'proxy-badge ' + (detected && tested ? 'connected' : 'disconnected'); }
-    if (mode === 'system') result.textContent += uiLang === 'en' ? '\nVPN traffic may still work without an Android HTTP proxy.' : '\n未公布 HTTP 代理不代表 VPN 未运行；VPN 通常无需重启即可生效。';
-    if (r.code !== 0) result.textContent += uiLang === 'en' ? '\nCheck failed.' : '\n检测失败，请检查配置。';
-  } catch (e) { result.textContent = String(e); }
-  finally { button.disabled = false; }
-};
+    const markup = renderProxyProbeResult(raw, mode, r.code);
+    if (result) result.innerHTML = markup;
+  } catch (e) {
+    const errorText = showError ? (uiLang === 'en' ? 'Network check could not run.' : '网络检测无法执行。') : (uiLang === 'en' ? 'Automatic detection failed; tap Check to retry.' : '自动识别失败，可点击检测重试。');
+    if (result) result.innerHTML = '<div class="proxy-probe-card"><div class="proxy-probe-verdict fail">' + esc(errorText) + '</div>' + (showError ? '<div class="hint">' + esc(String(e.message || e)) + '</div>' : '') + '</div>';
+    updateMainProxyBadge('', mode, 'unknown', false);
+    const initStatus = document.getElementById('initProxyAutoStatus');
+    if (initStatus) initStatus.textContent = errorText;
+  } finally { if (button) button.disabled = false; }
+  })().finally(() => { proxyNetworkProbePromise = null; });
+  return proxyNetworkProbePromise;
+}
+let autoProxyDetectionPromise = null;
+function autoDetectProxyOnWebOpen(force = false) {
+  if (autoProxyDetectionPromise) return autoProxyDetectionPromise;
+  if (!force && lastProxyCheck && Date.now() - lastProxyCheck.checkedAt < 60000) return Promise.resolve(lastProxyCheck);
+  autoProxyDetectionPromise = (async () => {
+    const headerBadge = document.getElementById('mainProxyBadge');
+    if (headerBadge) {
+      headerBadge.textContent = uiLang === 'en' ? 'Detecting proxy…' : '代理检测中…';
+      headerBadge.className = 'proxy-badge header-proxy-badge disconnected';
+      headerBadge.title = headerBadge.textContent;
+    }
+    let mode = 'system', proxy = '';
+    try {
+      const cfg = JSON.parse(await ancli('config --json', true));
+      mode = cfg.proxy_mode || 'system';
+      proxy = cfg.proxy_url || '';
+    } catch (_) { /* Fall back to the system network probe. */ }
+    try {
+      const args = 'container proxy-status --network=' + mode + (proxy ? ' --proxy-url=' + encodeURIComponent(proxy) : '');
+      const raw = await ancli(args, true);
+      const found = raw.match(/ANCLI_PROXY_URL=([^\s]*)/);
+      const vpn = raw.match(/ANCLI_VPN=(connected|not_detected|unknown)/);
+      const proxyUrl = found ? found[1] : '';
+      const vpnStatus = vpn ? vpn[1] : 'unknown';
+      lastProxyCheck = { proxyUrl, mode, vpn: vpnStatus, proxyOk: null, route: 'unknown', fullProbe: false, checkedAt: Date.now() };
+      updateMainProxyBadge(proxyUrl, mode, vpnStatus, null);
+      updateProxyIpBadges(proxyUrl, mode);
+      const initStatus = document.getElementById('initProxyAutoStatus');
+      if (initStatus && proxyUrl) initStatus.textContent = (uiLang === 'en' ? 'HTTP proxy detected; reachability will be tested when Proxy settings are opened: ' : '已识别 HTTP 代理，打开代理设置时会测试连通性：') + proxyUrl;
+      else if (initStatus && mode !== 'direct') initStatus.textContent = vpnStatus === 'connected'
+        ? (uiLang === 'en' ? 'No explicit HTTP proxy; system VPN is connected.' : '未发现显式 HTTP 代理；系统 VPN 已连接。')
+        : (uiLang === 'en' ? 'No explicit HTTP proxy detected; VPN or transparent routing may still be active.' : '未发现显式 HTTP 代理；系统 VPN 或透明代理仍可能生效。');
+      return lastProxyCheck;
+    } catch (e) {
+      const errorText = uiLang === 'en' ? 'Automatic proxy detection failed.' : '自动代理识别失败。';
+      updateMainProxyBadge('', mode, 'unknown', false);
+      const initStatus = document.getElementById('initProxyAutoStatus');
+      if (initStatus) initStatus.textContent = errorText;
+      return null;
+    }
+  })().finally(() => { autoProxyDetectionPromise = null; });
+  return autoProxyDetectionPromise;
+}
+function renderProxyProbeResult(raw, mode, exitCode) {
+  const text = strip(raw || '');
+  const get = pattern => (text.match(pattern) || [])[1] || 'unknown';
+  const ping = {
+    baidu: get(/ANCLI_PING_baidu=(ok|failed|unknown)/),
+    qq: get(/ANCLI_PING_qq=(ok|failed|unknown)/),
+    google: get(/ANCLI_PING_google=(ok|failed|unknown)/),
+    cloudflare: get(/ANCLI_PING_cloudflare=(ok|failed|unknown)/)
+  };
+  const vpn = get(/ANCLI_VPN=(connected|not_detected|unknown)/);
+  const route = get(/ANCLI_ROUTE=(reachable|failed|unknown)/);
+  const proxyUrl = (text.match(/HTTP 代理：([^\s]+)/) || [])[1] || '';
+  const proxyOk = /代理连接测试成功/.test(text);
+  const proxyFailed = /代理连接测试失败/.test(text);
+  const domestic = ping.baidu === 'ok' || ping.qq === 'ok';
+  const international = ping.google === 'ok' || ping.cloudflare === 'ok';
+  let verdict, verdictTone;
+  if (exitCode !== 0) { verdict = uiLang === 'en' ? 'Network check failed; inspect proxy and network settings.' : '网络检测未完成，请检查网络和代理配置。'; verdictTone = 'fail'; }
+  else if (proxyOk) { verdict = uiLang === 'en' ? 'HTTP proxy detected and reachable.' : 'HTTP 代理已检测且连接正常。'; verdictTone = 'ok'; }
+  else if (proxyFailed) { verdict = uiLang === 'en' ? 'HTTP proxy detected, but its connection test failed.' : '检测到 HTTP 代理，但连接测试失败。'; verdictTone = 'fail'; }
+  else if (vpn === 'connected' && mode === 'system') { verdict = uiLang === 'en' ? 'System VPN detected; a separate HTTP proxy may not be needed.' : '检测到系统 VPN；通常不需要单独配置 HTTP 代理。'; verdictTone = 'ok'; }
+  else if (domestic || international || route === 'reachable') { verdict = uiLang === 'en' ? 'Network is reachable; transparent proxy cannot be confirmed.' : '网络可达；透明代理无法仅凭连通性确认。'; verdictTone = 'warn'; }
+  else { verdict = uiLang === 'en' ? 'No test target is reachable; check the current network.' : '测试目标均不可达，请检查当前网络。'; verdictTone = 'fail'; }
+  const stateText = value => value === 'ok' ? (uiLang === 'en' ? 'Reachable' : '可达') : (value === 'failed' ? (uiLang === 'en' ? 'Unreachable' : '不可达') : (uiLang === 'en' ? 'Unknown' : '无法判断'));
+  const items = [
+    [uiLang === 'en' ? 'HTTP proxy' : 'HTTP 代理', proxyUrl || (uiLang === 'en' ? 'Not detected' : '未检测到'), proxyUrl ? 'ok' : (vpn === 'connected' ? 'warn' : 'unknown')],
+    [uiLang === 'en' ? 'Proxy connection' : '代理连通性', proxyOk ? (uiLang === 'en' ? 'Passed' : '连接成功') : (proxyFailed ? (uiLang === 'en' ? 'Failed' : '连接失败') : (uiLang === 'en' ? 'Not tested / N/A' : '未测试 / 不适用')), proxyOk ? 'ok' : (proxyFailed ? 'fail' : 'unknown')],
+    [uiLang === 'en' ? 'System VPN' : '系统 VPN', vpn === 'connected' ? (uiLang === 'en' ? 'Connected' : '已连接') : (vpn === 'not_detected' ? (uiLang === 'en' ? 'Not detected' : '未检测到') : (uiLang === 'en' ? 'Unknown' : '无法判断')), vpn === 'connected' ? 'ok' : (vpn === 'not_detected' ? 'warn' : 'unknown')],
+    ['Baidu', stateText(ping.baidu), ping.baidu === 'ok' ? 'ok' : (ping.baidu === 'failed' ? 'fail' : 'unknown')],
+    ['QQ', stateText(ping.qq), ping.qq === 'ok' ? 'ok' : (ping.qq === 'failed' ? 'fail' : 'unknown')],
+    ['Google', stateText(ping.google), ping.google === 'ok' ? 'ok' : (ping.google === 'failed' ? 'fail' : 'unknown')],
+    ['Cloudflare', stateText(ping.cloudflare), ping.cloudflare === 'ok' ? 'ok' : (ping.cloudflare === 'failed' ? 'fail' : 'unknown')],
+    [uiLang === 'en' ? 'Direct HTTPS probe' : 'HTTPS 直连探测', route === 'reachable' ? (uiLang === 'en' ? 'Reachable' : '可达') : (route === 'failed' ? (uiLang === 'en' ? 'Unreachable' : '不可达') : (uiLang === 'en' ? 'Unknown' : '无法判断')), route === 'reachable' ? 'ok' : (route === 'failed' ? 'fail' : 'unknown')]
+  ];
+  const badge = document.getElementById('setProxyCurrentBadge');
+  if (badge) { badge.textContent = proxyUrl ? proxyUrl + (proxyOk ? '' : (uiLang === 'en' ? ' (not verified)' : '（未验证）')) : (vpn === 'connected' ? (uiLang === 'en' ? 'VPN connected' : 'VPN 已连接') : (uiLang === 'en' ? 'No HTTP proxy' : '未检测到 HTTP 代理')); badge.className = 'proxy-badge ' + (proxyOk || (!proxyUrl && vpn === 'connected') ? 'connected' : 'disconnected'); }
+  lastProxyCheck = { proxyUrl, mode, requestedProxy: mode === 'manual' ? (document.getElementById('setProxyUrl')?.value.trim() || '') : '', vpn, proxyOk, route, fullProbe: true, checkedAt: Date.now() };
+  updateMainProxyBadge(proxyUrl, mode, vpn, proxyUrl ? proxyOk : null);
+  updateProxyIpBadges(proxyUrl, mode);
+  lastProxyMarkup = '<div class="proxy-probe-card"><div class="proxy-probe-verdict ' + verdictTone + '">' + esc(uiLang === 'en' ? 'Result: ' : '判断结果：') + esc(verdict) + '</div><div class="proxy-probe-grid">' +
+    items.map(([label, value, state]) => '<div class="proxy-probe-item ' + (state === 'ok' ? 'ok' : (state === 'fail' ? 'fail' : (state === 'warn' ? 'warn' : ''))) + '"><span class="proxy-probe-led"></span><span><b>' + esc(label) + '</b> · ' + esc(value) + '</span></div>').join('') +
+    '</div><div class="hint" style="margin-top:8px">' + esc(uiLang === 'en' ? 'Ping failures may be caused by ICMP filtering. Reachability alone cannot identify a transparent proxy.' : 'Ping 失败可能是 ICMP 被屏蔽；仅凭连通性不能识别透明代理。') + '</div></div>';
+  return lastProxyMarkup;
+}
+document.getElementById('btnProxyProbe').onclick = () => runProxyNetworkProbe(
+  document.getElementById('setProxyMode').value,
+  document.getElementById('setProxyUrl').value.trim(),
+  true
+);
+document.getElementById('setProxyMode').addEventListener('change', () => {
+  const mode = document.getElementById('setProxyMode').value;
+  updateProxyIpBadges(mode === 'manual' ? document.getElementById('setProxyUrl').value.trim() : '', mode);
+  if (mode !== 'direct' && document.getElementById('setOverlay').classList.contains('show') &&
+      document.querySelector('.settings-tabs .tab-btn.active')?.dataset.tab === 'proxy') void detectProxyOnSettingsOpen();
+});
+document.getElementById('setProxyUrl').addEventListener('input', () => {
+  if (document.getElementById('setProxyMode').value === 'manual') {
+    updateProxyIpBadges(document.getElementById('setProxyUrl').value.trim(), 'manual');
+  }
+});
 document.getElementById('btnFactoryReset').onclick = openReset;
 document.getElementById('resetCancel').onclick = closeReset;
 document.getElementById('resetClose').onclick = closeReset;
@@ -4486,27 +4920,40 @@ function setupImeGuard() {
 }
 
 // ---------- 首次使用 root 终端指南 ----------
+let welcomeGuidePage = 1;
+function setWelcomeGuidePage(page) {
+  welcomeGuidePage = page === 2 ? 2 : 1;
+  document.getElementById('welcomeGuidePage1').hidden = welcomeGuidePage !== 1;
+  document.getElementById('welcomeGuidePage2').hidden = welcomeGuidePage !== 2;
+  document.getElementById('welcomeGuidePageIndicator').textContent = welcomeGuidePage + ' / 2';
+  document.getElementById('welcomeGuidePrev').disabled = welcomeGuidePage === 1;
+  document.getElementById('welcomeGuideNext').hidden = welcomeGuidePage === 2;
+  document.getElementById('welcomeGuideDone').hidden = welcomeGuidePage !== 2;
+}
 function closeWelcomeGuide() {
   const overlay = document.getElementById('welcomeGuideOverlay');
   if (!overlay) return;
   overlay.classList.remove('show');
   overlay.setAttribute('aria-hidden', 'true');
-  try { localStorage.setItem('ancli_welcome_guide_v1', 'seen'); } catch (e) { /* storage may be disabled */ }
-  try { sessionStorage.setItem('ancli_welcome_guide_v1', 'seen'); } catch (e) { /* storage may be disabled */ }
+  try { localStorage.setItem('ancli_welcome_guide_v3', 'seen'); } catch (e) { /* storage may be disabled */ }
+  try { sessionStorage.setItem('ancli_welcome_guide_v3', 'seen'); } catch (e) { /* storage may be disabled */ }
 }
 function maybeShowWelcomeGuide() {
   let seen = false;
-  try { seen = localStorage.getItem('ancli_welcome_guide_v1') === 'seen'; } catch (e) { /* try session storage */ }
-  if (!seen) { try { seen = sessionStorage.getItem('ancli_welcome_guide_v1') === 'seen'; } catch (e) { /* show this visit */ } }
+  try { seen = localStorage.getItem('ancli_welcome_guide_v3') === 'seen'; } catch (e) { /* try session storage */ }
+  if (!seen) { try { seen = sessionStorage.getItem('ancli_welcome_guide_v3') === 'seen'; } catch (e) { /* show this visit */ } }
   if (seen) return;
   const overlay = document.getElementById('welcomeGuideOverlay');
   if (!overlay) return;
+  setWelcomeGuidePage(1);
   overlay.classList.add('show');
   overlay.setAttribute('aria-hidden', 'false');
   requestAnimationFrame(() => document.getElementById('welcomeGuideDone')?.focus());
 }
 document.getElementById('welcomeGuideClose').onclick = closeWelcomeGuide;
 document.getElementById('welcomeGuideDone').onclick = closeWelcomeGuide;
+document.getElementById('welcomeGuidePrev').onclick = () => setWelcomeGuidePage(1);
+document.getElementById('welcomeGuideNext').onclick = () => setWelcomeGuidePage(2);
 document.getElementById('welcomeGuideOverlay').addEventListener('click', e => {
   if (e.target.id === 'welcomeGuideOverlay') closeWelcomeGuide();
 });
@@ -4555,6 +5002,9 @@ if (window.matchMedia) {
 
   // 日志维护、任务恢复与官方版本查询延迟到首屏稳定后静默运行。
   void firstLoad.finally(() => {
+    // Probe the current environment proxy after the first status/catalog pass,
+    // then keep both the top bar and an uninstalled-container guide in sync.
+    setTimeout(() => { void autoDetectProxyOnWebOpen(); }, 1200);
     void checkPendingActivation();
     setTimeout(() => {
       void trimTaskLogs();

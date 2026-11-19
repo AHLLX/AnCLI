@@ -42,7 +42,7 @@ MOD_DIR = "/data/adb/modules/ancli"
 KSU_BIN = "/data/adb/ksu/bin"
 AP_BIN  = "/data/adb/ap/bin"
 
-VERSION = "1.2.642-beta"
+VERSION = "1.2.651-beta"
 
 # 2026-11-13: 应用目录随模块固化打包；官方版本检查直接读取各应用自身的 `latest` 字段，
 # 不再从网络拉取第二份 AnCLI 注册表。
@@ -1105,7 +1105,7 @@ export PROOT_NO_SECCOMP=1
 {ANCLI_DIR}/bin/proot -r {ROOTFS} -b /dev -b /proc -b /sys -b {ANCLI_DIR} \\
 $ANCLI_BIND_ARGS \\
 -b {ANCLI_DIR}/hosts:/etc/hosts -b /data/adb $SHM_BIND \\
--w "$PROOT_CWD" /usr/bin/env ANCLI_IN_CONTAINER=1 PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/system/bin SHELL=/bin/bash BROWSER=/usr/local/bin/xdg-open {executable} {codex_no_daemon}"$@"
+        -w "$PROOT_CWD" /usr/bin/env ANCLI_IN_CONTAINER=1 PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/data/adb/ksu/bin:/data/adb/ap/bin:/system/bin SHELL=/bin/bash BROWSER=/usr/local/bin/xdg-open {executable} {codex_no_daemon}"$@"
 _ancli_rc=$?
 [ -n "$ANCLI_OPEN_WATCHER_PID" ] && kill "$ANCLI_OPEN_WATCHER_PID" 2>/dev/null || true
 [ -n "$ANCLI_OPEN_WATCHER_PID" ] && wait "$ANCLI_OPEN_WATCHER_PID" 2>/dev/null || true
@@ -3437,7 +3437,7 @@ def _merge_installed_fields(updates):
     return changed
 
 
-def check_updates(registry=None, probe=True):
+def check_updates(registry=None, probe=True, app_ids=None):
     """Refresh both halves of update detection:
 
       1. the *installed* version of every installed tool (registry `version_cmd`),
@@ -3460,11 +3460,20 @@ def check_updates(registry=None, probe=True):
     pending = {aid: {'env': env} for aid, env in migrated_env.items()}
     failed = 0
     succeeded = 0
+    probe_results = {}
+    integrity_results = {}
 
     if not installed:
         print(f"\033[93m{_t('check_no_apps')}\033[0m")
 
-    for aid in list(installed.keys()):
+    selected_ids = list(installed.keys()) if app_ids is None else list(dict.fromkeys(app_ids))
+    if app_ids is not None:
+        missing_ids = [aid for aid in selected_ids if aid not in installed]
+        if missing_ids:
+            print(f"\033[91m[X] Not installed: {', '.join(missing_ids)}\033[0m")
+    for aid in selected_ids:
+        if aid not in installed:
+            continue
         app = (registry.get('apps') or {}).get(aid)
         if not app:
             print(f"\033[93m{_t('check_registry_missing', aid)}\033[0m")
@@ -3473,6 +3482,31 @@ def check_updates(registry=None, probe=True):
 
         if probe:
             probed = _probe_installed_version(app, registry)
+            if app.get('version_cmd'):
+                probe_results[aid] = bool(probed)
+            integrity_results[aid] = bool(_binary_exists(app.get('executable', aid)))
+            # npm can leave a command shim behind when an update is force-stopped.
+            # Check DSH's installed package metadata and executable entry point too,
+            # so a surviving shim is not mistaken for a complete installation.
+            if aid == 'dsh':
+                package_dir = f"{ROOTFS}/usr/local/lib/node_modules/@deepseek-ai/dsh"
+                package_json = os.path.join(package_dir, 'package.json')
+                try:
+                    with open(package_json, 'r', encoding='utf-8') as fh:
+                        package_data = json.load(fh)
+                    bins = package_data.get('bin') or {}
+                    bin_targets = [bins] if isinstance(bins, str) else list(bins.values()) if isinstance(bins, dict) else []
+                    package_ok = bool(package_data.get('name') == '@deepseek-ai/dsh' and bin_targets)
+                    package_ok = package_ok and all(
+                        isinstance(target, str) and os.path.isfile(os.path.join(package_dir, target))
+                        for target in bin_targets
+                    )
+                    integrity_results[aid] = integrity_results[aid] and package_ok and bool(probed)
+                except (OSError, ValueError, TypeError):
+                    integrity_results[aid] = False
+                if not integrity_results[aid]:
+                    print("\033[91m[X] DSH installation integrity check failed: "
+                          "package metadata, CLI entry point, executable, or version probe is missing.\033[0m")
             if probed:
                 pending.setdefault(aid, {}).update(
                     {'installed_version': probed, 'version_verified': True})
@@ -3504,6 +3538,10 @@ def check_updates(registry=None, probe=True):
         else:
             latest[aid] = {"version": None, "source": src, "error": None}
             print(f"\033[90m{_t('check_no_source', name)}\033[0m")
+        if probe and app.get('version_cmd'):
+            latest[aid]["version_probe_ok"] = probe_results.get(aid, False)
+        if probe:
+            latest[aid]["integrity_ok"] = integrity_results.get(aid, False)
 
     # Drop entries for tools that are gone (kept small and honest).
     latest = {aid: entry for aid, entry in latest.items() if aid in installed}
@@ -3515,6 +3553,8 @@ def check_updates(registry=None, probe=True):
         "latest": latest,
         "succeeded": succeeded,
         "failed": failed,
+        "probe_results": probe_results,
+        "integrity_results": integrity_results,
     }
     if not _save_update_cache(cache):
         # The caller may still use the in-memory result.
@@ -3568,6 +3608,8 @@ def _app_record(aid, app, installed_flag, info, entry=None):
         "active": _binary_exists(exec_name) if installed_flag else False,
         "installed_version": local_ver,
         "version_verified": verified,
+        "version_probe_ok": entry.get('version_probe_ok'),
+        "integrity_ok": entry.get('integrity_ok'),
         "cloud_version": cloud_ver,
         "cloud_source": source,
         "cloud_checked": checked,
@@ -3619,16 +3661,16 @@ def list_apps_json(catalog_revision=None):
     }, ensure_ascii=False))
 
 
-def check_updates_json():
-    """`ancli check --json`: refresh installed + official versions, emit the verdict."""
+def check_updates_json(app_ids=None):
+    """`ancli check --json`: refresh official versions, optionally for selected installed apps."""
     with _stdout_to_stderr():
         registry = load_registry()
-        cache = check_updates(registry)
+        cache = check_updates(registry, app_ids=app_ids)
         installed = load_installed()
         latest = cache.get('latest') or {}
         apps = []
         for aid, app in (registry.get('apps') or {}).items():
-            if aid in installed:
+            if aid in installed and (app_ids is None or aid in app_ids):
                 apps.append(_app_record(aid, app, True, installed[aid], latest.get(aid)))
     print(json.dumps({
         "ancli_version": VERSION,
@@ -3636,6 +3678,8 @@ def check_updates_json():
         "updates": sum(1 for a in apps if a['update_available']),
         "succeeded": cache.get('succeeded', 0),
         "failed": cache.get('failed', 0),
+        "probe_results": cache.get('probe_results', {}),
+        "integrity_results": cache.get('integrity_results', {}),
         "apps": apps,
     }, ensure_ascii=False))
     return cache
@@ -3966,11 +4010,22 @@ def container_command(argv):
     action = next((arg for arg in argv if not arg.startswith("-")), "status")
     payload = container_status_payload()
     if action in ("status", "list"):
-        print(json.dumps(payload, ensure_ascii=False) if "--json" in argv else
-              f"容器规格: {payload['config']['profile_name']} ({payload['config']['profile']})\n"
-              f"预计占用: {payload['config']['estimated_size_mb']} MB\n"
-              f"安装状态: {'已安装' if payload['config']['rootfs_ready'] else '待安装'}\n"
-              f"网络模式: {payload['config']['network_mode']}")
+        if "--json" in argv:
+            print(json.dumps(payload, ensure_ascii=False))
+        else:
+            lines = [f"容器规格: {payload['config']['profile_name']} ({payload['config']['profile']})"]
+            # 2026-11-19：0 表示没有可用估算，不在状态摘要中显示占用提示。
+            try:
+                estimated_size_mb = int(payload["config"].get("estimated_size_mb") or 0)
+            except (TypeError, ValueError):
+                estimated_size_mb = 0
+            if estimated_size_mb > 0:
+                lines.append(f"预计占用: {estimated_size_mb} MB")
+            lines.extend((
+                f"安装状态: {'已安装' if payload['config']['rootfs_ready'] else '待安装'}",
+                f"网络模式: {payload['config']['network_mode']}",
+            ))
+            print("\n".join(lines))
         return
     if action == "set":
         values = parse_set_env(argv)
@@ -4438,13 +4493,19 @@ if __name__ == "__main__":
                 settings_command(sys.argv[2:])
                 sys.exit(0)
             elif action == "check":
+                requested_app = next((arg.split("=", 1)[1] for arg in sys.argv[2:]
+                                      if arg.startswith("--app=")), None)
+                app_ids = [requested_app] if requested_app else None
+                if requested_app and requested_app not in load_installed():
+                    print(f"\033[91m[X] App is not installed: {requested_app}\033[0m")
+                    sys.exit(2)
                 if "--json" in sys.argv:
-                    cache = check_updates_json()
+                    cache = check_updates_json(app_ids)
                     # Non-zero when nothing could be resolved, so the WebUI's
                     # background log does not claim success on a dead network.
                     sys.exit(1 if (cache.get('failed') and not cache.get('succeeded')) else 0)
                 print(f"\033[1;36m=== AnCLI update check ===\033[0m")
-                result = check_updates()
+                result = check_updates(app_ids=app_ids)
                 if result.get('succeeded'):
                     print("\033[92m[OK] Update status refreshed. See 'ancli list' for the verdict.\033[0m")
                 elif result.get('failed'):

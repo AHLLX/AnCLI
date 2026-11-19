@@ -29,6 +29,9 @@ jobs = [
     # Boot script: only takes effect on the next boot, but keep the module copy
     # consistent with the repository (a flash would deploy the same file).
     (f"{STAGE}/service.sh.new", "/data/adb/modules/ancli/service.sh", 0o755),
+    # DSH WebUI process controller: its host-side PATH must not be assumed to
+    # contain the KernelSU/APatch instant-access wrapper directories.
+    (f"{STAGE}/dsh-web-control.sh.new", f"{ANCLI}/dsh-web-control.sh", 0o755),
 ]
 
 for src, dst, mode in jobs:

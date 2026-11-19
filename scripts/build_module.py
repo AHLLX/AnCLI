@@ -10,6 +10,7 @@ import os
 import sys
 import json
 import zipfile
+import shlex
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 MODULE_DIR = os.path.join(ROOT, "src", "module")
@@ -38,8 +39,44 @@ def module_metadata():
     return values
 
 
+def load_profiles():
+    with open(os.path.join(ROOT, "src", "container-profiles.json"), "r", encoding="utf-8") as fh:
+        data = json.load(fh)
+    profiles = data.get("profiles")
+    if not isinstance(profiles, dict) or not profiles:
+        raise SystemExit("container-profiles.json has no profiles")
+    return profiles
+
+
+def profile_shell(profiles):
+    """Generate installer/bootstrap profile helpers from the canonical JSON."""
+    lines = ["#!/system/bin/sh", "# Generated from src/container-profiles.json; do not edit by hand."]
+    for key, profile in profiles.items():
+        packages = " ".join(profile.get("packages", []))
+        for fn, value in (("ancli_profile_name_zh", profile.get("name", key)),
+                          ("ancli_profile_name_en", profile.get("name_en", profile.get("name", key))),
+                          ("ancli_profile_description_zh", profile.get("description", "")),
+                          ("ancli_profile_description_en", profile.get("description_en", profile.get("description", ""))),
+                          ("ancli_profile_packages", packages)):
+            lines.append(f"{fn}_{key}() {{ printf '%s\\n' {shlex.quote(str(value))}; }}")
+    for fn in ("name_zh", "name_en", "description_zh", "description_en", "packages"):
+        lines.append(f"ancli_profile_{fn}() {{ case \"$1\" in")
+        for key in profiles:
+            lines.append(f"    {key}) ancli_profile_{fn}_{key} ;;")
+        lines.extend(["    *) return 1 ;;", "  esac", "}"])
+    lines.extend([
+        "ancli_profile_display_packages() {",
+        "  _profile_display_packages=$(ancli_profile_packages \"$1\") || return 1",
+        "  if [ \"${2:-zh}\" = en ]; then printf '%s\\n' \"$_profile_display_packages\" | sed 's/ /, /g';",
+        "  else printf '%s\\n' \"$_profile_display_packages\" | sed 's/ /、/g'; fi",
+        "}",
+    ])
+    return "\n".join(lines) + "\n"
+
+
 def main():
     metadata = module_metadata()
+    profiles = load_profiles()
     version = metadata["version"]
     output = (sys.argv[1] if len(sys.argv) > 1 else
               f"{metadata['id']}-{metadata['versionCode']}-{version}.zip")
@@ -55,6 +92,11 @@ def main():
         with open(dst, "wb") as fh:
             fh.write(data)
         print(f"    {source} -> src/module/{target} ({len(data)} bytes)")
+
+    generated_profile_file = os.path.join(MODULE_DIR, "container-profile-data.sh")
+    with open(generated_profile_file, "w", encoding="utf-8", newline="\n") as fh:
+        fh.write(profile_shell(profiles))
+    print(f"    Generated src/module/container-profile-data.sh from canonical profile catalog")
 
     print("> Generating offline catalog-cache.json...")
     with open(os.path.join(ROOT, "src", "registry.json"), "r", encoding="utf-8") as f:
@@ -88,6 +130,7 @@ def main():
 
     print("> Building module ZIP...")
     entries = []
+    webui_profile_marker = "const DEFAULT_CONTAINER_PROFILES = /* ANCLI_PROFILE_CATALOG */ {};"
     with zipfile.ZipFile(output_path, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as zf:
         for base, dirs, files in os.walk(MODULE_DIR):
             dirs[:] = [d for d in dirs if d not in SKIP_DIRS]
@@ -96,12 +139,22 @@ def main():
                     continue
                 full = os.path.join(base, name)
                 rel = os.path.relpath(full, MODULE_DIR).replace(os.sep, "/")
+                if rel == "webroot/index.html":
+                    with open(full, "r", encoding="utf-8") as fh:
+                        html = fh.read()
+                    if webui_profile_marker not in html:
+                        raise SystemExit("WebUI profile catalog marker missing")
+                    html = html.replace(webui_profile_marker,
+                                        "const DEFAULT_CONTAINER_PROFILES = " + json.dumps(profiles, ensure_ascii=False, separators=(",", ":")) + ";")
+                    data = html.encode("utf-8")
+                else:
+                    with open(full, "rb") as fh:
+                        data = fh.read()
                 info = zipfile.ZipInfo(rel)
                 # Root managers unpack module entries with executable mode.
                 info.external_attr = (0o100755 << 16)
                 info.compress_type = zipfile.ZIP_DEFLATED
-                with open(full, "rb") as fh:
-                    zf.writestr(info, fh.read())
+                zf.writestr(info, data)
                 entries.append(rel)
 
     print(f"> Wrote {output} ({os.path.getsize(output_path)} bytes, {len(entries)} entries)")

@@ -1,5 +1,5 @@
 {
-  "version": "1.2.642-beta",
+  "version": "1.2.651-beta",
   "apps": {
     "aider": {
       "name": "Aider",
@@ -195,8 +195,8 @@
         "command": "dsh web --no-open",
         "label": "打开 Web UI"
       },
-      "install_cmd": "npm install -g @deepseek-ai/dsh || npm install -g --registry=https://registry.npmmirror.com @deepseek-ai/dsh",
-      "update_cmd": "npm install -g @deepseek-ai/dsh || npm install -g --registry=https://registry.npmmirror.com @deepseek-ai/dsh",
+      "install_cmd": "npm install -g --registry=https://registry.npmmirror.com --allow-scripts=@deepseek-ai/dsh-subprocess-local,koffi,node-pty,@google/genai,protobufjs @deepseek-ai/dsh || npm install -g --allow-scripts=@deepseek-ai/dsh-subprocess-local,koffi,node-pty,@google/genai,protobufjs @deepseek-ai/dsh",
+      "update_cmd": "npm install -g --registry=https://registry.npmmirror.com --allow-scripts=@deepseek-ai/dsh-subprocess-local,koffi,node-pty,@google/genai,protobufjs @deepseek-ai/dsh || npm install -g --allow-scripts=@deepseek-ai/dsh-subprocess-local,koffi,node-pty,@google/genai,protobufjs @deepseek-ai/dsh",
       "uninstall_cmd": "npm uninstall -g @deepseek-ai/dsh",
       "executable": "dsh",
       "env_vars": [],

@@ -44,8 +44,12 @@ ancli_install_network() {
     export http_proxy="$_ancli_proxy" https_proxy="$_ancli_proxy" HTTP_PROXY="$_ancli_proxy" HTTPS_PROXY="$_ancli_proxy"
     unset all_proxy ALL_PROXY
     export no_proxy="localhost,127.0.0.1,::1" NO_PROXY="localhost,127.0.0.1,::1"
-    echo ">> 网络：已检测 HTTP 代理，正在测试连接..."
     [ "${ANCLI_NETWORK_VERBOSE:-0}" = 1 ] && echo ">> HTTP 代理：$_ancli_proxy"
+    if [ "${ANCLI_SKIP_PROXY_CONNECTIVITY_TEST:-0}" = 1 ]; then
+        echo ">> 网络：已识别 HTTP 代理；快速识别模式未测试连通性。"
+        return 0
+    fi
+    echo ">> 网络：已检测 HTTP 代理，正在测试连接..."
     if command -v curl >/dev/null 2>&1; then
         if curl -fsSI --proxy "$_ancli_proxy" --connect-timeout 4 --max-time "${ANCLI_PROXY_TEST_TIMEOUT:-8}" "${ANCLI_PROXY_TEST_URL:-https://mirrors.tuna.tsinghua.edu.cn/}" >/dev/null 2>&1; then
             echo ">> 网络：代理连接测试成功。"
