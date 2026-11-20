@@ -1032,7 +1032,26 @@ install_container() (
         for _version in 24.04.5 24.04.4; do
             _mirror_url=$(ancli_mirror_rootfs_url "$_selected_mirror" "$_version" "$rootfs_arch") || return 1
             say ">> 正在下载基础系统：$_mirror_url"
-            if download_tarball "$tar_path" "$_mirror_url" && [ -s "$tar_path" ]; then success=1; break; fi
+            if download_tarball "$tar_path" "$_mirror_url" && [ -s "$tar_path" ]; then
+                _sums_url="${_mirror_url%/*}/SHA256SUMS"
+                _sums_file="${tar_path}.SHA256SUMS"
+                _tar_name="${_mirror_url##*/}"
+                if download_tarball "$_sums_file" "$_sums_url" && [ -s "$_sums_file" ]; then
+                    _expected_sha=$(awk -v f="$_tar_name" '$2 == f || $2 == ("*" f) {print tolower($1); exit}' "$_sums_file")
+                    _actual_sha=$(sha256sum "$tar_path" 2>/dev/null | awk '{print tolower($1)}')
+                    rm -f "$_sums_file"
+                    if [ -n "$_expected_sha" ] && [ "$_expected_sha" = "$_actual_sha" ]; then
+                        say ">> SHA-256 校验通过：$_actual_sha"
+                        success=1
+                        break
+                    fi
+                    say "[!] $_tar_name SHA-256 校验失败（期望 $_expected_sha，实际 $_actual_sha）"
+                else
+                    rm -f "$_sums_file"
+                    say "[!] 无法下载 SHA256SUMS：$_sums_url"
+                fi
+                rm -f "$tar_path"
+            fi
         done
         [ "$success" -eq 1 ] || { say "[X] 所选下载站点下载失败，请检查网络或切换站点"; return 1; }
 

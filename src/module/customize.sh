@@ -473,6 +473,23 @@ _selected_apt_mirror="$_pref_mirror"
 if [ "$_container_mode" != "installed" ]; then
 ui_print "$(installer_text '>> 容器安装已延后；请在 WebUI 中配置。' '>> Container installation deferred; configure it in WebUI.')"
 else
+verify_downloaded_tarball() {
+    _vdt_file="$1"
+    _vdt_url="$2"
+    _vdt_sums="${_vdt_file}.SHA256SUMS"
+    _vdt_name="${_vdt_url##*/}"
+    _vdt_sums_url="${_vdt_url%/*}/SHA256SUMS"
+    download_tarball "$_vdt_sums" "$_vdt_sums_url" && [ -s "$_vdt_sums" ] || { rm -f "$_vdt_sums" "$_vdt_file"; return 1; }
+    _vdt_expected=$(awk -v f="$_vdt_name" '$2 == f || $2 == ("*" f) {print tolower($1); exit}' "$_vdt_sums")
+    _vdt_actual=$(sha256sum "$_vdt_file" 2>/dev/null | awk '{print tolower($1)}')
+    rm -f "$_vdt_sums"
+    if [ -n "$_vdt_expected" ] && [ "$_vdt_expected" = "$_vdt_actual" ]; then
+        return 0
+    fi
+    rm -f "$_vdt_file"
+    return 1
+}
+
 if [ ! -f "$ROOTFS/bin/bash" ]; then
     ui_print "$(installer_text ">> 正在下载 Ubuntu Base（$ROOTFS_ARCH）..." ">> Downloading Ubuntu Base ($ROOTFS_ARCH)...")"
     TAR_PATH="${ANCLI_ROOTFS_ARCHIVE:-$ANCLI_DIR/ubuntu-base.tar.gz}"
@@ -482,7 +499,7 @@ if [ ! -f "$ROOTFS/bin/bash" ]; then
         if [ -n "$_custom_mirror_host" ]; then
             mirror="https://${_custom_mirror_host}/ubuntu-cdimage/ubuntu-base/releases/24.04/release/ubuntu-base-${_ver}-base-${ROOTFS_ARCH}.tar.gz"
             ui_print "$(installer_text ">> 正在尝试镜像：$mirror" ">> Trying mirror: $mirror")"
-            if download_tarball "$TAR_PATH" "$mirror" && [ -s "$TAR_PATH" ]; then
+            if download_tarball "$TAR_PATH" "$mirror" && [ -s "$TAR_PATH" ] && verify_downloaded_tarball "$TAR_PATH" "$mirror"; then
                 success=1
                 break
             fi
@@ -493,7 +510,7 @@ if [ ! -f "$ROOTFS/bin/bash" ]; then
             _tried_mirrors="$_tried_mirrors $_m_id"
             mirror=$(ancli_mirror_rootfs_url "$_m_id" "$_ver" "$ROOTFS_ARCH") || continue
             ui_print "$(installer_text ">> 正在尝试镜像：$mirror" ">> Trying mirror: $mirror")"
-            if download_tarball "$TAR_PATH" "$mirror" && [ -s "$TAR_PATH" ]; then
+            if download_tarball "$TAR_PATH" "$mirror" && [ -s "$TAR_PATH" ] && verify_downloaded_tarball "$TAR_PATH" "$mirror"; then
                 _selected_apt_mirror="$_m_id"
                 _custom_mirror_host=""
                 success=1
@@ -707,14 +724,10 @@ cp -f "$MODPATH/ancli/ancli-core.py" "$BIN_DIR/ancli-core.py"
 cp -f "$MODPATH/ancli/ancli_env.sh" "$BIN_DIR/ancli_env.sh"
 chmod 755 "$BIN_DIR/ancli-core.py" "$BIN_DIR/ancli_env.sh"
 
-# 部署 AGY 宿主机 POSIX `bash -c` 兼容模板（Dual-Injection Path A：重启后通过 systemless overlay 生效）
-if [ -f "$MODPATH/ancli/bash-host-compat" ]; then
-    cp -f "$MODPATH/ancli/bash-host-compat" "$ANCLI_DIR/bash-host-compat"
-    chmod 755 "$ANCLI_DIR/bash-host-compat"
-    mkdir -p "$MODPATH/system/bin"
-    cp -f "$MODPATH/ancli/bash-host-compat" "$MODPATH/system/bin/bash"
-    chmod 755 "$MODPATH/system/bin/bash"
-fi
+# 不再向 $MODPATH/system/bin/bash 或 /data/adb/{ksu,ap}/bin 写入假 bash 或包装脚本；
+# `ancli` 及已安装工具通过 $MODPATH/system/bin/ 在重启后由管理器 systemless 挂载生效，
+# 也可在容器内或通过 /data/local/tmp/ancli/bin/ 直接调用。
+rm -f "$MODPATH/system/bin/bash" "$ANCLI_DIR/bash-host-compat" 2>/dev/null || true
 
 # 部署容器内部直达 `ancli` 入口，支持在 PRoot 容器内直接调用 ancli 命令
 if [ -d "$ROOTFS/usr/local/bin" ]; then
@@ -743,56 +756,11 @@ cp -f "$MODPATH/ancli/registry.json" "$BIN_DIR/registry.json" 2>/dev/null || tru
 cp -f "$MODPATH/ancli/registry.json" "$ANCLI_DIR/registry.json" 2>/dev/null || true
 
 
-# 6. 向 KernelSU / APatch 动态路径注入即时生效入口（无需重启即可使用）：
-#    由于 SELinux 仅允许开机后覆写动态 bin 中已存在的文件，刷入阶段必须预先创建
-#    主命令 `ancli`、AGY host bash 兼容脚本以及全部注册表工具的占位包装器。
-REGISTRY_FILE="$MODPATH/ancli/registry.json"
-
-for INSTANT_BIN in /data/adb/ksu/bin /data/adb/ap/bin; do
-    [ -d "$INSTANT_BIN" ] || continue
-
-    # 部署带 AnCLI 标记的 host bash 兼容脚本，不覆盖用户自己提供的真实 bash 二进制
-    if [ -f "$MODPATH/ancli/bash-host-compat" ]; then
-        host_bash="$INSTANT_BIN/bash"
-        replace_host_bash=0
-        if [ ! -e "$host_bash" ]; then
-            replace_host_bash=1
-        elif head -n 8 "$host_bash" 2>/dev/null | grep -q 'AnCLI AGY host bash compatibility\|AnCLI proot shim'; then
-            replace_host_bash=1
-        fi
-        if [ "$replace_host_bash" -eq 1 ]; then
-            cp -f "$MODPATH/ancli/bash-host-compat" "$host_bash"
-            chmod 755 "$host_bash"
-ui_print "$(installer_text ">> AGY 宿主 bash 兼容入口：$host_bash" ">> AGY host bash compatibility: $host_bash")"
-        fi
-    fi
-
-    # 注入主命令 ancli
-    cp -f "$MODPATH/system/bin/ancli" "$INSTANT_BIN/ancli"
-    chmod 755 "$INSTANT_BIN/ancli"
-ui_print "$(installer_text ">> 快捷命令：$INSTANT_BIN/ancli" ">> Instant access: $INSTANT_BIN/ancli")"
-
-    # 为注册表中的每个工具预置占位入口（后续由 ancli install / ancli repair 生成真实包装器）
-    if [ -f "$REGISTRY_FILE" ]; then
-        executables=$(grep '"executable"' "$REGISTRY_FILE" | sed 's/.*"executable"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/')
-        for exe in $executables; do
-            placeholder="$INSTANT_BIN/$exe"
-            if [ ! -f "$placeholder" ]; then
-                {
-                    printf '#!/system/bin/sh\n'
-                    printf 'target="/data/local/tmp/ancli/bin/%s"\n' "$exe"
-                    printf 'if [ ! -x "$target" ]; then\n'
-                    printf '    echo "[AnCLI] %s is not set up yet. Run: ancli repair" >&2\n' "$exe"
-                    printf '    exit 127\n'
-                    printf 'fi\n'
-                    printf 'exec sh "$target" "$@"\n'
-                } > "$placeholder"
-                chmod 755 "$placeholder"
-ui_print "$(installer_text ">> 已创建命令占位入口：$INSTANT_BIN/$exe" ">> Created command placeholder: $INSTANT_BIN/$exe")"
-            fi
-        done
-    fi
-done
+# 6. 复制主入口到 $BIN_DIR/ancli，供 WebUI 与免重启直接调用；
+#    $MODPATH/system/bin/ancli 将在设备重启后由系统无系统挂载至 /system/bin/ancli。
+cp -f "$MODPATH/system/bin/ancli" "$BIN_DIR/ancli" 2>/dev/null || true
+chmod 755 "$BIN_DIR/ancli" 2>/dev/null || true
+ui_print "$(installer_text ">> 提示：模块与新装工具的全局 /system/bin 入口将在重启后生效。" ">> Note: Global /system/bin entrypoints take effect after reboot.")"
 
 
 # Request hot install only through the official KernelSU capability flag.

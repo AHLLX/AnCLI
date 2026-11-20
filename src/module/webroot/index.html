@@ -1560,11 +1560,11 @@ async function checkPendingActivation() {
 
 async function resolveAncli() {
   // Probe real execution in the manager's namespace, not only file existence.
-  const cmd = 'for p in /data/adb/ksu/bin/ancli /data/adb/ap/bin/ancli /data/adb/modules_update/ancli/system/bin/ancli /data/adb/modules/ancli/system/bin/ancli; do [ -x "$p" ] || continue; "$p" container status --json >/dev/null 2>&1 && { printf "%s\\n" "$p"; exit 0; }; done; command -v ancli 2>/dev/null';
+  const cmd = 'for p in /data/adb/modules_update/ancli/system/bin/ancli /data/adb/modules/ancli/system/bin/ancli /data/local/tmp/ancli/bin/ancli; do [ -x "$p" ] || continue; "$p" container status --json >/dev/null 2>&1 && { printf "%s\\n" "$p"; exit 0; }; done; command -v ancli 2>/dev/null';
   try {
     const r = await execCmd(cmd);
     const path = (r.stdout || '').trim().split(/\s+/).pop();
-    if (r.code === 0 && /^\/(?:data\/adb\/(?:ksu|ap)\/bin|data\/adb\/modules(?:_update)?\/ancli\/system\/bin|system\/bin)\/ancli$/.test(path)) ANCLI = path;
+    if (r.code === 0 && /^\/(?:data\/adb\/modules(?:_update)?\/ancli\/system\/bin|data\/local\/tmp\/ancli\/bin|system\/bin)\/ancli$/.test(path)) ANCLI = path;
   } catch (_) {}
   return ANCLI;
 }
@@ -3360,7 +3360,7 @@ async function doInstall(id) {
     release();
     await loadApps();
     await loadStatus();
-    if (task && task.status === 'done') toast(app.name + (uiLang === 'en' ? ' installed' : ' 安装完成'));
+    if (task && task.status === 'done') toast(app.name + (uiLang === 'en' ? ' installed — reboot for /system/bin/' + (app.executable || id) + ' (or use ancli shell now)' : ' 安装完成；重启后全局命令生效（当前可先用 ancli shell）'));
     else if (task && task.status === 'failed') toast(app.name + (uiLang === 'en' ? ' installation failed; check log' : ' 安装失败，请查看日志'), 'err');
   }
 }

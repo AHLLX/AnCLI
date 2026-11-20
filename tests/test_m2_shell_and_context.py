@@ -15,8 +15,14 @@ def _load_core():
 
 
 def test_bash_host_compat_no_loop_on_marked_host_and_forwards_real_guest_bash(tmp_path):
-    raw = (ROOT / "src/bash-host-compat").read_bytes()
-    assert b"\r" not in raw
+    # Per KernelSU security policy, AnCLI must not ship or overlay a fake /system/bin/bash.
+    assert not (ROOT / "src/bash-host-compat").exists()
+    customize_txt = (ROOT / "src/module/customize.sh").read_text(encoding="utf-8")
+    service_txt = (ROOT / "src/module/service.sh").read_text(encoding="utf-8")
+    assert 'cp -f "$MODPATH/ancli/bash-host-compat"' not in customize_txt
+    assert 'cp -f "$MODULE_DIR/ancli/bash-host-compat"' not in service_txt
+    assert 'cp -f "$MODPATH/system/bin/ancli" "$INSTANT_BIN/ancli"' not in customize_txt
+    return
 
     mock_bin_bash = tmp_path / "bin_bash"
     mock_usr_bash = tmp_path / "usr_bin_bash"
@@ -429,8 +435,8 @@ export -f curl
 def test_m2_shell_invariants_service_ancli_env_dsh_network_uninstall(tmp_path):
     service_txt = (ROOT / "src/module/service.sh").read_text(encoding="utf-8")
     assert "loader|loader-*" in service_txt
-    assert 'chmod 755 "$INSTANT_BIN/$name"' in service_txt
-    assert 'cp -f "$MODULE_DIR/system/bin/ancli" "$INSTANT_BIN/ancli"' in service_txt
+    assert 'chmod 755 "$MODULE_DIR/system/bin/$name"' in service_txt
+    assert 'cp -f "$MODULE_DIR/system/bin/ancli" "$ANCLI_DIR/bin/ancli"' in service_txt
     assert '".codex"' in service_txt
     assert 'chmod 777 "$_bridge_dir" "$_bridge_dir/reqs"' in service_txt
     assert 'mv "$_req" "${_req}.run"' in service_txt

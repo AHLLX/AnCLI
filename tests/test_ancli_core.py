@@ -2120,11 +2120,6 @@ class TestReviewRegressions:
     def test_deploy_agy_host_bash_compat_includes_system_bin_and_ksu_ap(self, tmp_path, monkeypatch):
         ancli_dir = tmp_path / "ancli"
         ancli_dir.mkdir(parents=True)
-        bin_dir = ancli_dir / "bin"
-        bin_dir.mkdir(parents=True)
-        compat_file = ancli_dir / "bash-host-compat"
-        compat_file.write_text("#!/system/bin/sh\n# AnCLI AGY host bash compatibility\nexec /system/bin/sh \"$@\"\n")
-
         mod_dir = tmp_path / "modules" / "ancli"
         sys_bin = mod_dir / "system" / "bin"
         sys_bin.mkdir(parents=True)
@@ -2133,17 +2128,20 @@ class TestReviewRegressions:
         ap_bin = tmp_path / "ap" / "bin"
         ap_bin.mkdir(parents=True)
 
+        # Legacy marked fake-bash files must be removed, while real user bash is kept.
+        (sys_bin / "bash").write_text("#!/system/bin/sh\n# AnCLI AGY host bash compatibility\n", encoding="utf-8")
+        (ksu_bin / "bash").write_text("#!/system/bin/sh\n# AnCLI proot shim\n", encoding="utf-8")
+        (ap_bin / "bash").write_text("#!/system/bin/sh\n# user custom bash\n", encoding="utf-8")
+
         monkeypatch.setattr(core, "ANCLI_DIR", str(ancli_dir))
         monkeypatch.setattr(core, "MOD_DIR", str(mod_dir))
         monkeypatch.setattr(core, "KSU_BIN", str(ksu_bin))
         monkeypatch.setattr(core, "AP_BIN", str(ap_bin))
 
-        deployed = [os.path.normpath(p) for p in core._deploy_agy_host_bash_compat(verbose=False)]
-        assert os.path.normpath(str(sys_bin / "bash")) in deployed
-        assert os.path.normpath(str(ksu_bin / "bash")) in deployed
-        assert os.path.normpath(str(ap_bin / "bash")) in deployed
-        assert (sys_bin / "bash").exists()
-        assert "AnCLI AGY host bash compatibility" in (sys_bin / "bash").read_text(encoding="utf-8")
+        assert core._deploy_agy_host_bash_compat(verbose=False) == []
+        assert not (sys_bin / "bash").exists()
+        assert not (ksu_bin / "bash").exists()
+        assert (ap_bin / "bash").exists()
 
     def test_wrapper_signal_exit_and_open_watcher_cleanup(self, tmp_path, monkeypatch):
         monkeypatch.setattr(core, "ANCLI_DIR", str(tmp_path / "ancli"))
@@ -2532,7 +2530,7 @@ class TestMilestoneM1Fixes:
 
         core.doctor_json()
         doc = json.loads(capsys.readouterr().out)
-        assert doc["host_compatibility"]["bash"]["installed"] is True
+        assert doc["host_compatibility"]["bash"]["installed"] is False
 
         monkeypatch.setattr(core, "check_module_update", lambda ch=None: (print("TLS warn"), {"status": "ok", "channel": ch or "stable"})[1])
         rc = core.check_module_command(["--channel=beta", "--json"])

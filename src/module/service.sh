@@ -113,47 +113,37 @@ if [ ! -f "$ANCLI_DIR/hosts" ]; then
 fi
 chmod 644 "$ANCLI_DIR/hosts" 2>/dev/null || true
 
-# 5.1 部署 AGY 宿主机 `bash -c` POSIX 兼容入口（Dual-Injection）：
-#     仅当目标不存在或带有 AnCLI 标记时才写入，绝不覆盖用户自装的真实 bash。
-if [ -f "$MODULE_DIR/ancli/bash-host-compat" ]; then
-    mkdir -p "$MODULE_DIR/system/bin" 2>/dev/null || true
-    for TARGET_BIN in "$MODULE_DIR/system/bin" /data/adb/ksu/bin /data/adb/ap/bin; do
-        [ -d "$TARGET_BIN" ] || continue
-        host_bash="$TARGET_BIN/bash"
-        replace_host_bash=0
-        if [ ! -e "$host_bash" ]; then
-            replace_host_bash=1
-        elif head -n 8 "$host_bash" 2>/dev/null | grep -q 'AnCLI AGY host bash compatibility\|AnCLI proot shim'; then
-            replace_host_bash=1
-        fi
-        if [ "$replace_host_bash" -eq 1 ]; then
-            cp -f "$MODULE_DIR/ancli/bash-host-compat" "$host_bash" 2>/dev/null || true
-            chmod 755 "$host_bash" 2>/dev/null || true
-        fi
-    done
-fi
+# 5.1 清理旧版本遗留的假 bash 覆盖与 KSU/AP 动态 bin 注入，不再写 /data/adb/ksu/bin
+for _legacy_bin in "$MODULE_DIR/system/bin" /data/adb/ksu/bin /data/adb/ap/bin; do
+    [ -d "$_legacy_bin" ] || continue
+    if [ -f "$_legacy_bin/bash" ] && head -n 8 "$_legacy_bin/bash" 2>/dev/null | grep -q 'AnCLI AGY host bash compatibility\|AnCLI proot shim'; then
+        rm -f "$_legacy_bin/bash" 2>/dev/null || true
+    fi
+done
 
-# 6. 每次开机将 $ANCLI_DIR/bin/ 下的工具包装器同步至 KSU/AP 动态路径，
-#    跳过核心基础文件与宿主机 shim（bash 已在 5.1 单独处理），并清理旧版 git/curl 广域 shim。
+# 6. 每次开机同步主入口至 $ANCLI_DIR/bin/ancli，并将 $ANCLI_DIR/bin/ 下的工具包装器同步至模块 system/bin
+#    （由 KernelSU/Magisk systemless mount 提供给 /system/bin，不再写入 /data/adb/ksu/bin）
+mkdir -p "$MODULE_DIR/system/bin" 2>/dev/null || true
+if [ -f "$MODULE_DIR/system/bin/ancli" ]; then
+    cp -f "$MODULE_DIR/system/bin/ancli" "$ANCLI_DIR/bin/ancli" 2>/dev/null || true
+    chmod 755 "$ANCLI_DIR/bin/ancli" 2>/dev/null || true
+fi
+for wrapper in "$ANCLI_DIR/bin/"*; do
+    name="${wrapper##*/}"
+    case "$name" in
+        proot|loader|loader-*|ancli-core.py|ancli|ancli_env.sh|registry.json|installed.json|hosts) continue ;;
+        git|bash|curl) continue ;;
+        .*) continue ;;
+    esac
+    [ -f "$wrapper" ] || continue
+    cp -f "$wrapper" "$MODULE_DIR/system/bin/$name" 2>/dev/null || true
+    chmod 755 "$MODULE_DIR/system/bin/$name" 2>/dev/null || true
+done
 for INSTANT_BIN in /data/adb/ksu/bin /data/adb/ap/bin; do
     [ -d "$INSTANT_BIN" ] || continue
-    for wrapper in "$ANCLI_DIR/bin/"*; do
-        name="${wrapper##*/}"
-        # 跳过基础设施文件与宿主机 shim，仅同步应用包装脚本
-        case "$name" in
-            proot|loader|loader-*|ancli-core.py|ancli|ancli_env.sh|registry.json|installed.json|hosts) continue ;;
-            git|bash|curl) continue ;;
-            .*) continue ;;
-        esac
-        [ -f "$wrapper" ] || continue
-        cp -f "$wrapper" "$INSTANT_BIN/$name" 2>/dev/null || true
-        chmod 755 "$INSTANT_BIN/$name" 2>/dev/null || true
+    grep -rl "$ANCLI_DIR" "$INSTANT_BIN" 2>/dev/null | while IFS= read -r _old_injected; do
+        rm -f "$_old_injected" 2>/dev/null || true
     done
-    if [ -f "$MODULE_DIR/system/bin/ancli" ]; then
-        cp -f "$MODULE_DIR/system/bin/ancli" "$INSTANT_BIN/ancli" 2>/dev/null || true
-        chmod 755 "$INSTANT_BIN/ancli" 2>/dev/null || true
-    fi
-    # 清理旧版本遗留的广域 git/curl proot shim（保留 5.1 刚维护的 bash 兼容入口）
     for shim in git curl; do
         if [ -f "$INSTANT_BIN/$shim" ] && head -n 2 "$INSTANT_BIN/$shim" 2>/dev/null | grep -q "AnCLI proot shim"; then
             rm -f "$INSTANT_BIN/$shim" 2>/dev/null || true

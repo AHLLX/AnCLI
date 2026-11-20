@@ -36,6 +36,9 @@ jobs:
           echo "version=$(sed -n 's/^version=//p' src/module/module.prop)" >> "$GITHUB_OUTPUT"
           echo "version_code=$(sed -n 's/^versionCode=//p' src/module/module.prop)" >> "$GITHUB_OUTPUT"
 
+      - name: Build proot from upstream source
+        run: bash scripts/build_proot_ci.sh
+
       - name: Build the module ZIP
         run: python3 scripts/build_module.py
 
@@ -64,6 +67,9 @@ jobs:
         run: |
           echo "version=$(sed -n 's/^version=//p' src/module/module.prop)" >> "$GITHUB_OUTPUT"
           echo "version_code=$(sed -n 's/^versionCode=//p' src/module/module.prop)" >> "$GITHUB_OUTPUT"
+
+      - name: Build proot from upstream source
+        run: bash scripts/build_proot_ci.sh
 
       - name: Build the module ZIP
         run: python3 scripts/build_module.py

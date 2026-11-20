@@ -5,6 +5,7 @@
 - Add `ancli shell` to enter the container's interactive Ubuntu Bash (`-l`) or run commands inside it, and sync `src/runtime-context/AGENTS.md`.
 - Silence `Terminated` job noise and exit delays in PRoot wrappers by trapping `TERM`/`INT`/`HUP` and detaching `stdin` in background watchers.
 - Clean up unused WebUI CSS rules and dead helper code; attach all four Ubuntu 24.04 arm64 offline container bundles (`minimal`, `standard`, `developer`, `full`) alongside the module ZIP.
+- Comply with KernelSU module security review: add `LICENSE` (MIT), build `proot` from upstream source in CI (`scripts/build_proot_ci.sh`), verify `ubuntu-base` downloads against `SHA256SUMS`, remove the `/system/bin/bash` override, and stop writing files into `/data/adb/{ksu,ap}/bin`.
 
 ## v1.2.664-beta (2026-11-20)
 

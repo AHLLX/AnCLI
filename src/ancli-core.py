@@ -1305,39 +1305,10 @@ def _write_wrapper_to_paths(executable, wrapper):
         with open(sys_path, "w", encoding="utf-8") as f:
             f.write(wrapper)
         os.chmod(sys_path, 0o755)
+        print(f"\033[92m[OK] Systemless wrapper written: {sys_path}\033[0m")
+        print(f"\033[96m[i] Restart device to expose '/system/bin/{executable}' globally (or use 'ancli shell' / 'sh {ancli_bin_path}' immediately).\033[0m")
     except Exception as e:
         print(f"\033[93m[!] Warning: Could not write systemless wrapper to {sys_path}: {e}\033[0m")
-
-    # 2. Instant-access paths (KSU / APatch), take effect immediately without reboot.
-    # Python open() inside proot is blocked by SELinux for /data/adb paths.
-    # Strategy: write to a tmp file in ANCLI_DIR (always writable from proot), then
-    # use os.system('cp') which forks a host-side root shell that can write to /data/adb.
-    tmp_wrapper = f"{ANCLI_DIR}/bin/.{executable}.tmp"
-    try:
-        with open(tmp_wrapper, "w", encoding="utf-8") as f:
-            f.write(wrapper)
-        os.chmod(tmp_wrapper, 0o755)
-        for instant_bin in [KSU_BIN, AP_BIN]:
-            if os.path.isdir(instant_bin):
-                inst_path = f"{instant_bin}/{executable}"
-                ret = os.system(f"cp -f {tmp_wrapper} {inst_path} 2>/dev/null && chmod 755 {inst_path} 2>/dev/null")
-                if ret == 0:
-                    print(f"\033[92m[OK] Instant wrapper updated: {inst_path}\033[0m")
-                else:
-                    # If cp fails (SELinux restricts new file creation), the pre-seeded
-                    # placeholder from customize.sh will route the command anyway.
-                    if os.path.exists(inst_path):
-                        print(f"\033[92m[OK] Instant wrapper ready (via placeholder): {inst_path}\033[0m")
-                    else:
-                        print(f"\033[93m[!] Warning: Could not write instant wrapper to {inst_path}\033[0m")
-                        print(f"    (The tool will be globally available after next reboot)\033[0m")
-    except Exception as e:
-        print(f"\033[93m[!] Warning: Could not prepare instant wrapper for {executable}: {e}\033[0m")
-    finally:
-        try:
-            os.remove(tmp_wrapper)
-        except Exception:
-            pass
 
 def remove_wrapper(executable):
     """删除双注入路径中的工具包装脚本，并同步清理对应的 secrets 密钥文件。"""
@@ -1363,85 +1334,23 @@ def remove_wrapper(executable):
 
 
 def _deploy_agy_host_bash_compat(verbose=True):
-    """Install AGY's narrow Android-host ``bash -c`` compatibility entrypoint.
+    """Remove any legacy AnCLI fake `/system/bin/bash` override.
 
-    AGY can ask its remote command runner to start ``bash`` before the request
-    reaches the Ubuntu guest. Android normally has only ``/system/bin/sh``.
-    The bundled script forwards POSIX-compatible arguments to that shell; it is
-    intentionally not a second execution backend and never starts PRoot.
-    Existing non-AnCLI ``bash`` files are preserved.
-    """
-    source = f"{ANCLI_DIR}/bash-host-compat"
-    if not os.path.isfile(source):
-        if verbose:
-            print("\033[90m[i] AGY host bash compatibility file is not bundled.\033[0m")
-        return []
-
-    deployed = []
-    tmp_file = f"{ANCLI_DIR}/bin/.bash-host-compat.tmp"
-    try:
-        with open(source, "r", encoding="utf-8", errors="replace") as fh:
-            content = fh.read()
-        if "AnCLI AGY host bash compatibility" not in content:
-            if verbose:
-                print("\033[93m[!] Refusing an unmarked AGY host compatibility file.\033[0m")
-            return []
-        with open(tmp_file, "w", encoding="utf-8", newline="\n") as fh:
-            fh.write(content)
-        os.chmod(tmp_file, 0o755)
-
-        mod_sys_bin = f"{MOD_DIR}/system/bin"
-        for instant_bin in (mod_sys_bin, KSU_BIN, AP_BIN):
-            if not os.path.isdir(instant_bin):
-                try:
-                    os.makedirs(instant_bin, exist_ok=True)
-                except OSError:
-                    continue
-            target = f"{instant_bin}/bash"
-            replace = not os.path.lexists(target)
-            if not replace:
-                try:
-                    with open(target, "r", encoding="utf-8", errors="replace") as fh:
-                        current = fh.read(512)
-                    replace = (
-                        "AnCLI AGY host bash compatibility" in current
-                        or "AnCLI proot shim" in current
-                    )
-                except OSError:
-                    # A real, unreadable user binary is safer to preserve.
-                    replace = False
-            if not replace:
-                if verbose:
-                    print(f"\033[90m[i] Preserved existing host bash: {target}\033[0m")
-                continue
-            copied = False
-            try:
-                shutil.copy2(tmp_file, target)
-                os.chmod(target, 0o755)
-                copied = True
-            except OSError:
-                rc = os.system(
-                    f"cp -f {shlex.quote(tmp_file)} {shlex.quote(target)} "
-                    f">/dev/null 2>&1 && chmod 755 {shlex.quote(target)} >/dev/null 2>&1"
-                )
-                copied = (rc == 0)
-
-            if copied:
-                deployed.append(target)
-                if verbose:
-                    print(f"\033[92m[OK] AGY host bash compatibility: {target}\033[0m")
-            elif verbose:
-                print(f"\033[93m[!] Could not deploy AGY host bash compatibility: {target}\033[0m")
-    except OSError as e:
-        if verbose:
-            print(f"\033[93m[!] Could not prepare AGY host bash compatibility: {e}\033[0m")
-    finally:
+    KernelSU security policy forbids overlaying `/system/bin/bash` or writing
+    files into `/data/adb/ksu/bin`. Real GNU bash remains available inside the
+    Ubuntu PRoot container (`/bin/bash` and `ancli shell`)."""
+    for legacy_dir in (f"{MOD_DIR}/system/bin", KSU_BIN, AP_BIN):
+        target = f"{legacy_dir}/bash"
+        if not os.path.lexists(target):
+            continue
         try:
-            if os.path.exists(tmp_file):
-                os.remove(tmp_file)
+            with open(target, "r", encoding="utf-8", errors="replace") as fh:
+                head = fh.read(512)
+            if "AnCLI AGY host bash compatibility" in head or "AnCLI proot shim" in head:
+                os.remove(target)
         except OSError:
             pass
-    return deployed
+    return []
 
 # ---------------------------------------------------------------------------
 # Security
@@ -1937,10 +1846,8 @@ def _runtime_context_probe():
         },
         "host_compatibility": {
             "bash": {
-                "paths": [f"{MOD_DIR}/system/bin/bash", f"{KSU_BIN}/bash", f"{AP_BIN}/bash"],
-                "installed": any(
-                    os.path.isfile(f"{path}/bash") for path in (f"{MOD_DIR}/system/bin", KSU_BIN, AP_BIN)
-                ),
+                "paths": [],
+                "installed": False,
             },
         },
         "commands": commands,
@@ -4417,10 +4324,8 @@ def doctor_json():
             "android_data": ensure_android_data(verbose=False),
             "host_compatibility": {
                 "bash": {
-                    "paths": [f"{MOD_DIR}/system/bin/bash", f"{KSU_BIN}/bash", f"{AP_BIN}/bash"],
-                    "installed": any(
-                        os.path.isfile(f"{path}/bash") for path in (f"{MOD_DIR}/system/bin", KSU_BIN, AP_BIN)
-                    ),
+                    "paths": [],
+                    "installed": False,
                 },
             },
             "paths": paths,

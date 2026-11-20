@@ -19,6 +19,7 @@ reasonix.toml
 
 # Compiled sync files inside the module source
 src/module/ancli/
+src/module/bin/
 
 # Debug / local artifacts (must not be committed)
 agy_strings.txt

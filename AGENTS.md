@@ -13,7 +13,7 @@ Because Android uses the Bionic C library, native Linux binaries often crash. An
 - `dsh-web-control.sh` 启动 `dsh web` 时将进程迁出管理器应用 cgroup 至根 cgroup（避免切到 Chrome 后被 Android 后台冻结器 `do_freezer_trap` 挂起），并保留宿主代理与 `NO_PROXY=localhost,127.0.0.1,::1,0.0.0.0`；`ancli-core.py` 的 `patch_dsh_web_oauth_popup()` 与 `patch_dsh_web_cookie()` 同步在安装/更新/修复时生效。
 - WebUI 支持按应用卡片独立锁定与不同应用并发安装/更新/卸载，后端通过 `_mutate_installed()`（`fcntl.flock`）保护 `installed.json` 并发写入；已清理残留无用 CSS/JS。
 - 新增 `ancli shell [命令...]`（宿主机入口与容器内入口均支持，无参数进入 `/bin/bash -l`），并已同步至 `src/runtime-context/AGENTS.md`；`generate_proot_wrapper` 两个后台 watcher 子 shell 均已 `</dev/null` 并捕获 `TERM INT HUP` 静默退出，消除退出卡顿与 `Terminated` 刷屏。
-- 保持单一 `proot-ubuntu` 后端。容器内提供原生 `/usr/local/bin/ancli`，宿主 bash 兼容入口仍使用 `$MODPATH/system/bin/bash`（Path A）和 `/data/adb/ksu/bin/bash`、`/data/adb/ap/bin/bash`（Path B）。
+- 保持单一 `proot-ubuntu` 后端。容器内提供原生 `/usr/local/bin/ancli`，宿主机入口通过 `$MODPATH/system/bin/`（systemless 挂载，重启后生效于 `/system/bin/`）与 `/data/local/tmp/ancli/bin/` 提供；不覆盖 `/system/bin/bash`，不向 `/data/adb/ksu/bin` 或 `/data/adb/ap/bin` 写文件。`bin/proot` 由 GitHub Actions CI（`scripts/build_proot_ci.sh`）从上游 `proot v5.4.0` 源码编译打入，仓库不存放预编译二进制。
 - 容器 wrapper 的 PATH 为 `/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/root/.local/bin:/data/adb/ksu/bin:/data/adb/ap/bin:/system/bin`；`/system/bin` 只能作为 Android 安全只读工具的回退路径。
 - PRoot 容器命令不能启用 Linux User Namespace 或 Seccomp sandbox；Android 内核下会产生 `EINVAL`。不要引入嵌套 PRoot。
 - WebUI 长任务必须通过 `nohup` 脱离 KernelSU WebUI exec 会话，并由后台 shell 写入 `.log` 和 `.exit`。
