@@ -17,6 +17,10 @@ if [ -f "$MODULE_DIR/container-bootstrap.sh" ]; then
     cp -f "$MODULE_DIR/container-bootstrap.sh" "$ANCLI_DIR/container-bootstrap.sh" 2>/dev/null || true
     chmod 755 "$ANCLI_DIR/container-bootstrap.sh" 2>/dev/null || true
 fi
+if [ -f "$MODULE_DIR/module-update.sh" ]; then
+    cp -f "$MODULE_DIR/module-update.sh" "$ANCLI_DIR/module-update.sh" 2>/dev/null || true
+    chmod 755 "$ANCLI_DIR/module-update.sh" 2>/dev/null || true
+fi
 if [ -f "$MODULE_DIR/container-export.py" ]; then
     cp -f "$MODULE_DIR/container-export.py" "$ANCLI_DIR/container-export.py" 2>/dev/null || true
     chmod 755 "$ANCLI_DIR/container-export.py" 2>/dev/null || true

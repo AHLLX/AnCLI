@@ -208,8 +208,19 @@ if [ "${1:-}" = "android" ]; then
     echo '{"status":"error","error":"android probe script is missing"}'
     exit 1
 fi
+if [ "${1:-}" = "download-module" ]; then
+    [ -x /data/local/tmp/ancli/module-update.sh ] || { echo '[X] 模块更新下载器缺失，请重新安装 AnCLI 模块' >&2; exit 1; }
+    shift
+    exec /system/bin/sh /data/local/tmp/ancli/module-update.sh download "$@"
+fi
 if [ ! -f /data/local/tmp/ancli/rootfs/bin/bash ]; then
     case "${1:-}" in
+        check-module)
+            [ -x /data/local/tmp/ancli/module-update.sh ] || { echo '{"status":"error","error":"模块更新检查器缺失，请重新安装 AnCLI 模块"}'; exit 1; }
+            _ancli_channel=stable
+            for _ancli_arg in "$@"; do case "$_ancli_arg" in --channel=beta) _ancli_channel=beta ;; esac; done
+            exec /system/bin/sh /data/local/tmp/ancli/module-update.sh check "$_ancli_channel"
+            ;;
         status|doctor|list|config)
             if [ -x /data/local/tmp/ancli/container-bootstrap.sh ]; then
                 exec /system/bin/sh /data/local/tmp/ancli/container-bootstrap.sh "$@"

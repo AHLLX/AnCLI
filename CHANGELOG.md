@@ -1,3 +1,8 @@
+## v1.2.664-beta (2026-11-20)
+
+- Run module update checks and verified ZIP downloads on the Android host so module updates remain available when the Ubuntu container has been removed.
+- Avoid repeating the generic update-check error in the About dialog.
+
 ## v1.2.663-beta (2026-11-20)
 
 - Allow a fresh container install to replace an exactly empty `rootfs/root` placeholder left after container removal; continue preserving any rootfs containing user data.

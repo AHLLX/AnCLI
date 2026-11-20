@@ -163,6 +163,10 @@ if [ -f "$MODPATH/container-bootstrap.sh" ]; then
     cp -f "$MODPATH/container-bootstrap.sh" "$ANCLI_DIR/container-bootstrap.sh"
     chmod 755 "$ANCLI_DIR/container-bootstrap.sh"
 fi
+if [ -f "$MODPATH/module-update.sh" ]; then
+    cp -f "$MODPATH/module-update.sh" "$ANCLI_DIR/module-update.sh" || installer_abort '无法部署模块更新检查器' 'Could not deploy module update checker'
+    chmod 755 "$ANCLI_DIR/module-update.sh" 2>/dev/null || true
+fi
 if [ -f "$MODPATH/container-export.py" ]; then
     cp -f "$MODPATH/container-export.py" "$ANCLI_DIR/container-export.py" || installer_abort '无法部署容器导出工具' 'Could not deploy container export helper'
     chmod 755 "$ANCLI_DIR/container-export.py"

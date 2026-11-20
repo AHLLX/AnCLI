@@ -5093,7 +5093,7 @@ async function startModuleDownload(data) {
   let autoInstallPath = '';
   try {
     const task = await runBackground(
-      ANCLI + ' download-module --channel=' + currentModuleChannel,
+      ANCLI + ' download-module --url=' + shQuote(data.zip_url) + ' --version=' + shQuote(data.latest_version || '') + ' --code=' + shQuote(String(data.latest_version_code || '')),
       '',
       { keepLog: true, onOutput: consumeModuleDownloadOutput, timeoutMs: 180000 }
     );
@@ -5171,9 +5171,11 @@ async function runCheckModuleUpdate() {
 
     resultEl.style.display = 'block';
     if (data.status === 'error') {
+      const detail = data.error || '';
+      const message = detail === uiText('aboutCheckFailed') ? detail : uiText('aboutCheckFailed') + (detail ? '：' + detail : '');
       resultEl.innerHTML = `
         <div class="module-update-result note" style="border-left: 3px solid var(--danger);">
-          ${esc(uiText('aboutCheckFailed'))}：${esc(data.error || '')}
+          ${esc(message)}
         </div>`;
     } else if (data.has_update) {
       setModuleUpdateIndicator(data);
@@ -5224,9 +5226,11 @@ async function runCheckModuleUpdate() {
     }
   } catch (err) {
     resultEl.style.display = 'block';
+    const detail = err.message || String(err);
+    const message = detail === uiText('aboutCheckFailed') ? detail : uiText('aboutCheckFailed') + '：' + detail;
     resultEl.innerHTML = `
       <div class="module-update-result note" style="border-left: 3px solid var(--danger);">
-        ${esc(uiText('aboutCheckFailed'))}：${esc(err.message || String(err))}
+        ${esc(message)}
       </div>`;
   } finally {
     if (!moduleDownloadBusy) setModuleCheckControls(false);
