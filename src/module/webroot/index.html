@@ -1259,7 +1259,7 @@ body.ime-open .settings-viewport { min-height: 0; }
               <button class="btn xs" id="btnContainerExport" data-i18n="containerExportAction">导出当前容器到 Download</button>
               <div class="field" style="margin-top: 12px;">
                 <label data-i18n="containerImportLabel">选择 Download 中的容器备份 ZIP</label>
-                <input type="file" id="settingsImportBundleFile" accept=".zip,application/zip" hidden>
+                <input type="file" id="settingsImportBundleFile" accept="*/*" hidden>
                 <div class="row" style="gap: 8px; flex-wrap: wrap;">
                   <button class="btn xs" type="button" id="btnSettingsChooseBundle" data-i18n="containerChooseFile">选择 ZIP 文件</button>
                   <span id="settingsImportBundleName" class="hint" data-i18n="containerNoFile">尚未选择文件</span>
@@ -2782,7 +2782,7 @@ const UI_TEXT = {
     factoryReset: '完全初始化环境', factoryResetTitle: '恢复模块自带的干净 Agent 环境',
     containerTransferTitle: '容器导出与导入', containerTransferSubtitle: '备份完整 Ubuntu 容器，或从备份恢复',
     containerTransferHint: '导出会将当前容器（包括已安装软件、Agent、容器内配置与密钥）打包到 Download。导入会替换当前容器，请先删除现有容器。',
-    containerExportAction: '导出当前容器到 Download', containerImportLabel: '选择 Download 中的容器备份 ZIP', containerImportAction: '从备份导入容器', containerChooseFile: '选择 ZIP 文件', containerNoFile: '尚未选择文件', containerFileTooLarge: '选择文件超过 1 GiB，无法安全导入', containerPickerUnsupported: '当前 KernelSU 管理器不支持文件访问接口，请更新管理器后重试', containerFileProgress: '正在复制文件',
+    containerExportAction: '导出当前容器到 Download', containerImportLabel: '选择容器备份文件（按内容识别，不要求特定文件名）', containerImportAction: '从备份导入容器', containerChooseFile: '选择安装包', containerNoFile: '尚未选择文件', containerFileTooLarge: '选择文件超过 1 GiB，无法安全导入', containerPickerUnsupported: '当前 KernelSU 管理器不支持文件访问接口，请更新管理器后重试', containerFileProgress: '正在复制文件', containerFileInspecting: '正在检查文件内容…', containerFileZipReady: 'ZIP 文件头有效', containerFileZipInvalid: '文件内容不是 ZIP 容器包', containerFileValidationLater: '完整清单、SHA-256 和架构将在导入时验证',
     containerRemoveTitle: '删除当前容器', containerRemoveSubtitle: '只删除 Ubuntu rootfs，保留 AnCLI 模块',
     containerRemoveHint: '删除容器中的应用、配置、密钥、全局记忆和未完成安装检查点。模块与代理、语言、下载站点设置会保留。删除前请先退出所有 Agent 和容器终端。',
     containerRemoveAction: '删除当前容器', containerRemoveWarning: '此操作会永久删除完整 Ubuntu rootfs，包括已安装 Agent、软件包、配置、密钥和记忆文件。AnCLI 模块及模块设置会保留。请先退出正在运行的 Agent。此操作无法撤销。',
@@ -2889,7 +2889,7 @@ const UI_TEXT = {
     factoryReset: 'Factory reset environment', factoryResetTitle: 'Restore the clean Agent environment from the module',
     containerTransferTitle: 'Container export and import', containerTransferSubtitle: 'Back up the full Ubuntu container or restore a backup',
     containerTransferHint: 'Export saves the current container, including installed packages, Agents, container settings and secrets, to Download. Import replaces the current container; remove it first.',
-    containerExportAction: 'Export current container to Download', containerImportLabel: 'Choose a container backup ZIP from Download', containerImportAction: 'Import container backup', containerChooseFile: 'Choose ZIP file', containerNoFile: 'No file selected', containerFileTooLarge: 'The selected file exceeds 1 GiB and cannot be imported safely', containerPickerUnsupported: 'This KernelSU Manager does not provide the file access interface. Update the manager and try again.', containerFileProgress: 'Copying selected file',
+    containerExportAction: 'Export current container to Download', containerImportLabel: 'Choose a container backup file (identified by content, filename is unrestricted)', containerImportAction: 'Import container backup', containerChooseFile: 'Choose package', containerNoFile: 'No file selected', containerFileTooLarge: 'The selected file exceeds 1 GiB and cannot be imported safely', containerPickerUnsupported: 'This KernelSU Manager does not provide the file access interface. Update the manager and try again.', containerFileProgress: 'Copying selected file', containerFileInspecting: 'Inspecting file contents…', containerFileZipReady: 'ZIP signature found', containerFileZipInvalid: 'The contents are not a container ZIP bundle', containerFileValidationLater: 'Manifest, SHA-256 and architecture are verified during import',
     containerRemoveTitle: 'Delete current container', containerRemoveSubtitle: 'Remove Ubuntu rootfs only; keep the AnCLI module',
     containerRemoveHint: 'Deletes container apps, settings, secrets, global memory and incomplete install checkpoints. The module and its proxy, language and mirror settings remain. Exit all Agents and container terminals first.',
     containerRemoveAction: 'Delete current container', containerRemoveWarning: 'This permanently deletes the complete Ubuntu rootfs, including installed Agents, packages, settings, secrets and memory files. The AnCLI module and its settings remain. Exit running Agents first. This cannot be undone.',
@@ -3063,9 +3063,9 @@ function buildContainerInitCardHtml() {
     '</div>' +
     '<div class="field" style="margin-top: 12px;">' +
       '<label>' + (uiLang === 'en' ? 'Offline container import' : '离线容器导入') + '</label>' +
-      '<input type="file" id="initOfflineBundleFile" accept=".zip,application/zip" hidden />' +
+      '<input type="file" id="initOfflineBundleFile" accept="*/*" hidden />' +
       '<div class="row" style="gap: 8px; flex-wrap: wrap; align-items: center;">' +
-      '<button type="button" class="btn" id="btnInitChooseBundle">' + (uiLang === 'en' ? 'Choose ZIP file' : '选择 ZIP 文件') + '</button>' +
+      '<button type="button" class="btn" id="btnInitChooseBundle">' + (uiLang === 'en' ? 'Choose package' : '选择安装包') + '</button>' +
       '<span id="initOfflineBundleName" class="hint">' + (uiLang === 'en' ? 'No file selected' : '尚未选择文件') + '</span></div>' +
       '<small class="hint">' + (uiLang === 'en' ? 'Select the downloaded ZIP. It contains the Ubuntu 24.04 arm64 full profile only; no Agent apps or configured global memory.' : '选择已下载的 ZIP。包内只有 Ubuntu 24.04 arm64 完整规格，不含 Agent 应用或已配置的全局记忆。') + ' ' +
       '<a href="https://github.com/AHLLX/AnCLI/releases" target="_blank" rel="noopener noreferrer">' + (uiLang === 'en' ? 'Download from GitHub Releases' : '前往 GitHub Releases 下载') + '</a></small>' +
@@ -4070,18 +4070,39 @@ function wireContainerFilePicker(inputId, chooseId, nameId, importId) {
   const name = document.getElementById(nameId);
   const importButton = document.getElementById(importId);
   if (choose && input) choose.onclick = () => input.click();
-  if (input) input.onchange = () => {
+  if (input) input.onchange = async () => {
     const file = input.files && input.files[0];
-    if (name) name.textContent = file ? file.name : uiText('containerNoFile');
+    if (!name) return;
+    name.style.color = '';
+    if (!file) { name.textContent = uiText('containerNoFile'); return; }
+    name.textContent = file.name + ' · ' + formatBytes(file.size) + ' · ' + uiText('containerFileInspecting');
+    if (file.size > 1024 * 1024 * 1024) {
+      name.style.color = 'var(--danger)';
+      name.textContent = file.name + ' · ' + formatBytes(file.size) + ' · ' + uiText('containerFileTooLarge');
+      return;
+    }
+    try {
+      const header = new Uint8Array(await file.slice(0, 4).arrayBuffer());
+      const zipSignature = header.length === 4 && header[0] === 0x50 && header[1] === 0x4b && header[2] === 0x03 && header[3] === 0x04;
+      name.style.color = zipSignature ? 'var(--ok)' : 'var(--danger)';
+      name.textContent = file.name + ' · ' + formatBytes(file.size) + ' · ' +
+        (zipSignature ? uiText('containerFileZipReady') + ' · ' + uiText('containerFileValidationLater') : uiText('containerFileZipInvalid'));
+    } catch (_) {
+      name.style.color = 'var(--danger)';
+      name.textContent = file.name + ' · ' + uiText('containerFileZipInvalid');
+    }
   };
   if (importButton) importButton.onclick = () => void importContainerFromUi(input?.files?.[0]);
 }
 
 async function copyPickedFileToHost(file) {
   if (!file) throw new Error(uiText('containerNoFile'));
-  if (!/\.zip$/i.test(file.name || '')) throw new Error(uiLang === 'en' ? 'Select a .zip file.' : '请选择 ZIP 文件。');
   if (!file.size) throw new Error(uiText('containerImportFailed'));
   if (file.size > 1024 * 1024 * 1024) throw new Error(uiText('containerFileTooLarge'));
+  const signature = new Uint8Array(await file.slice(0, 4).arrayBuffer());
+  if (signature.length !== 4 || signature[0] !== 0x50 || signature[1] !== 0x4b || signature[2] !== 0x03 || signature[3] !== 0x04) {
+    throw new Error(uiText('containerFileZipInvalid'));
+  }
   const fs = bridge?.obj?.io;
   if (typeof fs !== 'function') throw new Error(uiText('containerPickerUnsupported'));
   const io = fs.call(bridge.obj);

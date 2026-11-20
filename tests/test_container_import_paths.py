@@ -36,3 +36,16 @@ def test_container_import_rejects_only_actual_traversal_paths():
             assert (result.returncode == 0) is should_reject, (entries, result.stderr)
         finally:
             os.unlink(path)
+
+
+def test_webui_import_picker_uses_content_signature_not_filename_extension():
+    source = (ROOT / 'src/module/webroot/index.html').read_text(encoding='utf-8')
+    assert source.count('accept="*/*"') == 2
+    start = source.index('async function copyPickedFileToHost(file) {')
+    end = source.index('\nasync function importContainerFromUi(file)', start)
+    importer = source[start:end]
+    assert not re.search(r"file\.name.*\.zip|/\\\.zip\$/i", importer)
+    assert 'signature[0] !== 0x50' in importer
+    assert 'signature[1] !== 0x4b' in importer
+    assert 'signature[2] !== 0x03' in importer
+    assert 'signature[3] !== 0x04' in importer

@@ -1,3 +1,7 @@
+## v1.2.659-beta (2026-11-20)
+
+- Identify offline container imports from ZIP content instead of the filename or extension; show a quick signature and size check before import, then verify the manifest, digest and architecture during import.
+
 ## v1.2.658-beta (2026-11-20)
 
 - Remove the duplicate full environment download card from Settings; direct users to GitHub Releases from the first-use guide and container setup.
