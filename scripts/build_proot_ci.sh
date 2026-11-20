@@ -54,6 +54,12 @@ build_arch() {
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
+#include <limits.h>
+#include <dlfcn.h>
+#define TALLOC_BUILD_VERSION_MAJOR 2
+#define TALLOC_BUILD_VERSION_MINOR 4
+#define TALLOC_BUILD_VERSION_RELEASE 2
+#define HAVE_CONSTRUCTOR_ATTRIBUTE 1
 #define HAVE_VA_COPY 1
 #define HAVE_STRNLEN 1
 #define HAVE_STDBOOL_H 1
