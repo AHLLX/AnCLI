@@ -47,6 +47,7 @@ build_arch() {
     local stage="$WORK_DIR/build-$arch"
     mkdir -p "$stage/talloc" "$stage/proot"
     cp -a "$PROOT_SRC/src/." "$stage/proot/"
+    sed -i '/extension\/python/d; /proot_wrap/d' "$stage/proot/GNUmakefile"
 
     cat > "$stage/talloc/config.h" <<'EOF'
 #define __STDC_WANT_LIB_EXT1__ 1
