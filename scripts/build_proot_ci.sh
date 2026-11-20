@@ -26,17 +26,16 @@ echo "$PROOT_SHA256  $WORK_DIR/proot.tar.gz" | sha256sum --check --status
 tar -xzf "$WORK_DIR/proot.tar.gz" -C "$WORK_DIR"
 PROOT_SRC="$WORK_DIR/proot-5.4.0"
 
-# Fetch talloc source from Ubuntu's signed APT source repository.
-if [ -f /etc/apt/sources.list.d/ubuntu.sources ]; then
-    sudo sed -i 's/^Types: deb$/Types: deb deb-src/' /etc/apt/sources.list.d/ubuntu.sources
-fi
-sudo apt-get update -qq
-(cd "$WORK_DIR" && apt-get source -qq talloc)
-TALLOC_SRC="$(find "$WORK_DIR" -maxdepth 1 -mindepth 1 -type d -name 'talloc-*' | head -n 1)"
-[ -n "$TALLOC_SRC" ] && [ -f "$TALLOC_SRC/talloc.c" ] || {
-    echo "[X] talloc source not found" >&2
+# Fetch talloc 2.4.2 from upstream samba-team/samba GitHub tag (commit-pinned).
+TALLOC_COMMIT="f28966c1638806a5af1fa4e451b668af638491ce"
+git clone --depth 1 --branch talloc-2.4.2 --filter=blob:none --sparse \
+    https://github.com/samba-team/samba.git "$WORK_DIR/samba"
+git -C "$WORK_DIR/samba" sparse-checkout set lib/talloc
+[ "$(git -C "$WORK_DIR/samba" rev-parse HEAD)" = "$TALLOC_COMMIT" ] || {
+    echo "[X] talloc commit mismatch" >&2
     exit 1
 }
+TALLOC_SRC="$WORK_DIR/samba/lib/talloc"
 
 build_arch() {
     local arch="$1"
