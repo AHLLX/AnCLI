@@ -2712,10 +2712,11 @@ const UI_TEXT = {
     aboutCheckHasUpdate: '发现新版本',
     aboutDownloadNow: '现在下载',
     aboutDownloadStarting: '正在下载更新包…',
-    aboutDownloadDone: '下载完成，可以开始更新',
+    aboutDownloadDone: '下载完成，正在交给 KernelSU 刷入…',
     aboutInstallNow: '现在开始更新',
     aboutInstallStarting: '正在安装下载包…',
-    aboutInstallDone: '安装命令已提交，KernelSU 正在切换模块',
+    aboutInstallDone: 'KernelSU 已接收模块更新，请重启设备使其生效',
+    aboutInstallFailed: 'KernelSU 刷入失败，请查看下方任务日志',
     aboutDownloadFailed: '下载失败，请重试',
     aboutViewRelease: '查看详情',
     aboutCheckFailed: '检查更新失败，请检查网络或代理设置',
@@ -2819,10 +2820,11 @@ const UI_TEXT = {
     aboutCheckHasUpdate: 'Update Available',
     aboutDownloadNow: 'Download now',
     aboutDownloadStarting: 'Downloading update package…',
-    aboutDownloadDone: 'Download complete; ready to update',
+    aboutDownloadDone: 'Download complete; handing the ZIP to KernelSU…',
     aboutInstallNow: 'Install update now',
     aboutInstallStarting: 'Installing downloaded package…',
-    aboutInstallDone: 'Install command submitted; KernelSU is switching modules',
+    aboutInstallDone: 'KernelSU accepted the module update. Reboot to apply it.',
+    aboutInstallFailed: 'KernelSU installation failed; check the task log below',
     aboutDownloadFailed: 'Download failed; retry',
     aboutViewRelease: 'View Release',
     aboutCheckFailed: 'Check failed, verify network or proxy',
@@ -4936,11 +4938,16 @@ async function installDownloadedModule(path, button, messageEl) {
   // 2026-11-16：安装命令必须保持为完整 shell 语句，不能使用 keepLog。
   // runBackground 的 keepLog 会在命令尾部追加参数，追加到 `fi` 后会让 shell
   // 语法失效，表现为任务只有 meta 文件、没有 exit 文件，按钮一直卡住。
+  // ksud switches to the global mount namespace; stage the verified ZIP under
+  // /data/local/tmp so the shared-storage /sdcard mount cannot disappear there.
+  const stagedPath = '/data/local/tmp/ancli-update-' + Date.now() + '-' + path.split('/').pop();
   const installCmd =
-    'if [ -x /data/adb/ksud ]; then /data/adb/ksud module install ' + shQuote(path) +
-    '; elif [ -x /data/adb/ap/bin/ksud ]; then /data/adb/ap/bin/ksud module install ' + shQuote(path) +
-    '; elif [ -x /data/adb/ksu/bin/ksud ]; then /data/adb/ksu/bin/ksud module install ' + shQuote(path) +
-    '; else echo "ksud 不可用" >&2; exit 127; fi';
+    'if ! cp ' + shQuote(path) + ' ' + shQuote(stagedPath) + '; then echo "无法将更新包暂存到 /data/local/tmp" >&2; exit 1; fi; ' +
+    'chmod 644 ' + shQuote(stagedPath) + ' || exit 1; ' +
+    'if [ -x /data/adb/ksud ]; then /data/adb/ksud module install ' + shQuote(stagedPath) +
+    '; elif [ -x /data/adb/ksu/bin/ksud ]; then /data/adb/ksu/bin/ksud module install ' + shQuote(stagedPath) +
+    '; elif [ -x /data/adb/ap/bin/ksud ]; then /data/adb/ap/bin/ksud module install ' + shQuote(stagedPath) +
+    '; else echo "ksud 不可用" >&2; exit 127; fi; rc=$?; rm -f ' + shQuote(stagedPath) + '; exit "$rc"';
   try {
     const task = await runBackground(installCmd, '', { timeoutMs: 180000 });
     if (task.status === 'done') {
@@ -4950,14 +4957,16 @@ async function installDownloadedModule(path, button, messageEl) {
       // KernelSU may restart this WebUI while applying the ZIP; reload as a fallback.
       setTimeout(() => { try { window.location.reload(); } catch (e) { /* page is already restarting */ } }, 2600);
     } else {
-      messageEl.textContent = uiText(task.status === 'unknown' || task.status === 'blocked' ? 'taskUnknown' : 'aboutDownloadFailed');
+      messageEl.textContent = uiText(task.status === 'unknown' || task.status === 'blocked' ? 'taskUnknown' : 'aboutInstallFailed');
       button.disabled = false;
       button.textContent = uiText('aboutInstallNow');
+      button.onclick = () => { void installDownloadedModule(path, button, messageEl); };
     }
   } catch (e) {
-    messageEl.textContent = uiText('aboutDownloadFailed') + '：' + (e.message || e);
+    messageEl.textContent = uiText('aboutInstallFailed') + '：' + (e.message || e);
     button.disabled = false;
     button.textContent = uiText('aboutInstallNow');
+    button.onclick = () => { void installDownloadedModule(path, button, messageEl); };
   } finally {
     moduleDownloadBusy = false;
     setModuleCheckControls(false);
@@ -4982,6 +4991,7 @@ async function startModuleDownload(data) {
   messageEl.textContent = uiText('aboutDownloadStarting');
   updateModuleDownloadProgress(0, 0, 0);
 
+  let autoInstallPath = '';
   try {
     const task = await runBackground(
       ANCLI + ' download-module --channel=' + currentModuleChannel,
@@ -4991,9 +5001,9 @@ async function startModuleDownload(data) {
     const path = task.moduleDownloadPath || '';
     if (task.status === 'done' && path) {
       messageEl.textContent = uiText('aboutDownloadDone');
-      button.disabled = false;
-      button.textContent = uiText('aboutInstallNow');
-      button.onclick = () => { void installDownloadedModule(path, button, messageEl); };
+      autoInstallPath = path;
+      button.disabled = true;
+      button.textContent = uiText('aboutInstallStarting');
     } else {
       messageEl.textContent = uiText(task.status === 'unknown' || task.status === 'blocked' ? 'taskUnknown' : 'aboutDownloadFailed');
       button.disabled = false;
@@ -5010,6 +5020,9 @@ async function startModuleDownload(data) {
     setModuleCheckControls(false);
     release();
   }
+  // Let the download task release its busy state before the separate KernelSU
+  // install task starts. The user requested one continuous update action.
+  if (autoInstallPath) void installDownloadedModule(autoInstallPath, button, messageEl);
 }
 
 document.getElementById('chanStable').onclick = (e) => {

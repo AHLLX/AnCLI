@@ -1,3 +1,8 @@
+## v1.2.656-beta (2026-11-20)
+
+- Automatically pass a successfully downloaded and verified module ZIP to KernelSU for installation.
+- Show KernelSU installation failures separately from download failures and tell the user to reboot after KernelSU accepts the update.
+
 ## v1.2.655-beta (2026-11-20)
 
 - Detect live container PRoot processes from `/proc` names instead of matching the manager command text; wait briefly for transient status commands before export and report a real running-process blocker.
