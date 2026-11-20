@@ -49,12 +49,18 @@ build_arch() {
     cp -a "$PROOT_SRC/src/." "$stage/proot/"
 
     cat > "$stage/talloc/config.h" <<'EOF'
+#define __STDC_WANT_LIB_EXT1__ 1
+#include <stdio.h>
 #include <stdarg.h>
 #include <stdbool.h>
 #include <stdint.h>
+#include <stddef.h>
 #include <stdlib.h>
 #include <string.h>
 #include <limits.h>
+#include <errno.h>
+#include <unistd.h>
+#include <sys/types.h>
 #include <dlfcn.h>
 #define TALLOC_BUILD_VERSION_MAJOR 2
 #define TALLOC_BUILD_VERSION_MINOR 4
@@ -62,13 +68,27 @@ build_arch() {
 #define HAVE_CONSTRUCTOR_ATTRIBUTE 1
 #define HAVE_VA_COPY 1
 #define HAVE_STRNLEN 1
+#define HAVE_BOOL 1
+#define HAVE_INTPTR_T 1
+#define HAVE_UINTPTR_T 1
+#define HAVE_PTRDIFF_T 1
+#define HAVE_USECONDS_T 1
 #define HAVE_STDBOOL_H 1
 #define HAVE_STDINT_H 1
+#define HAVE_STDDEF_H 1
 #define HAVE_STDARG_H 1
+#define HAVE_STDIO_H 1
+#define HAVE_STDLIB_H 1
+#define HAVE_STRING_H 1
+#define HAVE_LIMITS_H 1
+#define HAVE_ERRNO_H 1
+#define HAVE_UNISTD_H 1
+#define HAVE_SYS_TYPES_H 1
+#define HAVE_DLFCN_H 1
 #define HAVE_STRLCPY 1
 #define HAVE_STRLCAT 1
 EOF
-    "$cc" -O2 -I"$TALLOC_SRC" -I"$REPLACE_SRC" -I"$stage/talloc" -include "$stage/talloc/config.h" \
+    "$cc" -O2 -D__STDC_WANT_LIB_EXT1__=1 -I"$TALLOC_SRC" -I"$REPLACE_SRC" -I"$stage/talloc" -include "$stage/talloc/config.h" \
         -c "$TALLOC_SRC/talloc.c" -o "$stage/talloc/talloc.o"
     "$ar" rcs "$stage/talloc/libtalloc.a" "$stage/talloc/talloc.o"
 
