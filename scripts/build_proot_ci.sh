@@ -62,6 +62,8 @@ build_arch() {
 #include <unistd.h>
 #include <sys/types.h>
 #include <dlfcn.h>
+/* NDK sys/types.h already defines useconds_t; prevent replace.h's fallback typedef. */
+#define useconds_t __ancli_replace_useconds_t
 #define TALLOC_BUILD_VERSION_MAJOR 2
 #define TALLOC_BUILD_VERSION_MINOR 4
 #define TALLOC_BUILD_VERSION_RELEASE 2
