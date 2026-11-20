@@ -1,3 +1,13 @@
+## v1.2.658-beta (2026-11-20)
+
+- Remove the duplicate full environment download card from Settings; direct users to GitHub Releases from the first-use guide and container setup.
+- Rename the full Ubuntu arm64 bundle to the version-neutral `AnCLI-Ubuntu-24.04-ARM64-Full-Environment.zip` and attach that same name to each module release.
+
+## v1.2.657-beta (2026-11-20)
+
+- Replace offline container path entry with a ZIP file picker in both install and Settings flows; copy the selected file through KernelSU IO before import.
+- Fix false archive traversal rejection for valid `./` rootfs entries while continuing to reject absolute paths and `..` components.
+
 ## v1.2.656-beta (2026-11-20)
 
 - Automatically pass a successfully downloaded and verified module ZIP to KernelSU for installation.

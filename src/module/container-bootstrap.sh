@@ -1281,7 +1281,7 @@ import_container_bundle() (
     _actual_sha=$(sha256sum "$_import_tar" | awk '{print $1}')
     [ "$_actual_sha" = "$_import_sha" ] || { say "[X] rootfs SHA-256 校验失败，文件可能损坏"; return 1; }
     tar -tzf "$_import_tar" > "$_import_tmp/entries" || { say "[X] rootfs 压缩包无法读取"; return 1; }
-    if grep -qE '(^/|(^|/)\.\.(/|$))' "$_import_tmp/entries"; then
+    if awk 'substr($0,1,1)=="/" { bad=1 } { n=split($0,p,"/"); for (i=1;i<=n;i++) if (p[i]=="..") bad=1 } END { exit bad ? 0 : 1 }' "$_import_tmp/entries"; then
         say "[X] rootfs 包含越界路径，拒绝解压"
         return 1
     fi

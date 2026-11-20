@@ -11,7 +11,7 @@ test('language changes rerender cached status, catalog and check results', () =>
   const ctx = vm.createContext({
     document: { documentElement: {}, getElementById: id => elements[id] || null, querySelectorAll: () => [] },
     localStorage: { setItem() {} },
-    renderTaskTabs() {}, renderContainerProfileOptions() {}, syncModuleUpdateIndicatorText() {},
+    renderTaskTabs() {}, renderContainerProfileOptions() {}, syncModuleUpdateIndicatorText() {}, updateMainProxyBadge() {},
     renderTaskFeedback() {}, revealAppLog() {}, appIconMarkup: () => '',
     taskTabs: new Map(), expandedAppLogs: new Set(), busy: 0,
     currentApps: [{id: 'codex', name: 'Codex', installed: false}],

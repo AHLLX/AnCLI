@@ -75,10 +75,12 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          asset='AnCLI-Ubuntu-24.04-ARM64-Full-Development-Environment-v1.2.651-Offline-Import.zip'
+          source_asset='AnCLI-Ubuntu-24.04-ARM64-Full-Development-Environment-v1.2.651-Offline-Import.zip'
+          asset='AnCLI-Ubuntu-24.04-ARM64-Full-Environment.zip'
           mkdir -p release-assets
-          gh release download container-bundle-v1.2.651 --repo "$GITHUB_REPOSITORY" --pattern "$asset" --dir release-assets
-          echo '9a225f14618fa260da9d32fb521ae0e52dcec749bba3f1998c9e05a787b3cfa4  release-assets/'"$asset" | sha256sum --check --status
+          gh release download container-bundle-v1.2.651 --repo "$GITHUB_REPOSITORY" --pattern "$source_asset" --dir release-assets
+          echo '9a225f14618fa260da9d32fb521ae0e52dcec749bba3f1998c9e05a787b3cfa4  release-assets/'"$source_asset" | sha256sum --check --status
+          mv "release-assets/$source_asset" "release-assets/$asset"
 
       - name: Validate module ZIP and release metadata
         uses: KernelSU-Modules/tools/actions/module-release@e72995777c079c0bb32c49cd6fccd2773ebb0987
@@ -94,7 +96,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           module="ancli-${{ steps.metadata.outputs.version_code }}-${{ steps.metadata.outputs.version }}.zip"
-          bundle='release-assets/AnCLI-Ubuntu-24.04-ARM64-Full-Development-Environment-v1.2.651-Offline-Import.zip'
+          bundle='release-assets/AnCLI-Ubuntu-24.04-ARM64-Full-Environment.zip'
           if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             if [ "$(gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft)" = true ]; then
               gh release upload "$GITHUB_REF_NAME" "$module" "$bundle" --repo "$GITHUB_REPOSITORY" --clobber
@@ -109,7 +111,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           EXPECTED_MODULE: ancli-${{ steps.metadata.outputs.version_code }}-${{ steps.metadata.outputs.version }}.zip
-          EXPECTED_BUNDLE: AnCLI-Ubuntu-24.04-ARM64-Full-Development-Environment-v1.2.651-Offline-Import.zip
+          EXPECTED_BUNDLE: AnCLI-Ubuntu-24.04-ARM64-Full-Environment.zip
         run: |
           if [ "$(gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft)" = true ]; then
             gh release edit "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --draft=false
