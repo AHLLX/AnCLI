@@ -1,3 +1,11 @@
+## v1.2.666 (2026-11-20)
+
+- Fix `dsh web` freezing in Android's background app cgroup by detaching `dsh-web-control.sh` to the root cgroup, preserving host proxy settings with `NO_PROXY`, and patching the `about:blank` OAuth popup for Android Chrome.
+- Allow concurrent per-app installs/updates/uninstalls in the WebUI with independent card button locks and `fcntl.flock` protection on `installed.json`.
+- Add `ancli shell` to enter the container's interactive Ubuntu Bash (`-l`) or run commands inside it, and sync `src/runtime-context/AGENTS.md`.
+- Silence `Terminated` job noise and exit delays in PRoot wrappers by trapping `TERM`/`INT`/`HUP` and detaching `stdin` in background watchers.
+- Clean up unused WebUI CSS rules and dead helper code; attach all four Ubuntu 24.04 arm64 offline container bundles (`minimal`, `standard`, `developer`, `full`) alongside the module ZIP.
+
 ## v1.2.664-beta (2026-11-20)
 
 - Run module update checks and verified ZIP downloads on the Android host so module updates remain available when the Ubuntu container has been removed.

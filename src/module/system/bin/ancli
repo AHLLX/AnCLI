@@ -330,8 +330,29 @@ if [ "$(id -u 2>/dev/null)" = "0" ]; then
     fi
 fi
 
-# 6. 抹除 seccomp 警告，替换当前进程启动 PRoot 容器并执行 ancli-core.py
+# 6. 抹除 seccomp 警告，按子命令决定直接进入容器 shell 或启动 ancli-core.py
 export PROOT_NO_SECCOMP=1
+if [ "${1:-}" = "shell" ]; then
+    shift
+    _ancli_guest_path=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/root/.local/bin:/data/adb/ksu/bin:/data/adb/ap/bin:/system/bin
+    if [ "$#" -eq 0 ]; then
+        exec /data/local/tmp/ancli/bin/proot -r /data/local/tmp/ancli/rootfs -b /dev -b /proc -b /sys -b /data/local/tmp/ancli \
+            $ANCLI_BIND_ARGS -b /data/local/tmp/ancli/hosts:/etc/hosts -b /data/adb $SHM_BIND \
+            -w "$PROOT_CWD" /usr/bin/env ANCLI_IN_CONTAINER=1 HOME=/root PWD="$PROOT_CWD" SHELL=/bin/bash PATH="$_ancli_guest_path" TERM="${TERM:-xterm-256color}" /bin/bash -l
+    fi
+    case "$1" in
+        -*)
+            exec /data/local/tmp/ancli/bin/proot -r /data/local/tmp/ancli/rootfs -b /dev -b /proc -b /sys -b /data/local/tmp/ancli \
+                $ANCLI_BIND_ARGS -b /data/local/tmp/ancli/hosts:/etc/hosts -b /data/adb $SHM_BIND \
+                -w "$PROOT_CWD" /usr/bin/env ANCLI_IN_CONTAINER=1 HOME=/root PWD="$PROOT_CWD" SHELL=/bin/bash PATH="$_ancli_guest_path" TERM="${TERM:-xterm-256color}" /bin/bash "$@"
+            ;;
+        *)
+            exec /data/local/tmp/ancli/bin/proot -r /data/local/tmp/ancli/rootfs -b /dev -b /proc -b /sys -b /data/local/tmp/ancli \
+                $ANCLI_BIND_ARGS -b /data/local/tmp/ancli/hosts:/etc/hosts -b /data/adb $SHM_BIND \
+                -w "$PROOT_CWD" /usr/bin/env ANCLI_IN_CONTAINER=1 HOME=/root PWD="$PROOT_CWD" SHELL=/bin/bash PATH="$_ancli_guest_path" TERM="${TERM:-xterm-256color}" /bin/bash -lc 'exec "$@"' _ "$@"
+            ;;
+    esac
+fi
 exec /data/local/tmp/ancli/bin/proot -r /data/local/tmp/ancli/rootfs -b /dev -b /proc -b /sys -b /data/local/tmp/ancli \
     $ANCLI_BIND_ARGS -b /data/local/tmp/ancli/hosts:/etc/hosts -b /data/adb $SHM_BIND \
     -w "$PROOT_CWD" /usr/bin/env ANCLI_IN_CONTAINER=1 PWD="$PROOT_CWD" PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/root/.local/bin:/data/adb/ksu/bin:/data/adb/ap/bin:/system/bin python3 /data/local/tmp/ancli/bin/ancli-core.py "$@"

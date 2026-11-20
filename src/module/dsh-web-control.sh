@@ -224,6 +224,11 @@ umask 077
 printf "%s %s %s\n" "$$" "$start" "$boot" > "$pidfile.tmp" 2>/dev/null
 mv -f "$pidfile.tmp" "$pidfile" 2>/dev/null || exit 1
 umask 022
+# Detach from the manager app cgroup so Android background app freezer does
+# not freeze proot/dsh when the user switches to Chrome to use the WebUI.
+for _cg in /sys/fs/cgroup/cgroup.procs /dev/cpuctl/cgroup.procs /dev/blkio/cgroup.procs /dev/cpuset/cgroup.procs; do
+    [ -w "$_cg" ] && echo "$$" > "$_cg" 2>/dev/null || true
+done
 # Do not use the normal dsh wrapper here: its parent-terminal watchdog is
 # designed for interactive commands and will kill a WebUI backend when this
 # short-lived launcher returns. Start the guest binary directly in a detached,
@@ -234,7 +239,9 @@ if [ -f /data/local/tmp/ancli/secrets/dsh.env ]; then
     . /data/local/tmp/ancli/secrets/dsh.env 2>/dev/null || true
     set +a
 fi
-unset http_proxy https_proxy all_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY npm_config_proxy npm_config_https_proxy NPM_CONFIG_PROXY NPM_CONFIG_HTTPS_PROXY
+unset npm_config_proxy npm_config_https_proxy NPM_CONFIG_PROXY NPM_CONFIG_HTTPS_PROXY
+export no_proxy="${no_proxy:-localhost,127.0.0.1,::1,0.0.0.0}"
+export NO_PROXY="${NO_PROXY:-$no_proxy}"
 SHM_BIND=""
 if mkdir -p /data/local/tmp/ancli/shm 2>/dev/null; then
     chmod 1777 /data/local/tmp/ancli/shm 2>/dev/null || true

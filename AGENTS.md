@@ -6,19 +6,20 @@ Welcome, fellow AI Assistant. If you are reading this, you have been tasked with
 AnCLI is a unified, systemless environment manager and plugin-based installer designed to bring full Linux command-line tools (like Node.js, Go, or Python-based AI agents) to rooted Android devices.
 Because Android uses the Bionic C library, native Linux binaries often crash. AnCLI solves this by using `proot` to run a pure Ubuntu `glibc` base system transparently on Android.
 
-## 当前交接（2026-11-20，v1.2.664-beta）
+## 当前交接（2026-11-20，v1.2.666）
 
-- 当前源码/模块包为 `v1.2.664-beta`、`versionCode=76`；模块更新检查与 ZIP 下载由 Android 宿主执行，Ubuntu rootfs 删除后仍可检查和更新；下载包校验 ZIP 结构、根目录 module.prop、版本和 versionCode。空容器残留仅包含 `rootfs/root` 时，下一次安装可安全清理并开始新事务；任何含其他文件的 rootfs 仍保留并提示人工处理。离线导入按 ZIP 内容识别 Ubuntu 24.04 arm64 完整开发环境，不依赖包名或版本号；导入时校验容器清单、哈希与架构。解压前的 tar 路径校验会忽略相对符号链接目标注释，只校验归档成员路径；离线导入日志不显示全局记忆状态，记忆选择卡片保持等宽。平板导出的完整包规格为完整开发环境，未安装 Agent 应用且全局记忆未配置。该离线包在独立 bundle Release 保存，并作为额外资产随每个模块 Release 发布。PRoot 启动 PATH 包含 KSU/APatch 即时命令目录，使 Agent 的 `bash -c` 可解析兼容入口并使用 `ancli android shell` 桥接。应用按钮默认执行官方版本检查，发现更新后才显示“更新”，本地完整性探测失败时显示“修复”。
+- 当前源码/正式版模块包为 `v1.2.666`、`versionCode=77`，`update.json` 已同步指向 `v1.2.666`。模块更新检查与 ZIP 下载由 Android 宿主执行，Ubuntu rootfs 删除后仍可检查和更新；下载包校验 ZIP 结构、根目录 module.prop、版本和 versionCode。
+- 四个规格的 Ubuntu 24.04 arm64 离线容器包（`minimal`、`standard`、`developer`、`full`，均无模板记忆且未预装 Agent）已统一并入 `v1.2.666` Release，不再保留单独的离线包 Release。
+- `dsh-web-control.sh` 启动 `dsh web` 时将进程迁出管理器应用 cgroup 至根 cgroup（避免切到 Chrome 后被 Android 后台冻结器 `do_freezer_trap` 挂起），并保留宿主代理与 `NO_PROXY=localhost,127.0.0.1,::1,0.0.0.0`；`ancli-core.py` 的 `patch_dsh_web_oauth_popup()` 与 `patch_dsh_web_cookie()` 同步在安装/更新/修复时生效。
+- WebUI 支持按应用卡片独立锁定与不同应用并发安装/更新/卸载，后端通过 `_mutate_installed()`（`fcntl.flock`）保护 `installed.json` 并发写入；已清理残留无用 CSS/JS。
+- 新增 `ancli shell [命令...]`（宿主机入口与容器内入口均支持，无参数进入 `/bin/bash -l`），并已同步至 `src/runtime-context/AGENTS.md`；`generate_proot_wrapper` 两个后台 watcher 子 shell 均已 `</dev/null` 并捕获 `TERM INT HUP` 静默退出，消除退出卡顿与 `Terminated` 刷屏。
 - 保持单一 `proot-ubuntu` 后端。容器内提供原生 `/usr/local/bin/ancli`，宿主 bash 兼容入口仍使用 `$MODPATH/system/bin/bash`（Path A）和 `/data/adb/ksu/bin/bash`、`/data/adb/ap/bin/bash`（Path B）。
 - 容器 wrapper 的 PATH 为 `/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/root/.local/bin:/data/adb/ksu/bin:/data/adb/ap/bin:/system/bin`；`/system/bin` 只能作为 Android 安全只读工具的回退路径。
 - PRoot 容器命令不能启用 Linux User Namespace 或 Seccomp sandbox；Android 内核下会产生 `EINVAL`。不要引入嵌套 PRoot。
-- WebUI 的渠道检查、首页更新箭头和应用版本检查均为后台异步流程；检查无更新要明确提示，有更新要显示版本、简介、下载进度和安装按钮。设置弹窗需保持手机、平板可滚动，顶部深色容器和弹窗使用完整圆角。
-- WebUI 长任务必须通过 `nohup` 脱离 KernelSU WebUI exec 会话，并由后台 shell 写入 `.log` 和 `.exit`；只追加 `&` 会导致模块安装只留下 `.meta`，页面误报“下载失败”。
+- WebUI 长任务必须通过 `nohup` 脱离 KernelSU WebUI exec 会话，并由后台 shell 写入 `.log` 和 `.exit`。
 - 应用目录当前包含 `codex-cli`，使用官方 npm 包 `@openai/codex`，并随模块打包 OpenAI 图标；图标损坏或缺失时必须回退到字母徽章。
-- `update.json` 目前仍指向稳定版 `v1.2.612`。Beta 版本通过 GitHub tag/release 直接测试，除非明确要切换稳定渠道，否则不要把 beta 写入稳定 manifest。
-- Codex 启动目录：从 `/` 或不可映射目录启动时使用配置的 `default_cwd`，留空时有效目录是 `/root/.ancli-work`；从可映射目录启动则保留原 cwd。排查设备扫描慢时记录启动时的 `pwd` 和实际工作区；模拟器状态不能代替平板实测。
-- WebUI 设置的独立“容器”页提供导出与导入；完整环境离线包从 GitHub Releases 获取，首次使用指引和初始化卡片提供入口说明；导出将完整 rootfs 备份写入 Android Download，包括容器内软件、Agent、配置与密钥，备份按敏感数据保管。导出检查真实 PRoot 进程名并等待短时管理查询退出；导入前须处理现有容器，SHA-256 校验后复用标记的 rootfs 安装事务。删除当前容器仍在“重置”页，需二次文字确认、拒绝活动 PRoot，并只清理容器 rootfs 和标记的废弃检查点，保留 AnCLI 模块与宿主代理/语言/镜像设置。
-- 本地交付包位于仓库根目录：`ancli-72-v1.2.662-beta.zip` 为可刷模块，`AnCLI-Ubuntu-24.04-ARM64-Full-Environment.zip` 为完整开发环境离线导入包；同一离线包作为额外资产随每个模块 Release 发布。
+- Codex 启动目录：从 `/` 或不可映射目录启动时使用配置的 `default_cwd`，留空时有效目录是 `/root/.ancli-work`；从可映射目录启动则保留原 cwd。
+- 本地交付包位于仓库根目录：`ancli-77-v1.2.666.zip` 为可刷模块，四个离线容器包位于根目录供统一发布。
 
 ## 默认实施流程（每次改动都按这个顺序）
 

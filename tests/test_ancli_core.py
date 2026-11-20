@@ -288,6 +288,8 @@ class TestWrapperGeneration:
         assert 'pgrep -P "$ANCLI_WRAPPER_PID"' in wrapper
         assert 'kill -TERM "$_ancli_pid"' in wrapper
         assert 'wait "$ANCLI_WATCHDOG_PID"' in wrapper
+        assert wrapper.count("trap 'exit 0' TERM INT HUP") == 2
+        assert ") </dev/null &" in wrapper
         # Keep the PRoot command in the foreground so TUI input stays attached
         # to the terminal's foreground process group.
         assert not re.search(r'BROWSER=/usr/local/bin/xdg-open mimo "\$@" &', wrapper)
@@ -1756,6 +1758,45 @@ class TestDshCookiePatch:
     def test_reports_nothing_when_dsh_is_absent(self, tmp_path, monkeypatch):
         monkeypatch.setattr(core, "ROOTFS", str(tmp_path))
         assert core.patch_dsh_web_cookie(verbose=False) == []
+
+
+class TestDshWebOauthPopupPatch:
+    """`dsh-client-ui-settings-account` must not strand Android Chrome on `about:blank`."""
+
+    def _install_file(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(core, "ROOTFS", str(tmp_path))
+        directory = (
+            tmp_path / "usr/local/lib/node_modules/@deepseek-ai/dsh/node_modules/"
+            "@deepseek-ai/dsh-client-ui-settings-account/lib"
+        )
+        directory.mkdir(parents=True)
+        target = directory / "client.js"
+        target.write_text(
+            "const a={begin(){this.dispose();this.popup=window.open(`about:blank`,`_blank`);"
+            "if(this.popup)this.popup.opener=null},"
+            "update(view){if(!attempt?.authorizeUrl||this.navigated)return;this.navigated=true;"
+            "if(this.popup&&!this.popup.closed)this.popup.location.replace(this.destination(attempt.authorizeUrl))}};\n",
+            encoding="utf-8",
+        )
+        return target
+
+    def test_patches_blank_popup_and_is_idempotent(self, tmp_path, monkeypatch):
+        target = self._install_file(tmp_path, monkeypatch)
+
+        patched = core.patch_dsh_web_oauth_popup(verbose=False)
+
+        assert [os.path.normpath(p) for p in patched] == [os.path.normpath(str(target))]
+        text = target.read_text(encoding="utf-8")
+        assert "about:blank" not in text
+        assert "window.location.assign(_u)" in text
+        assert core.patch_dsh_web_oauth_popup(verbose=False) == []
+
+    def test_dsh_web_control_preserves_proxy_and_sets_no_proxy(self):
+        import pathlib
+        script = (pathlib.Path(__file__).resolve().parents[1] / "src/module/dsh-web-control.sh").read_text(encoding="utf-8")
+        assert "unset http_proxy" not in script
+        assert "NO_PROXY=" in script
+        assert "/sys/fs/cgroup/cgroup.procs" in script
 
 
 class TestSharedSkillDirs:

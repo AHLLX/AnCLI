@@ -28,7 +28,7 @@ Codex 的全局规则入口是 `/root/.codex/AGENTS.md`；AGY 的全局规则入
 
 <!-- ancli:first-run:end -->
 工具通过宿主 wrapper 进入单层 Ubuntu PRoot。应用 wrapper 会加载 `ancli_env.sh` 继承 Android 系统代理并将宿主机 DNS 写入 `/data/local/tmp/ancli/.dns_cache`（供开机、安装或 `ancli repair` 刷新容器 `/etc/resolv.conf`），设置 `TMPDIR=/tmp`、`TERM`、`LANG=C.UTF-8` 和 `BROWSER=/usr/local/bin/xdg-open`（主入口 `ancli` 同样加载环境桥接，但不单独注入 `BROWSER`；`dsh web` 后台进程同样显式注入 `BROWSER=/usr/local/bin/xdg-open`），并按宿主机存在性动态绑定 `/sdcard`、`/storage`、`/mnt`、`/data` 等 Android 路径。
-- **容器内 ancli 入口**：容器已内置 `/usr/local/bin/ancli`（并在 `/usr/bin/ancli`、`/bin/ancli` 提供软链接），可直接在容器内无前缀调用 `ancli status --json`、`ancli doctor`、`ancli agent-init --finalize`。
+- **容器内 ancli 入口**：容器已内置 `/usr/local/bin/ancli`（并在 `/usr/bin/ancli`、`/bin/ancli` 提供软链接），可直接在容器内无前缀调用 `ancli status --json`、`ancli doctor`、`ancli agent-init --finalize`、`ancli shell [命令...]`；宿主机侧执行 `ancli shell` 可直接进入容器 Ubuntu 24.04 交互式登录 Bash（`/bin/bash -l`），带参数时则在容器内执行对应命令后退出。
 - **容器内 PATH 注入与优先级**：应用 wrapper 与容器 `/etc/environment` 设定为 `PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/root/.local/bin:/data/adb/ksu/bin:/data/adb/ap/bin:/system/bin`（`ancli_env.sh` 还会附加 `:/system/xbin`）。Ubuntu GNU 工具与 `/root/.local/bin` 优先；Root 动态工具目录次之；`/system/bin` 仅作兜底。若当前设备的 `/apex`、`/linkerconfig` 与 SELinux 策略兼容，容器内可能可直接调用 `getprop` 等 Android 原生只读检测命令；实际可用性须先复核，不可用时请改用 `ancli android probe --json` 或 `ancli android shell` 宿主桥接。
 - **PRoot 命令执行规范与沙箱约束**：Android 内核限制下，PRoot 基于 ptrace 用户态虚拟化，不支持 Linux User Namespace / Seccomp 沙箱隔离层（调用此类沙箱如 `clone(CLONE_NEWUSER...)` 会直接报错 `invalid argument`）。在容器内执行工具命令时，禁止启用沙箱（Sandbox）模式，须使用直通/非沙箱模式。
 - **宿主 bash 兼容入口（Dual-Injection）**：AGY 的远程命令执行器可能在进入容器前先调用宿主 `bash -c`；AnCLI 会在 `/data/adb/modules/ancli/system/bin/bash`（Path A）以及 `/data/adb/ksu/bin/bash`、`/data/adb/ap/bin/bash`（Path B）提供仅转发 POSIX 命令到 `/system/bin/sh` 的兼容入口，宿主外部进程默认命中。它不是 GNU Bash，也不是第二套运行后端；需要 Bash 专有语法时仍应在容器内使用 `/bin/bash`。
@@ -98,6 +98,8 @@ ancli config --set proxy_url=http://host:port
 ancli container status --json
 ancli android probe --json
 ancli android shell <命令>
+ancli shell
+ancli shell -c "<命令>"
 ancli agent-init
 ancli agent-init --finalize
 ancli skills

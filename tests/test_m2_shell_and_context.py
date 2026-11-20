@@ -446,6 +446,8 @@ def test_m2_shell_invariants_service_ancli_env_dsh_network_uninstall(tmp_path):
     assert 'PWD="$PROOT_CWD"' in ancli_txt
     assert '-w "$PROOT_CWD"' in ancli_txt
     assert '_ancli_default_cwd=${_ancli_default_cwd%/}' in ancli_txt
+    assert 'if [ "${1:-}" = "shell" ]; then' in ancli_txt
+    assert '/bin/bash -l' in ancli_txt
 
     # ancli_env.sh live behavior in manual and direct modes
     env_src = (ROOT / "src/module/ancli_env.sh").read_text(encoding="utf-8")
