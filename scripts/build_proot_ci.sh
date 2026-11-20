@@ -47,7 +47,11 @@ build_arch() {
     local stage="$WORK_DIR/build-$arch"
     mkdir -p "$stage/talloc" "$stage/proot"
     cp -a "$PROOT_SRC/src/." "$stage/proot/"
+    sed -i 's/.*CHECK_PYTHON_EXTENSION.*//g' "$stage/proot/GNUmakefile"
+    sed -i 's/.*HAS_SWIG.*//g' "$stage/proot/GNUmakefile"
+    sed -i 's/.*HAS_PYTHON_CONFIG.*//g' "$stage/proot/GNUmakefile"
     sed -i '/extension\/python/d; /proot_wrap/d' "$stage/proot/GNUmakefile"
+    sed -i 's/#define HAS_LOADER_32BIT true/\/* #undef HAS_LOADER_32BIT *\//g' "$stage/proot/arch.h"
 
     cat > "$stage/talloc/config.h" <<'EOF'
 #define __STDC_WANT_LIB_EXT1__ 1
@@ -90,6 +94,17 @@ build_arch() {
 #define HAVE_DLFCN_H 1
 #define HAVE_STRLCPY 1
 #define HAVE_STRLCAT 1
+#define HAVE_MEMMOVE 1
+#define HAVE_MEMMEM 1
+#define HAVE_PRINTF 1
+#define HAVE_FPRINTF 1
+#define HAVE_SNPRINTF 1
+#define HAVE_VSNPRINTF 1
+#define HAVE_C99_VSNPRINTF 1
+#define HAVE_ASPRINTF 1
+#define HAVE_VASPRINTF 1
+#define HAVE_STRDUP 1
+#define HAVE_STRNDUP 1
 EOF
     "$cc" -O2 -D__STDC_WANT_LIB_EXT1__=1 -I"$TALLOC_SRC" -I"$REPLACE_SRC" -I"$stage/talloc" -include "$stage/talloc/config.h" \
         -c "$TALLOC_SRC/talloc.c" -o "$stage/talloc/talloc.o"
@@ -102,6 +117,9 @@ EOF
         STRIP="$strip_bin" \
         OBJCOPY="$TOOLCHAIN/llvm-objcopy" \
         OBJDUMP="$TOOLCHAIN/llvm-objdump" \
+        HAS_SWIG="" \
+        HAS_PYTHON_CONFIG="" \
+        CHECK_PYTHON_EXTENSION="" \
         PYTHON_CONFIG=/bin/false \
         SWIG=/bin/false \
         CFLAGS="-O2 -I$TALLOC_SRC -I$stage/proot -D_FILE_OFFSET_BITS=64 -D_GNU_SOURCE -Wno-error" \
