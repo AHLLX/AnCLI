@@ -71,16 +71,21 @@ jobs:
       - name: Extract this version's changelog
         run: python3 scripts/extract_release_notes.py "${GITHUB_REF_NAME}" .release-notes.md
 
-      - name: Download the full offline container bundle
+      - name: Download the offline container bundles
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           source_asset='AnCLI-Ubuntu-24.04-ARM64-Full-Development-Environment-v1.2.651-Offline-Import.zip'
           asset='AnCLI-Ubuntu-24.04-ARM64-Full-Environment.zip'
+          dev_source_asset='AnCLI-Ubuntu-24.04-arm64-Developer-Environment-20261120-182351.zip'
+          dev_asset='AnCLI-Ubuntu-24.04-ARM64-Developer-Environment.zip'
           mkdir -p release-assets
           gh release download container-bundle-v1.2.651 --repo "$GITHUB_REPOSITORY" --pattern "$source_asset" --dir release-assets
           echo '9a225f14618fa260da9d32fb521ae0e52dcec749bba3f1998c9e05a787b3cfa4  release-assets/'"$source_asset" | sha256sum --check --status
           mv "release-assets/$source_asset" "release-assets/$asset"
+          gh release download container-bundle-developer-v1.2.664-beta --repo "$GITHUB_REPOSITORY" --pattern "$dev_source_asset" --dir release-assets
+          echo '93ef34916231e34db163aa8cf7cab176151b0c92edf8c8eaf27ea51080f834b8  release-assets/'"$dev_source_asset" | sha256sum --check --status
+          mv "release-assets/$dev_source_asset" "release-assets/$dev_asset"
 
       - name: Validate module ZIP and release metadata
         uses: KernelSU-Modules/tools/actions/module-release@e72995777c079c0bb32c49cd6fccd2773ebb0987
@@ -91,18 +96,19 @@ jobs:
           prerelease: ${{ contains(github.ref_name, '-beta') }}
           dry-run: true
 
-      - name: Create draft with module and offline bundle
+      - name: Create draft with module and offline bundles
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           module="ancli-${{ steps.metadata.outputs.version_code }}-${{ steps.metadata.outputs.version }}.zip"
           bundle='release-assets/AnCLI-Ubuntu-24.04-ARM64-Full-Environment.zip'
+          dev_bundle='release-assets/AnCLI-Ubuntu-24.04-ARM64-Developer-Environment.zip'
           if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             if [ "$(gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft)" = true ]; then
-              gh release upload "$GITHUB_REF_NAME" "$module" "$bundle" --repo "$GITHUB_REPOSITORY" --clobber
+              gh release upload "$GITHUB_REF_NAME" "$module" "$bundle" "$dev_bundle" --repo "$GITHUB_REPOSITORY" --clobber
             fi
           else
-            gh release create "$GITHUB_REF_NAME" "$module" "$bundle" \
+            gh release create "$GITHUB_REF_NAME" "$module" "$bundle" "$dev_bundle" \
               --repo "$GITHUB_REPOSITORY" --verify-tag --draft --title "$GITHUB_REF_NAME" \
               --notes-file .release-notes.md ${{ contains(github.ref_name, '-beta') && '--prerelease' || '' }}
           fi
@@ -112,14 +118,16 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           EXPECTED_MODULE: ancli-${{ steps.metadata.outputs.version_code }}-${{ steps.metadata.outputs.version }}.zip
           EXPECTED_BUNDLE: AnCLI-Ubuntu-24.04-ARM64-Full-Environment.zip
+          EXPECTED_DEV_BUNDLE: AnCLI-Ubuntu-24.04-ARM64-Developer-Environment.zip
         run: |
           if [ "$(gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft)" = true ]; then
             gh release edit "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --draft=false
           fi
           release=$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$GITHUB_REF_NAME")
-          echo "$release" | jq -e --arg module "$EXPECTED_MODULE" --arg bundle "$EXPECTED_BUNDLE" '
+          echo "$release" | jq -e --arg module "$EXPECTED_MODULE" --arg bundle "$EXPECTED_BUNDLE" --arg dev_bundle "$EXPECTED_DEV_BUNDLE" '
             .draft == false and .immutable == true and
             ([.assets[].name] | index($module) != null) and
             ([.assets[].name] | index($bundle) != null) and
+            ([.assets[].name] | index($dev_bundle) != null) and
             ([.assets[].name | select(test("^ancli-.*\\.zip$"))] | length == 1)'
           echo "$release" | jq -r '"Release: \(.html_url)", (.assets[] | "Asset: \(.name) (\(.size) bytes, \(.digest))")'
