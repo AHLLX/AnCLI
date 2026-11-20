@@ -1,3 +1,8 @@
+## v1.2.662-beta (2026-11-20)
+
+- Hide the unconfigured global-memory value from offline import logs while keeping the post-import choice available.
+- Make both global-memory choice cards use the same full width on tablets and phones.
+
 ## v1.2.661-beta (2026-11-20)
 
 - Fix valid Ubuntu rootfs imports being rejected when tar output includes relative symlink targets; validate archive member paths separately from link annotations.

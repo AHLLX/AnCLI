@@ -66,3 +66,14 @@ def test_webui_import_supports_older_managers_and_preserves_download_package():
     assert "if (path && temporary)" in source
     assert 'Update the manager and try again' not in source
     assert '从 GitHub Releases 下载完整环境包后，在此选择导入。' in source
+
+
+def test_offline_import_log_hides_memory_state_and_prompt_choices_share_width():
+    bootstrap = (ROOT / 'src/module/container-bootstrap.sh').read_text(encoding='utf-8')
+    assert 'Agent 全局记忆状态 $_agent_memory' not in bootstrap
+    assert 'say ">> 离线容器：Ubuntu 24.04 arm64，规格 $_profile。"' in bootstrap
+
+    webui = (ROOT / 'src/module/webroot/index.html').read_text(encoding='utf-8')
+    assert '.memory-choice-option { width: 100%; align-self: stretch;' in webui
+    assert 'class="memory-choice-list"' in webui
+    assert webui.count('setting-item wrap memory-choice-option') == 2

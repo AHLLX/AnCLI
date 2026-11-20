@@ -1286,7 +1286,7 @@ import_container_bundle() (
         return 1
     fi
     _source_version=$(sed -n 's/.*"source_module_version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$_import_manifest" | head -n 1)
-    say ">> 离线容器：Ubuntu 24.04 arm64，规格 $_profile，Agent 全局记忆状态 $_agent_memory。"
+    say ">> 离线容器：Ubuntu 24.04 arm64，规格 $_profile。"
 
     ancli_begin_rootfs || { say ">> 现有容器或未完成检查点已保留；请先处理后再导入。"; return 1; }
     tar -xzf "$_import_tar" -C "$ROOTFS" || { say "[X] rootfs 解压失败"; return 1; }
