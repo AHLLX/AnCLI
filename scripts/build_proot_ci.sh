@@ -101,6 +101,8 @@ EOF
         STRIP="$strip_bin" \
         OBJCOPY="$TOOLCHAIN/llvm-objcopy" \
         OBJDUMP="$TOOLCHAIN/llvm-objdump" \
+        PYTHON_CONFIG=/bin/false \
+        SWIG=/bin/false \
         CFLAGS="-O2 -I$TALLOC_SRC -I$stage/proot -D_FILE_OFFSET_BITS=64 -D_GNU_SOURCE -Wno-error" \
         LDFLAGS="-L$stage/talloc -ltalloc -static" \
         proot
