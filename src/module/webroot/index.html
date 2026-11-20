@@ -1258,7 +1258,7 @@ body.ime-open .settings-viewport { min-height: 0; }
               <p data-i18n="containerTransferHint">导出会将当前容器（包括已安装软件、Agent、容器内配置与密钥）打包到 Download。导入会替换当前容器，请先删除现有容器。</p>
               <button class="btn xs" id="btnContainerExport" data-i18n="containerExportAction">导出当前容器到 Download</button>
               <div class="field" style="margin-top: 12px;">
-                <label data-i18n="containerImportLabel">选择 Download 中的容器备份 ZIP</label>
+                <label data-i18n="containerImportLabel">选择 Download 中的容器安装包</label>
                 <input type="file" id="settingsImportBundleFile" accept="*/*" hidden>
                 <div class="row" style="gap: 8px; flex-wrap: wrap;">
                   <button class="btn xs" type="button" id="btnSettingsChooseBundle" data-i18n="containerChooseFile">选择 ZIP 文件</button>
@@ -2782,7 +2782,7 @@ const UI_TEXT = {
     factoryReset: '完全初始化环境', factoryResetTitle: '恢复模块自带的干净 Agent 环境',
     containerTransferTitle: '容器导出与导入', containerTransferSubtitle: '备份完整 Ubuntu 容器，或从备份恢复',
     containerTransferHint: '导出会将当前容器（包括已安装软件、Agent、容器内配置与密钥）打包到 Download。导入会替换当前容器，请先删除现有容器。',
-    containerExportAction: '导出当前容器到 Download', containerImportLabel: '选择容器备份文件（按内容识别，不要求特定文件名）', containerImportAction: '从备份导入容器', containerChooseFile: '选择安装包', containerNoFile: '尚未选择文件', containerFileTooLarge: '选择文件超过 1 GiB，无法安全导入', containerPickerUnsupported: '当前 KernelSU 管理器不支持文件访问接口，请更新管理器后重试', containerFileProgress: '正在复制文件', containerFileInspecting: '正在检查文件内容…', containerFileZipReady: 'ZIP 文件头有效', containerFileZipInvalid: '文件内容不是 ZIP 容器包', containerFileValidationLater: '完整清单、SHA-256 和架构将在导入时验证',
+    containerExportAction: '导出当前容器到 Download', containerImportLabel: '选择 Download 中的容器安装包', containerImportAction: '从备份导入容器', containerChooseFile: '选择安装包', containerNoFile: '尚未选择文件', containerFileTooLarge: '选择文件超过 1 GiB，无法安全导入', containerPickerUnsupported: '无法读取所选文件；请将安装包放在 Download 后重试', containerFileProgress: '正在复制文件', containerFileInspecting: '正在检查文件内容…', containerFileZipReady: 'ZIP 文件头有效', containerFileZipInvalid: '文件内容不是 ZIP 容器包', containerFileValidationLater: '导入时验证完整性',
     containerRemoveTitle: '删除当前容器', containerRemoveSubtitle: '只删除 Ubuntu rootfs，保留 AnCLI 模块',
     containerRemoveHint: '删除容器中的应用、配置、密钥、全局记忆和未完成安装检查点。模块与代理、语言、下载站点设置会保留。删除前请先退出所有 Agent 和容器终端。',
     containerRemoveAction: '删除当前容器', containerRemoveWarning: '此操作会永久删除完整 Ubuntu rootfs，包括已安装 Agent、软件包、配置、密钥和记忆文件。AnCLI 模块及模块设置会保留。请先退出正在运行的 Agent。此操作无法撤销。',
@@ -2889,7 +2889,7 @@ const UI_TEXT = {
     factoryReset: 'Factory reset environment', factoryResetTitle: 'Restore the clean Agent environment from the module',
     containerTransferTitle: 'Container export and import', containerTransferSubtitle: 'Back up the full Ubuntu container or restore a backup',
     containerTransferHint: 'Export saves the current container, including installed packages, Agents, container settings and secrets, to Download. Import replaces the current container; remove it first.',
-    containerExportAction: 'Export current container to Download', containerImportLabel: 'Choose a container backup file (identified by content, filename is unrestricted)', containerImportAction: 'Import container backup', containerChooseFile: 'Choose package', containerNoFile: 'No file selected', containerFileTooLarge: 'The selected file exceeds 1 GiB and cannot be imported safely', containerPickerUnsupported: 'This KernelSU Manager does not provide the file access interface. Update the manager and try again.', containerFileProgress: 'Copying selected file', containerFileInspecting: 'Inspecting file contents…', containerFileZipReady: 'ZIP signature found', containerFileZipInvalid: 'The contents are not a container ZIP bundle', containerFileValidationLater: 'Manifest, SHA-256 and architecture are verified during import',
+    containerExportAction: 'Export current container to Download', containerImportLabel: 'Choose a container package from Download', containerImportAction: 'Import container backup', containerChooseFile: 'Choose package', containerNoFile: 'No file selected', containerFileTooLarge: 'The selected file exceeds 1 GiB and cannot be imported safely', containerPickerUnsupported: 'Cannot read the selected file. Put the package in Download and try again.', containerFileProgress: 'Copying selected file', containerFileInspecting: 'Inspecting file contents…', containerFileZipReady: 'ZIP signature found', containerFileZipInvalid: 'The contents are not a container ZIP bundle', containerFileValidationLater: 'Integrity checked during import',
     containerRemoveTitle: 'Delete current container', containerRemoveSubtitle: 'Remove Ubuntu rootfs only; keep the AnCLI module',
     containerRemoveHint: 'Deletes container apps, settings, secrets, global memory and incomplete install checkpoints. The module and its proxy, language and mirror settings remain. Exit all Agents and container terminals first.',
     containerRemoveAction: 'Delete current container', containerRemoveWarning: 'This permanently deletes the complete Ubuntu rootfs, including installed Agents, packages, settings, secrets and memory files. The AnCLI module and its settings remain. Exit running Agents first. This cannot be undone.',
@@ -3067,7 +3067,7 @@ function buildContainerInitCardHtml() {
       '<div class="row" style="gap: 8px; flex-wrap: wrap; align-items: center;">' +
       '<button type="button" class="btn" id="btnInitChooseBundle">' + (uiLang === 'en' ? 'Choose package' : '选择安装包') + '</button>' +
       '<span id="initOfflineBundleName" class="hint">' + (uiLang === 'en' ? 'No file selected' : '尚未选择文件') + '</span></div>' +
-      '<small class="hint">' + (uiLang === 'en' ? 'Select the downloaded ZIP. It contains the Ubuntu 24.04 arm64 full profile only; no Agent apps or configured global memory.' : '选择已下载的 ZIP。包内只有 Ubuntu 24.04 arm64 完整规格，不含 Agent 应用或已配置的全局记忆。') + ' ' +
+      '<small class="hint">' + (uiLang === 'en' ? 'Download the full environment from GitHub Releases, then select it here.' : '从 GitHub Releases 下载完整环境包后，在此选择导入。') + ' ' +
       '<a href="https://github.com/AHLLX/AnCLI/releases" target="_blank" rel="noopener noreferrer">' + (uiLang === 'en' ? 'Download from GitHub Releases' : '前往 GitHub Releases 下载') + '</a></small>' +
       '<button type="button" class="btn" id="btnInitImport" style="width: 100%; margin-top: 8px;">' + (uiLang === 'en' ? 'Import offline container' : '导入离线容器包') + '</button>' +
     '</div>' +
@@ -4103,41 +4103,62 @@ async function copyPickedFileToHost(file) {
   if (signature.length !== 4 || signature[0] !== 0x50 || signature[1] !== 0x4b || signature[2] !== 0x03 || signature[3] !== 0x04) {
     throw new Error(uiText('containerFileZipInvalid'));
   }
+  const quote = value => "'" + String(value).replace(/'/g, "'\\''") + "'";
   const fs = bridge?.obj?.io;
-  if (typeof fs !== 'function') throw new Error(uiText('containerPickerUnsupported'));
-  const io = fs.call(bridge.obj);
-  if (io?.support === false) throw new Error(uiText('containerPickerUnsupported'));
-  const stream = io.FileOutputStream();
-  const target = '/data/local/tmp/ancli-import-' + Date.now() + '-' + Math.random().toString(16).slice(2) + '.zip';
-  const streamId = stream.open(target, false);
-  if (streamId === undefined || streamId === null || streamId === -1) throw new Error(uiText('containerPickerUnsupported'));
-  let written = 0;
-  try {
-    const chunkSize = 1024 * 1024;
-    while (written < file.size) {
-      const bytes = new Uint8Array(await file.slice(written, Math.min(written + chunkSize, file.size)).arrayBuffer());
-      let binary = '';
-      for (let i = 0; i < bytes.length; i += 0x8000) binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
-      const result = stream.write(streamId, btoa(binary));
-      if (result === false) throw new Error(uiText('containerImportFailed'));
-      written += bytes.length;
-      if (written % (8 * chunkSize) < chunkSize || written === file.size) {
-        const pct = Math.floor(written * 100 / file.size);
-        const copyLock = 'container-file-copy';
-        setBusy(true, uiText('containerFileProgress') + ' ' + pct + '%', copyLock);
-        await new Promise(resolve => setTimeout(resolve, 0));
-        setBusy(false, '', copyLock);
+  let io = null;
+  try { if (typeof fs === 'function') io = fs.call(bridge.obj); } catch (_) {}
+  if (io && io.support !== false && typeof io.FileOutputStream === 'function') {
+    let target = '';
+    let stream = null;
+    let streamId = null;
+    try {
+      stream = io.FileOutputStream();
+      target = '/data/local/tmp/ancli-import-' + Date.now() + '-' + Math.random().toString(16).slice(2) + '.zip';
+      streamId = stream.open(target, false);
+      if (streamId !== undefined && streamId !== null && streamId !== -1) {
+        let written = 0;
+        const chunkSize = 1024 * 1024;
+        while (written < file.size) {
+          const bytes = new Uint8Array(await file.slice(written, Math.min(written + chunkSize, file.size)).arrayBuffer());
+          let binary = '';
+          for (let i = 0; i < bytes.length; i += 0x8000) binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+          const result = stream.write(streamId, btoa(binary));
+          if (result === false) throw new Error(uiText('containerImportFailed'));
+          written += bytes.length;
+          if (written % (8 * chunkSize) < chunkSize || written === file.size) {
+            const pct = Math.floor(written * 100 / file.size);
+            const copyLock = 'container-file-copy';
+            setBusy(true, uiText('containerFileProgress') + ' ' + pct + '%', copyLock);
+            await new Promise(resolve => setTimeout(resolve, 0));
+            setBusy(false, '', copyLock);
+          }
+        }
+        stream.flush(streamId);
+        return { path: target, temporary: true };
+      }
+    } catch (_) {
+      if (target) { try { await execCmd('rm -f ' + quote(target)); } catch (_) {} }
+      // Some older bridges expose the IO method but cannot open/write a file.
+    } finally {
+      if (stream && streamId !== undefined && streamId !== null && streamId !== -1) {
+        try { stream.close(streamId); } catch (_) {}
       }
     }
-    stream.flush(streamId);
-    return target;
-  } catch (error) {
-    try { stream.close(streamId); } catch (_) {}
-    try { await execCmd('rm -f ' + target); } catch (_) {}
-    throw error;
-  } finally {
-    try { stream.close(streamId); } catch (_) {}
   }
+  // Older KernelSU WebUI bridges lack the file IO API. Use the selected basename
+  // from shared Download storage, and require an exact size match before import.
+  const filename = String(file.name || '');
+  if (!filename || filename === '.' || filename === '..' || /[\\/\x00-\x1f\x7f]/.test(filename)) {
+    throw new Error(uiText('containerPickerUnsupported'));
+  }
+  for (const candidate of ['/sdcard/Download/' + filename, '/storage/emulated/0/Download/' + filename]) {
+    try {
+      const result = await execCmd('if [ -f ' + quote(candidate) + ' ]; then wc -c < ' + quote(candidate) + '; else printf missing; fi');
+      const size = Number(String(result?.stdout || '').trim());
+      if (Number.isSafeInteger(size) && size === file.size) return { path: candidate, temporary: false };
+    } catch (_) {}
+  }
+  throw new Error(uiText('containerPickerUnsupported'));
 }
 
 async function importContainerFromUi(file) {
@@ -4147,12 +4168,15 @@ async function importContainerFromUi(file) {
     return;
   }
   let path = '';
+  let temporary = false;
   const release = setBusy(true, uiText('containerImportStarting'));
   const outputPanel = document.getElementById('taskConsole');
   if (outputPanel) outputPanel.scrollIntoView({ behavior: 'smooth', block: 'end' });
   let task;
   try {
-    path = await copyPickedFileToHost(file);
+    const picked = await copyPickedFileToHost(file);
+    path = picked.path;
+    temporary = picked.temporary;
     task = await runBackground(ANCLI + ' container import --bundle=' + encodeURIComponent(path), uiText('containerImportStarting'), { timeoutMs: 3600000 });
     if (outputPanel) outputPanel.scrollIntoView({ behavior: 'smooth', block: 'end' });
     const result = await loadContainerSettings();
@@ -4168,7 +4192,7 @@ async function importContainerFromUi(file) {
     logLine(String(e), 'err');
     toast(uiText('containerImportFailed'), 'err');
   } finally {
-    if (path) { try { await execCmd('rm -f ' + path); } catch (_) {} }
+    if (path && temporary) { try { await execCmd('rm -f ' + shQuote(path)); } catch (_) {} }
     release();
   }
 }

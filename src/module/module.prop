@@ -1,7 +1,7 @@
 id=ancli
 name=AnCLI
-version=v1.2.659-beta
-versionCode=71
+version=v1.2.660-beta
+versionCode=72
 author=AHLLX
 description=统一的 Android 命令行与 AI Agent 环境管理器。\nUnified CLI & AI Agent environment manager for Android.
 updateJson=https://raw.githubusercontent.com/AHLLX/AnCLI/main/update.json

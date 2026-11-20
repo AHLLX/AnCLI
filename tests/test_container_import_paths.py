@@ -49,3 +49,18 @@ def test_webui_import_picker_uses_content_signature_not_filename_extension():
     assert 'signature[1] !== 0x4b' in importer
     assert 'signature[2] !== 0x03' in importer
     assert 'signature[3] !== 0x04' in importer
+
+
+def test_webui_import_supports_older_managers_and_preserves_download_package():
+    source = (ROOT / 'src/module/webroot/index.html').read_text(encoding='utf-8')
+    start = source.index('async function copyPickedFileToHost(file) {')
+    end = source.index('\nasync function importContainerFromUi(file)', start)
+    importer = source[start:end]
+    assert 'if (typeof fs === \'function\')' in importer
+    assert "'/sdcard/Download/' + filename" in importer
+    assert "'/storage/emulated/0/Download/' + filename" in importer
+    assert 'size === file.size' in importer
+    assert 'temporary: false' in importer
+    assert "if (path && temporary)" in source
+    assert 'Update the manager and try again' not in source
+    assert '从 GitHub Releases 下载完整环境包后，在此选择导入。' in source

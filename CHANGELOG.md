@@ -1,3 +1,8 @@
+## v1.2.660-beta (2026-11-20)
+
+- Support offline container import on older KernelSU managers without the WebUI file access API by resolving and size-checking the selected package in Download; preserve the original package after import.
+- Shorten offline import guidance while keeping the GitHub Releases download link.
+
 ## v1.2.659-beta (2026-11-20)
 
 - Identify offline container imports from ZIP content instead of the filename or extension; show a quick signature and size check before import, then verify the manifest, digest and architecture during import.
