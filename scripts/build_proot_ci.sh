@@ -30,12 +30,13 @@ PROOT_SRC="$WORK_DIR/proot-5.4.0"
 TALLOC_COMMIT="f28966c1638806a5af1fa4e451b668af638491ce"
 git clone --depth 1 --branch talloc-2.4.2 --filter=blob:none --sparse \
     https://github.com/samba-team/samba.git "$WORK_DIR/samba"
-git -C "$WORK_DIR/samba" sparse-checkout set lib/talloc
+git -C "$WORK_DIR/samba" sparse-checkout set lib/talloc lib/replace
 [ "$(git -C "$WORK_DIR/samba" rev-parse HEAD)" = "$TALLOC_COMMIT" ] || {
     echo "[X] talloc commit mismatch" >&2
     exit 1
 }
 TALLOC_SRC="$WORK_DIR/samba/lib/talloc"
+REPLACE_SRC="$WORK_DIR/samba/lib/replace"
 
 build_arch() {
     local arch="$1"
@@ -48,12 +49,20 @@ build_arch() {
     cp -a "$PROOT_SRC/src/." "$stage/proot/"
 
     cat > "$stage/talloc/config.h" <<'EOF'
+#include <stdarg.h>
+#include <stdbool.h>
+#include <stdint.h>
+#include <stdlib.h>
+#include <string.h>
 #define HAVE_VA_COPY 1
 #define HAVE_STRNLEN 1
 #define HAVE_STDBOOL_H 1
 #define HAVE_STDINT_H 1
+#define HAVE_STDARG_H 1
+#define HAVE_STRLCPY 1
+#define HAVE_STRLCAT 1
 EOF
-    "$cc" -O2 -I"$TALLOC_SRC" -I"$stage/talloc" -include "$stage/talloc/config.h" \
+    "$cc" -O2 -I"$TALLOC_SRC" -I"$REPLACE_SRC" -I"$stage/talloc" -include "$stage/talloc/config.h" \
         -c "$TALLOC_SRC/talloc.c" -o "$stage/talloc/talloc.o"
     "$ar" rcs "$stage/talloc/libtalloc.a" "$stage/talloc/talloc.o"
 
