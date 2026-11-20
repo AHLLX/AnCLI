@@ -1,3 +1,7 @@
+## v1.2.661-beta (2026-11-20)
+
+- Fix valid Ubuntu rootfs imports being rejected when tar output includes relative symlink targets; validate archive member paths separately from link annotations.
+
 ## v1.2.660-beta (2026-11-20)
 
 - Support offline container import on older KernelSU managers without the WebUI file access API by resolving and size-checking the selected package in Download; preserve the original package after import.

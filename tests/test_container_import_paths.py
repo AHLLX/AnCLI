@@ -21,6 +21,8 @@ def test_container_import_rejects_only_actual_traversal_paths():
         ('./safe/../../outside\n', True),
         ('/absolute/path\n', True),
         ('./safe/.hidden\n', False),
+        ('./etc/os-release -> ../usr/lib/os-release\n', False),
+        ('../outside -> ../etc/os-release\n', True),
     ]
     for entries, should_reject in cases:
         with tempfile.NamedTemporaryFile('w', encoding='utf-8', delete=False) as stream:
