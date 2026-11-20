@@ -1,15 +1,56 @@
 from pathlib import Path
-import json, re
+import json, os, subprocess
+
+BASH = r'C:\Program Files\Git\bin\bash.exe' if os.name == 'nt' else '/bin/bash'
+
+
+def _posix(path):
+    value = str(path).replace('\\', '/')
+    return '/' + value[0].lower() + value[2:] if len(value) > 1 and value[1] == ':' else value
+
 
 def test_flash_and_webui_profile_packages_agree():
     root = Path(__file__).resolve().parents[1]
     catalog = json.loads((root / 'src/container-profiles.json').read_text(encoding='utf-8'))['profiles']
+    synced_profiles = root / 'src/module/ancli/container-profiles.json'
+    if synced_profiles.exists():
+        assert json.loads(synced_profiles.read_text(encoding='utf-8'))['profiles'] == catalog
+    profile_data_path = root / 'src/module/container-profile-data.sh'
+    profile_data = profile_data_path.read_text(encoding='utf-8')
     bootstrap = (root / 'src/module/container-bootstrap.sh').read_text(encoding='utf-8')
     flash = (root / 'src/module/customize.sh').read_text(encoding='utf-8')
+    assert 'container-profile-data.sh' in bootstrap
+    assert 'ancli_profile_packages "$1"' in bootstrap
+    assert 'container-profile-data.sh' in flash
+    assert 'ancli_profile_packages "$_container_profile"' in flash
     for profile, entry in catalog.items():
         expected = ' '.join(entry['packages'])
-        assert f'{profile}) echo "{expected}"' in bootstrap
-        assert f'{profile}) _profile_packages="{expected}"' in flash
+        assert f"ancli_profile_packages_{profile}() {{ printf '%s\\n' '{expected}'; }}" in profile_data
+        r = subprocess.run(
+            [
+                BASH,
+                '-c',
+                f'. "{_posix(profile_data_path)}"; '
+                f'ancli_profile_packages {profile}; '
+                f'ancli_profile_name_zh {profile}; '
+                f'ancli_profile_name_en {profile}; '
+                f'ancli_profile_description_zh {profile}; '
+                f'ancli_profile_description_en {profile}',
+            ],
+            capture_output=True,
+            text=True,
+            encoding='utf-8',
+            timeout=10,
+        )
+        assert r.returncode == 0, r.stderr
+        lines = r.stdout.splitlines()
+        assert lines == [
+            expected,
+            entry['name'],
+            entry['name_en'],
+            entry['description'],
+            entry['description_en'],
+        ]
     assert all(name in catalog['minimal']['packages'] for name in ('nodejs','npm','python3','python3-pip'))
     assert 'adb' not in catalog['minimal']['packages']
     assert 'adb' not in catalog['standard']['packages']

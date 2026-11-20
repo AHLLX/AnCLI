@@ -13,14 +13,32 @@ const path = require('path');
 const root = path.join(__dirname, '..');
 const src = path.join(root, 'src', 'module', 'webroot', 'index.html');
 const logo = path.join(root, 'src', 'module', 'webroot', 'logo.png');
+const appIconsDir = path.join(root, 'src', 'module', 'webroot', 'assets', 'app-icons');
+const profilesPath = path.join(root, 'src', 'container-profiles.json');
 const listJson = fs.readFileSync(path.join(__dirname, 'list.json'), 'utf8');
 const statusJson = fs.readFileSync(path.join(__dirname, 'status.json'), 'utf8');
 
 const propText = fs.readFileSync(path.join(root, 'src', 'module', 'module.prop'), 'utf8');
 // Read the version from module.prop so the preview follows the source release.
 const ancliVersion = (propText.match(/^version=(.+)$/m) || [, 'unknown'])[1].trim().replace(/^v/, '');
+const versionCode = Number((propText.match(/^versionCode=(\d+)$/m) || [, '63'])[1]);
+const profilesCatalog = JSON.parse(fs.readFileSync(profilesPath, 'utf8')).profiles || {};
 const capturedStatus = JSON.parse(statusJson);
-const status = { ...capturedStatus, ancli_version: ancliVersion };
+const status = {
+  ...capturedStatus,
+  ancli_version: ancliVersion,
+  version_code: versionCode,
+  container: {
+    ...(capturedStatus.container || {}),
+    profiles: profilesCatalog,
+  },
+};
+const containerStatus = {
+  ancli_version: ancliVersion,
+  config: (status.container && status.container.config) || {},
+  profiles: profilesCatalog,
+};
+const listPayload = { ...JSON.parse(listJson), ancli_version: ancliVersion };
 
 // A couple of scenarios so the console can be judged with real-looking output.
 const scenarios = {
@@ -41,15 +59,42 @@ const mock = `
 <script>
 (function () {
   const STATUS = ${JSON.stringify(status)};
-  const LIST = ${listJson};
+  const CONTAINER_STATUS = ${JSON.stringify(containerStatus)};
+  const LIST = ${JSON.stringify(listPayload)};
+  const CHECK_MODULE = ${JSON.stringify({
+    status: 'ok',
+    channel: 'stable',
+    current_version: 'v' + ancliVersion,
+    current_version_code: versionCode,
+    has_update: false,
+    latest_version: 'v' + ancliVersion,
+    latest_version_code: versionCode,
+  })};
   const routes = [
     [/\\[ -x .*\\] && echo yes/, 'yes\\n'],
+    [/container status --json/, JSON.stringify(CONTAINER_STATUS)],
+    [/container vpn-status/, 'ANCLI_VPN=not_detected\\n'],
+    [/container proxy-status/, 'ANCLI_PROXY_URL=192.0.2.10:7890\\nANCLI_VPN=not_detected\\n'],
+    [/container mirror-ping/, 'ANCLI_MIRROR_PING_tuna=24.1\\nANCLI_MIRROR_PING_ustc=31.5\\nANCLI_MIRROR_PING_official=182.0\\n'],
+    [/check-module/, JSON.stringify(CHECK_MODULE)],
     [/status --json/, JSON.stringify(STATUS)],
     [/list --json/, JSON.stringify(LIST)],
     [/find \\/data\\/local\\/tmp\\/ancli -maxdepth/, ''],
+    [/__ANCLI_TASKS_END__/, 'boot-preview\\t1793150000\\n__ANCLI_TASKS_END__\\n'],
     [/tail -c/, ''],
     [/\\[ -f .* \\] && cat/, 'echo -n'],
-    [/config --json/, JSON.stringify({ lang: 'zh', default_cwd: '/sdcard', effective_cwd: '/sdcard', proxy_mode: 'system', proxy_url: '', detected_proxy: '192.168.1.10:7890', proxy_connected: true })],
+    [/config --json/, JSON.stringify({
+      lang: 'zh',
+      default_cwd: '',
+      effective_cwd: '/root/.ancli-work',
+      proxy_mode: 'system',
+      proxy_url: '',
+      agent_memory: 'enabled',
+      update_channel: 'stable',
+      container_profile: 'standard',
+      detected_proxy: '192.0.2.10:7890',
+      proxy_connected: true
+    })],
   ];
   function respond(cmd) {
     for (const [re, out] of routes) if (re.test(cmd)) return out;
@@ -84,12 +129,42 @@ const trailer = (scenario, theme, dialog, settings, memory, tab) => `
 `;
 
 let html = fs.readFileSync(src, 'utf8');
+const webuiProfileMarker = 'const DEFAULT_CONTAINER_PROFILES = /* ANCLI_PROFILE_CATALOG */ {};';
+if (!html.includes(webuiProfileMarker)) {
+  throw new Error('WebUI profile catalog marker missing');
+}
+html = html.replace(
+  webuiProfileMarker,
+  'const DEFAULT_CONTAINER_PROFILES = ' + JSON.stringify(profilesCatalog) + ';'
+);
+
 // Keep the local screenshot self-contained when the WebUI references its
-// packaged logo beside index.html.
+// packaged logo and app icons beside index.html.
 if (fs.existsSync(logo)) {
   const logoData = 'data:image/png;base64,' + fs.readFileSync(logo).toString('base64');
-  html = html.replace(/src="logo\.png\?v=[^"]+"/g, `src="${logoData}"`);
+  html = html.replace(/src="logo\.png(?:\?v=[^"]+)?"/g, `src="${logoData}"`);
 }
+if (fs.existsSync(appIconsDir)) {
+  const mimeTypes = {
+    '.png': 'image/png',
+    '.jpg': 'image/jpeg',
+    '.jpeg': 'image/jpeg',
+    '.svg': 'image/svg+xml',
+    '.ico': 'image/x-icon',
+  };
+  const iconDataMap = {};
+  for (const file of fs.readdirSync(appIconsDir)) {
+    const ext = path.extname(file).toLowerCase();
+    if (!mimeTypes[ext]) continue;
+    iconDataMap['./assets/app-icons/' + file] =
+      'data:' + mimeTypes[ext] + ';base64,' + fs.readFileSync(path.join(appIconsDir, file)).toString('base64');
+  }
+  html = html.replace(
+    "const asset = theme.asset ? './assets/app-icons/' + theme.asset : '';",
+    'const __PREVIEW_ICONS = ' + JSON.stringify(iconDataMap) + ";\n  const asset = theme.asset ? (__PREVIEW_ICONS['./assets/app-icons/' + theme.asset] || './assets/app-icons/' + theme.asset) : '';"
+  );
+}
+
 // 2026-11-13: Accept LF and CRLF source files; the preview harness must not
 // depend on the editor's line-ending choice when injecting the bridge mock.
 html = html.replace(/<script>\r?\n\/\* =+/, mock + '<script>\n/* ====');

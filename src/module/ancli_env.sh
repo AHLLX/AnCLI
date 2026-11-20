@@ -54,13 +54,156 @@ unset npm_config_proxy npm_config_https_proxy NPM_CONFIG_PROXY NPM_CONFIG_HTTPS_
 #    - direct：强制直连，清空代理变量（跳过慢速 dumpsys 探测）
 #    - manual：使用配置的 proxy_url（跳过系统探测）
 #    - system（默认）：探测 Android 系统代理（带 30s 缓存与末次成功兜底）
+_ancli_env_json_read_key() {
+    _aej_file="$1"
+    _aej_key="$2"
+    [ -n "$_aej_key" ] && [ -f "$_aej_file" ] || return 1
+    LC_ALL=C awk -v target="$_aej_key" '
+    BEGIN {
+        for (i = 0; i < 10; i++) hex[sprintf("%d", i)] = i
+        hex["a"] = 10; hex["b"] = 11; hex["c"] = 12; hex["d"] = 13; hex["e"] = 14; hex["f"] = 15
+        hex["A"] = 10; hex["B"] = 11; hex["C"] = 12; hex["D"] = 13; hex["E"] = 14; hex["F"] = 15
+        bom = sprintf("%c%c%c", 239, 187, 191)
+        buf = ""
+    }
+    {
+        if (NR == 1) {
+            if (substr($0, 1, 3) == bom) $0 = substr($0, 4)
+            buf = $0
+        } else {
+            buf = buf "\n" $0
+        }
+    }
+    function skip_ws(b, p, n,    c) {
+        while (p <= n) {
+            c = substr(b, p, 1)
+            if (c == " " || c == "\t" || c == "\r" || c == "\n") p++
+            else break
+        }
+        return p
+    }
+    function read_str(b, p, n,    c, r, h1, h2, h3, h4, cp) {
+        p++
+        r = ""
+        while (p <= n) {
+            c = substr(b, p, 1)
+            if (c == "\"") {
+                _rs_next = p + 1
+                _rs_val = r
+                return 1
+            }
+            if (c == "\\") {
+                p++
+                if (p > n) return 0
+                c = substr(b, p, 1)
+                if (c == "\"" || c == "\\" || c == "/") r = r c
+                else if (c == "b") r = r "\b"
+                else if (c == "f") r = r "\f"
+                else if (c == "n") r = r "\n"
+                else if (c == "r") r = r "\r"
+                else if (c == "t") r = r "\t"
+                else if (c == "u" && p + 4 <= n) {
+                    h1 = substr(b, p + 1, 1); h2 = substr(b, p + 2, 1)
+                    h3 = substr(b, p + 3, 1); h4 = substr(b, p + 4, 1)
+                    if ((h1 in hex) && (h2 in hex) && (h3 in hex) && (h4 in hex)) {
+                        cp = hex[h1] * 4096 + hex[h2] * 256 + hex[h3] * 16 + hex[h4]
+                        if (cp >= 1 && cp < 128) r = r sprintf("%c", cp)
+                        else if (cp >= 128 && cp < 2048) r = r sprintf("%c%c", 192 + int(cp / 64), 128 + (cp % 64))
+                        else if (cp >= 2048) r = r sprintf("%c%c%c", 224 + int(cp / 4096), 128 + (int(cp / 64) % 64), 128 + (cp % 64))
+                        p += 4
+                    } else {
+                        r = r "\\u"
+                    }
+                } else {
+                    r = r "\\" c
+                }
+                p++
+                continue
+            }
+            r = r c
+            p++
+        }
+        return 0
+    }
+    END {
+        n = length(buf)
+        p = skip_ws(buf, 1, n)
+        if (p > n || substr(buf, p, 1) != "{") exit 1
+        depth = 0
+        expect_key = 0
+        while (p <= n) {
+            p = skip_ws(buf, p, n)
+            if (p > n) break
+            c = substr(buf, p, 1)
+            if (c == "{") {
+                depth++
+                if (depth == 1) expect_key = 1
+                p++
+            } else if (c == "}") {
+                depth--
+                if (depth <= 0) break
+                expect_key = 0
+                p++
+            } else if (c == "[") {
+                depth++
+                expect_key = 0
+                p++
+            } else if (c == "]") {
+                depth--
+                expect_key = 0
+                p++
+            } else if (c == ",") {
+                if (depth == 1) expect_key = 1
+                p++
+            } else if (c == "\"") {
+                if (!read_str(buf, p, n)) exit 1
+                str_val = _rs_val
+                p = _rs_next
+                if (depth == 1 && expect_key) {
+                    p = skip_ws(buf, p, n)
+                    if (p <= n && substr(buf, p, 1) == ":") {
+                        p++
+                        p = skip_ws(buf, p, n)
+                        if (p <= n && substr(buf, p, 1) == "\"") {
+                            if (!read_str(buf, p, n)) exit 1
+                            if (str_val == target) {
+                                printf "%s\n", _rs_val
+                                exit 0
+                            }
+                            p = _rs_next
+                            expect_key = 0
+                        } else {
+                            if (str_val == target) {
+                                if (substr(buf, p, 4) == "null") {
+                                    printf "\n"
+                                    exit 0
+                                }
+                                exit 1
+                            }
+                            expect_key = 0
+                        }
+                    } else {
+                        expect_key = 0
+                    }
+                }
+            } else {
+                expect_key = 0
+                p++
+            }
+        }
+        exit 1
+    }' "$_aej_file" 2>/dev/null
+}
+
 ANCLI_CONFIG="/data/local/tmp/ancli/rootfs/root/.ancli-config.json"
 ANCLI_PROXY_URL=""
 ANCLI_PROXY_MODE="system"
 if [ -f "$ANCLI_CONFIG" ]; then
-    ANCLI_PROXY_URL=$(sed -n 's/^[[:space:]]*"proxy_url"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$ANCLI_CONFIG" 2>/dev/null | head -n 1)
-    ANCLI_PROXY_MODE=$(sed -n 's/^[[:space:]]*"proxy_mode"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$ANCLI_CONFIG" 2>/dev/null | head -n 1)
+    ANCLI_PROXY_URL=$(_ancli_env_json_read_key "$ANCLI_CONFIG" proxy_url || true)
+    ANCLI_PROXY_MODE=$(_ancli_env_json_read_key "$ANCLI_CONFIG" proxy_mode || true)
+    [ -n "$ANCLI_PROXY_MODE" ] || ANCLI_PROXY_MODE="system"
 fi
+unset -f _ancli_env_json_read_key 2>/dev/null || true
 
 if [ "$ANCLI_PROXY_MODE" = "direct" ]; then
     unset http_proxy https_proxy all_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY
@@ -70,6 +213,7 @@ elif [ "$ANCLI_PROXY_MODE" = "manual" ]; then
     if [ -n "$ANCLI_PROXY_URL" ]; then
         export http_proxy="$ANCLI_PROXY_URL"
         export https_proxy="$ANCLI_PROXY_URL"
+        export all_proxy="$ANCLI_PROXY_URL"
         export HTTP_PROXY="$ANCLI_PROXY_URL"
         export HTTPS_PROXY="$ANCLI_PROXY_URL"
         export ALL_PROXY="$ANCLI_PROXY_URL"
@@ -142,6 +286,7 @@ else
     if [ -n "$PROXY_HOST" ] && [ -n "$PROXY_PORT" ]; then
         export http_proxy="http://$PROXY_HOST:$PROXY_PORT"
         export https_proxy="http://$PROXY_HOST:$PROXY_PORT"
+        export all_proxy="http://$PROXY_HOST:$PROXY_PORT"
         export HTTP_PROXY="http://$PROXY_HOST:$PROXY_PORT"
         export HTTPS_PROXY="http://$PROXY_HOST:$PROXY_PORT"
         export ALL_PROXY="http://$PROXY_HOST:$PROXY_PORT"
@@ -215,7 +360,7 @@ ROOTFS="/data/local/tmp/ancli/rootfs"
 # ubuntu-base 默认 /root 为 0700，必须放宽到 755 以便非 root 包装器进入目录
 chmod 755 "$ROOTFS/root" 2>/dev/null || true
 # 将凭证目录顶层移交 uid 2000 并收紧为仅属主可读写（u+rwX,go-rwx），root 仍可正常访问且其他 App 无法窃取 OAuth 令牌
-for _conf_dir in /root/.config /root/.gemini /root/.claude /root/.local; do
+for _conf_dir in /root/.config /root/.claude /root/.codex /root/.gemini /root/.local /root/.agents /root/.dsh /root/.grok /root/.mimocode; do
     if [ -d "$ROOTFS$_conf_dir" ]; then
         chown 2000:2000 "$ROOTFS$_conf_dir" 2>/dev/null || true
         chmod u+rwX,go-rwx "$ROOTFS$_conf_dir" 2>/dev/null || true

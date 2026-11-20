@@ -42,7 +42,8 @@ MOD_DIR = "/data/adb/modules/ancli"
 KSU_BIN = "/data/adb/ksu/bin"
 AP_BIN  = "/data/adb/ap/bin"
 
-VERSION = "1.2.651-beta"
+VERSION = "1.2.654-beta"
+VERSION_CODE = 66
 
 # 2026-11-13: 应用目录随模块固化打包；官方版本检查直接读取各应用自身的 `latest` 字段，
 # 不再从网络拉取第二份 AnCLI 注册表。
@@ -54,7 +55,15 @@ CONFIG_FILE    = "/root/.ancli-config.json"
 # 避免 Node/TUI 工具扫描包含大量 Codex 缓存、会话和 skills 的 /root。
 DEFAULT_CWD    = "/root/.ancli-work"
 # 2026-11-13: `ancli config` 仅接受以下全局配置键；各工具的 API 密钥仍由注册表定义并保存在 secrets/<tool>.env。
-GLOBAL_CONFIG_KEYS = ("default_cwd", "lang", "proxy_mode", "proxy_url", "agent_memory", "update_channel")
+GLOBAL_CONFIG_KEYS = (
+    "default_cwd",
+    "lang",
+    "proxy_mode",
+    "proxy_url",
+    "agent_memory",
+    "update_channel",
+    "container_profile",
+)
 # 运行时动态绑定挂载的 Android 根目录（在 $ROOTFS 磁盘上不存在实体目录，校验存在性时跳过）
 BIND_MOUNT_ROOTS = ("/dev", "/proc", "/sys", "/sdcard", "/storage", "/mnt",
                     "/data", "/apex", "/system", "/linkerconfig")
@@ -111,7 +120,13 @@ def load_container_profiles():
 
 def load_container_config(profiles=None):
     """Return persisted host-side container settings with safe defaults."""
-    defaults = {"profile": "standard", "install_mode": "deferred", "network_mode": "system", "mirror": "tuna"}
+    defaults = {
+        "profile": "standard",
+        "install_mode": "deferred",
+        "network_mode": "system",
+        "proxy_url": "",
+        "mirror": "tuna",
+    }
     try:
         with open(CONTAINER_CONFIG_FILE, "r", encoding="utf-8") as fh:
             value = json.load(fh)
@@ -121,12 +136,14 @@ def load_container_config(profiles=None):
         pass
     if profiles is None:
         profiles = load_container_profiles().get("profiles") or {}
-    if defaults["profile"] not in profiles:
+    valid_profiles = set(profiles.keys()) if profiles else {"minimal", "standard", "developer", "full"}
+    if defaults["profile"] not in valid_profiles:
         defaults["profile"] = "standard"
     if defaults["install_mode"] not in ("installed", "deferred"):
         defaults["install_mode"] = "deferred"
     if defaults["network_mode"] not in ("system", "manual", "direct"):
         defaults["network_mode"] = "system"
+    defaults["proxy_url"] = str(defaults.get("proxy_url") or "")
     if defaults["mirror"] not in ("tuna", "ustc", "official"):
         defaults["mirror"] = "tuna"
     profile = profiles.get(defaults["profile"], {})
@@ -138,6 +155,95 @@ def load_container_config(profiles=None):
     defaults["rootfs_ready"] = os.path.exists(f"{ROOTFS}/bin/bash") or os.path.exists("/bin/bash")
     defaults["proot_deployed"] = os.path.exists(f"{ANCLI_DIR}/bin/proot")
     return defaults
+
+
+def _normalize_proxy_url(value):
+    """Normalize and validate an HTTP(S) proxy URL. Returns (ok, normalized_or_error)."""
+    value = (value or "").strip()
+    if value:
+        # 支持用户直接填写 IP:端口（如 192.168.1.10:7890），自动补全协议前缀
+        if not re.match(r'^[a-zA-Z]+://', value):
+            value = f"http://{value}"
+        try:
+            parsed = urllib.parse.urlparse(value)
+            scheme = parsed.scheme
+            hostname = parsed.hostname
+            username = parsed.username
+            password = parsed.password
+            port = parsed.port
+        except ValueError as exc:
+            if "out of range" in str(exc).lower():
+                return False, "代理端口必须在 1 到 65535 之间"
+            return False, "代理地址格式错误，请输入 IP:端口 或 http://IP:端口"
+        if scheme not in ("http", "https") or not hostname:
+            return False, "代理地址格式错误，请输入 IP:端口 或 http://IP:端口"
+        if username or password or "\n" in value or "\r" in value or "\x00" in value:
+            return False, "代理地址不能包含认证信息或控制字符"
+        if port is None or not (1 <= port <= 65535):
+            return False, "代理端口必须在 1 到 65535 之间"
+    return True, value
+
+
+def _update_container_config(profile=None, network=None, mirror=None, proxy_url=None):
+    """Merge updates into container-config.json without dropping unrelated keys."""
+    profiles = load_container_profiles().get("profiles") or {}
+    valid_profiles = set(profiles.keys()) if profiles else {"minimal", "standard", "developer", "full"}
+
+    raw = {}
+    try:
+        with open(CONTAINER_CONFIG_FILE, "r", encoding="utf-8") as fh:
+            loaded = json.load(fh)
+        if isinstance(loaded, dict):
+            raw = loaded
+    except (OSError, ValueError, TypeError):
+        pass
+
+    merged = {
+        "profile": "standard",
+        "install_mode": "deferred",
+        "network_mode": "system",
+        "proxy_url": "",
+        "mirror": "tuna",
+    }
+    merged.update(raw)
+
+    if profile is not None:
+        profile = str(profile).strip()
+        if profile not in valid_profiles:
+            return False, f"无效容器规格：{profile}"
+        merged["profile"] = profile
+    if network is not None:
+        network = str(network).strip().lower()
+        if network not in ("system", "manual", "direct"):
+            return False, f"无效网络模式：{network}"
+        merged["network_mode"] = network
+    if mirror is not None:
+        mirror = str(mirror).strip().lower()
+        if mirror not in ("tuna", "ustc", "official"):
+            return False, f"无效镜像源：{mirror}"
+        merged["mirror"] = mirror
+    if proxy_url is not None:
+        ok, norm_or_err = _normalize_proxy_url(proxy_url)
+        if not ok:
+            return False, norm_or_err
+        merged["proxy_url"] = norm_or_err
+
+    if merged.get("profile") in profiles:
+        merged["estimated_size_mb"] = profiles[merged["profile"]].get("estimated_size_mb", 0)
+    else:
+        merged.setdefault("estimated_size_mb", 0)
+
+    os.makedirs(os.path.dirname(CONTAINER_CONFIG_FILE), exist_ok=True)
+    tmp = CONTAINER_CONFIG_FILE + ".tmp"
+    with open(tmp, "w", encoding="utf-8", newline="\n") as fh:
+        json.dump(merged, fh, ensure_ascii=False, indent=2)
+        fh.write("\n")
+    try:
+        os.chmod(tmp, 0o600)
+    except OSError:
+        pass
+    os.replace(tmp, CONTAINER_CONFIG_FILE)
+    return True, ""
 
 
 def container_status_payload():
@@ -183,6 +289,7 @@ def set_default_cwd(value):
             return False, "默认目录不能包含 . 或 .."
         if "\n" in value or "\x00" in value:
             return False, "默认目录包含非法字符"
+        value = value.rstrip("/") or "/"
         if not _cwd_visible_in_container(value):
             return False, f"容器里看不到这个目录：{value}（先创建它，或检查拼写）"
     cfg = load_config()
@@ -204,20 +311,11 @@ def set_lang(value):
 
 def set_proxy_url(value):
     """持久化手动代理地址（格式支持 IP:端口 或 http(s)://IP:端口），置空则回退至系统探测。"""
-    value = (value or "").strip()
-    if value:
-        # 支持用户直接填写 IP:端口（如 192.168.1.10:7890），自动补全协议前缀
-        if not re.match(r'^[a-zA-Z]+://', value):
-            value = f"http://{value}"
-        parsed = urllib.parse.urlparse(value)
-        if parsed.scheme not in ("http", "https") or not parsed.hostname:
-            return False, "代理地址格式错误，请输入 IP:端口 或 http://IP:端口"
-        if parsed.username or parsed.password or "\n" in value or "\x00" in value:
-            return False, "代理地址不能包含认证信息或控制字符"
-        if parsed.port is None or not (1 <= parsed.port <= 65535):
-            return False, "代理端口必须在 1 到 65535 之间"
+    ok, result = _normalize_proxy_url(value)
+    if not ok:
+        return False, result
     cfg = load_config()
-    cfg["proxy_url"] = value
+    cfg["proxy_url"] = result
     save_config(cfg)
     return True, ""
 
@@ -233,9 +331,12 @@ def _get_detected_proxy():
         if raw:
             if not re.match(r'^[a-zA-Z]+://', raw):
                 raw = f"http://{raw}"
-            p = urllib.parse.urlparse(raw)
-            if p.hostname and p.port:
-                return f"{p.hostname}:{p.port}"
+            try:
+                p = urllib.parse.urlparse(raw)
+                if p.hostname and p.port:
+                    return f"{p.hostname}:{p.port}"
+            except ValueError:
+                pass
         return ""
 
     # mode == "system": 优先从宿主机 ancli_env.sh 探测并写入的缓存读取
@@ -264,9 +365,12 @@ def _get_detected_proxy():
             val = val.strip()
             if not re.match(r'^[a-zA-Z]+://', val):
                 val = f"http://{val}"
-            p = urllib.parse.urlparse(val)
-            if p.hostname and p.port:
-                return f"{p.hostname}:{p.port}"
+            try:
+                p = urllib.parse.urlparse(val)
+                if p.hostname and p.port:
+                    return f"{p.hostname}:{p.port}"
+            except ValueError:
+                pass
     return ""
 
 
@@ -316,6 +420,14 @@ def set_update_channel(value):
     return True, ""
 
 
+def set_container_profile(value):
+    """Persist the selected container profile even before rootfs installation."""
+    val = (value or "").strip()
+    if not val:
+        return False, "容器规格不能为空"
+    return _update_container_config(profile=val)
+
+
 def settings_command(argv):
     """Handle `ancli config` without an app id (global settings only)."""
     errors = []
@@ -335,12 +447,15 @@ def settings_command(argv):
             ok, err = set_agent_memory(value)
         elif key == "update_channel":
             ok, err = set_update_channel(value)
+        elif key == "container_profile":
+            ok, err = set_container_profile(value)
         else:
             ok, err = False, f"未知配置项：{key}（支持 {', '.join(GLOBAL_CONFIG_KEYS)}）"
         if not ok:
             errors.append(err)
 
     cfg = load_config()
+    container_cfg = load_container_config()
     if changed_default_cwd:
         # Refresh the guest-global context after a configuration change. JSON
         # callers receive the result as data; human callers get the progress line.
@@ -355,6 +470,7 @@ def settings_command(argv):
             "proxy_mode": cfg.get("proxy_mode", "system"),
             "agent_memory": cfg.get("agent_memory", "unconfigured"),
             "update_channel": cfg.get("update_channel", "stable"),
+            "container_profile": container_cfg.get("profile", "standard"),
             "detected_proxy": detected_proxy,
             "proxy_connected": bool(detected_proxy),
             "supported_keys": list(GLOBAL_CONFIG_KEYS),
@@ -375,8 +491,10 @@ def settings_command(argv):
         print(f"Agent全局记忆: {cfg.get('agent_memory', '未选择 (默认开启)')}")
         chan = cfg.get('update_channel', 'stable')
         print(f"更新通道: {'Beta 预览 (beta)' if chan == 'beta' else '正式主线 (stable)'}")
+        print(f"容器规格: {container_cfg.get('profile', 'standard')}")
+    err_stream = sys.stderr if "--json" in argv else sys.stdout
     for err in errors:
-        print(f"\033[91m[X] {err}\033[0m")
+        print(f"\033[91m[X] {err}\033[0m", file=err_stream)
     if errors:
         raise SystemExit(1)
 
@@ -763,7 +881,38 @@ def _write_secrets_file(executable, env_dict):
     except Exception as e:
         print(f"\033[93m[!] Warning: Could not write secrets file: {e}\033[0m")
 
-def generate_proot_wrapper(executable, env_dict=None, runtime_env_list=None, proxy_mode="system"):
+def _read_secrets_file(executable):
+    """Parse existing `export KEY=VALUE` pairs from SECRETS_DIR/{executable}.env."""
+    secrets_path = f"{SECRETS_DIR}/{executable}.env"
+    result = {}
+    if not os.path.isfile(secrets_path):
+        return result
+    try:
+        with open(secrets_path, "r", encoding="utf-8", errors="ignore") as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith("#"):
+                    continue
+                if line.startswith("export "):
+                    line = line[7:].lstrip()
+                if "=" not in line:
+                    continue
+                k, _, raw_val = line.partition("=")
+                k = k.strip()
+                if not k:
+                    continue
+                try:
+                    parts = shlex.split(raw_val)
+                    val = parts[0] if parts else ""
+                except ValueError:
+                    val = raw_val.strip()
+                result[k] = val
+    except OSError:
+        pass
+    return result
+
+
+def generate_proot_wrapper(executable, env_dict=None, runtime_env_list=None, proxy_mode="system", no_daemon=None):
     """Generate a wrapper that routes execution into the Ubuntu PRoot container."""
     if '/' in executable or '\\' in executable or '..' in executable:
         print(f"\033[91m[X] Invalid executable name: {executable}\033[0m")
@@ -791,11 +940,16 @@ def generate_proot_wrapper(executable, env_dict=None, runtime_env_list=None, pro
         secrets_line = f"# No secrets configured. Run: ancli config {executable}"
     proxy_override = ""
     if proxy_mode == "direct":
-        proxy_override = "# This tool opts out of the Android system proxy.\nunset http_proxy https_proxy all_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY\n"
+        proxy_override = (
+            "# This tool opts out of the Android system proxy.\n"
+            "unset http_proxy https_proxy all_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY "
+            "npm_config_proxy npm_config_https_proxy NPM_CONFIG_PROXY NPM_CONFIG_HTTPS_PROXY\n"
+        )
     # Android PRoot cannot provide the Linux namespace support required by
-    # Codex's shared app-server daemon. Run Codex in-process by default; this
-    # avoids stale/missing daemon sockets while leaving other agents unchanged.
-    codex_no_daemon = "--no-daemon " if executable == "codex" else ""
+    # Codex's shared app-server daemon. Run in-process when registry `no_daemon`
+    # (or legacy executable == 'codex' fallback) requests it.
+    use_no_daemon = (executable == "codex") if no_daemon is None else bool(no_daemon)
+    codex_no_daemon = "--no-daemon " if use_no_daemon else ""
 
     # Build the single PRoot wrapper used by every supported app.
     wrapper = f"""#!/system/bin/sh
@@ -917,31 +1071,12 @@ while IFS= read -r _ancli_url; do
 done < "$ANCLI_OPEN_QUEUE"
 : > "$ANCLI_OPEN_QUEUE" 2>/dev/null || true
 }}
-ANCLI_BRIDGE_DIR="{ANCLI_DIR}/.bridge"
-mkdir -p "$ANCLI_BRIDGE_DIR/reqs" 2>/dev/null
-chmod 777 "$ANCLI_BRIDGE_DIR" "$ANCLI_BRIDGE_DIR/reqs" 2>/dev/null || true
-ancli_bridge_drain() {{
-    for _ancli_req in "$ANCLI_BRIDGE_DIR/reqs"/req_*.sh; do
-        [ -f "$_ancli_req" ] || continue
-        _ancli_req_id="${{_ancli_req##*/req_}}"
-        _ancli_req_id="${{_ancli_req_id%.sh}}"
-        _ancli_out="$ANCLI_BRIDGE_DIR/out_${{_ancli_req_id}}"
-        _ancli_err="$ANCLI_BRIDGE_DIR/err_${{_ancli_req_id}}"
-        _ancli_exit="$ANCLI_BRIDGE_DIR/exit_${{_ancli_req_id}}"
-        /system/bin/sh "$_ancli_req" > "$_ancli_out" 2> "$_ancli_err"
-        _ancli_bridge_rc=$?
-        printf '%s\\n' "$_ancli_bridge_rc" > "$_ancli_exit"
-        rm -f "$_ancli_req"
-    done
-}}
 ANCLI_OPEN_WATCHER_PID=""
 if [ -w "$(dirname "$ANCLI_OPEN_QUEUE")" ]; then
 (
     _ancli_ticks=0
     while [ "$_ancli_ticks" -lt 1800 ]; do
-        touch "$ANCLI_BRIDGE_DIR/active" 2>/dev/null || true
         [ -s "$ANCLI_OPEN_QUEUE" ] && ancli_open_drain
-        ancli_bridge_drain
         if [ -n "$PPID" ]; then
             # Exit with the tool (and do not linger on a hung/zombie parent: a
             # stuck proot once left this watcher behind for half an hour).
@@ -953,7 +1088,6 @@ if [ -w "$(dirname "$ANCLI_OPEN_QUEUE")" ]; then
         _ancli_ticks=$((_ancli_ticks + 1))
         sleep 1
     done
-    rm -f "$ANCLI_BRIDGE_DIR/active" 2>/dev/null || true
     ancli_open_drain
 ) &
 ANCLI_OPEN_WATCHER_PID=$!
@@ -1105,7 +1239,7 @@ export PROOT_NO_SECCOMP=1
 {ANCLI_DIR}/bin/proot -r {ROOTFS} -b /dev -b /proc -b /sys -b {ANCLI_DIR} \\
 $ANCLI_BIND_ARGS \\
 -b {ANCLI_DIR}/hosts:/etc/hosts -b /data/adb $SHM_BIND \\
-        -w "$PROOT_CWD" /usr/bin/env ANCLI_IN_CONTAINER=1 PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/data/adb/ksu/bin:/data/adb/ap/bin:/system/bin SHELL=/bin/bash BROWSER=/usr/local/bin/xdg-open {executable} {codex_no_daemon}"$@"
+        -w "$PROOT_CWD" /usr/bin/env ANCLI_IN_CONTAINER=1 PWD="$PROOT_CWD" PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/root/.local/bin:/data/adb/ksu/bin:/data/adb/ap/bin:/system/bin SHELL=/bin/bash BROWSER=/usr/local/bin/xdg-open {executable} {codex_no_daemon}"$@"
 _ancli_rc=$?
 [ -n "$ANCLI_OPEN_WATCHER_PID" ] && kill "$ANCLI_OPEN_WATCHER_PID" 2>/dev/null || true
 [ -n "$ANCLI_OPEN_WATCHER_PID" ] && wait "$ANCLI_OPEN_WATCHER_PID" 2>/dev/null || true
@@ -1487,7 +1621,7 @@ def _fix_config_permissions():
         return
     # chmod the root home dir itself so shell user can enter it
     os.system(f"chmod 755 {root_dir} 2>/dev/null")
-    for conf_dir in [".config", ".claude", ".gemini", ".local", ".agents",
+    for conf_dir in [".config", ".claude", ".codex", ".gemini", ".local", ".agents",
                      ".dsh", ".grok", ".mimocode"]:
         full_path = f"{root_dir}/{conf_dir}"
         if os.path.exists(full_path):
@@ -1515,6 +1649,7 @@ SKILL_LINK_DIRS = (
 RUNTIME_CONTEXT_NAME = "AGENTS.md"
 RUNTIME_CONTEXT_MARKER = "<!-- ancli:runtime-context v1 -->"
 RUNTIME_CONTEXT_PENDING_MARKER = "<!-- ancli:first-run:pending -->"
+RUNTIME_CONTEXT_END_MARKER = "<!-- ancli:first-run:end -->"
 RUNTIME_CONTEXT_FINALIZED_MARKER = "<!-- ancli:first-run:finalized"
 
 
@@ -1844,12 +1979,24 @@ def _render_runtime_context_probe(probe):
     return "\n".join(lines)
 
 
+def _find_runtime_context_end(text, start=0):
+    """Locate the end anchor for the first-run bootstrap section."""
+    for anchor in (
+        "\n" + RUNTIME_CONTEXT_END_MARKER,
+        RUNTIME_CONTEXT_END_MARKER,
+        "\n工具通过宿主 wrapper",
+    ):
+        idx = text.find(anchor, start)
+        if idx >= 0:
+            return idx
+    return -1
+
+
 def _inject_runtime_context_bootstrap(text):
     """Add the first-run protocol to an older generated context in place."""
     if RUNTIME_CONTEXT_PENDING_MARKER in text or RUNTIME_CONTEXT_FINALIZED_MARKER in text:
         return text
-    anchor = "\n工具通过宿主 wrapper"
-    index = text.find(anchor)
+    index = _find_runtime_context_end(text)
     if index < 0:
         return text
     return text[:index] + "\n\n" + _runtime_context_bootstrap_section().rstrip() + text[index:]
@@ -1860,7 +2007,7 @@ def _replace_runtime_context_bootstrap(text, probe):
     start = text.find(RUNTIME_CONTEXT_PENDING_MARKER)
     if start < 0:
         return None
-    end = text.find("\n工具通过宿主 wrapper", start)
+    end = _find_runtime_context_end(text, start)
     if end < 0:
         return None
     return text[:start] + _render_runtime_context_probe(probe) + text[end:]
@@ -2279,7 +2426,6 @@ def repair_env(registry):
 
     # 3.1 Deploy xdg-open browser redirect wrapper and guest ancli entrypoint inside container
     _deploy_xdg_open()
-    _deploy_guest_ancli(verbose=False)
     print("\033[92m[OK] Browser redirect wrapper deployed (/usr/local/bin/xdg-open).\033[0m")
     _deploy_guest_ancli()
 
@@ -2303,18 +2449,41 @@ def repair_env(registry):
     except Exception as e:
         print(f"\033[93m[!] 配置 Git safe.directory 失败: {e}\033[0m")
 
-    # b. 解锁 Python PEP 668 并配置国内 PyPI 镜像
+    # b. 解锁 Python PEP 668 并配置 PyPI 镜像
     try:
-        for ext_m in [
-            f"{ROOTFS}/usr/lib/python3.12/EXTERNALLY-MANAGED",
-            f"{ROOTFS}/usr/lib/python3.11/EXTERNALLY-MANAGED",
-        ]:
-            if os.path.exists(ext_m):
+        for ext_m in glob.glob(f"{ROOTFS}/usr/lib/python3*/EXTERNALLY-MANAGED"):
+            if os.path.lexists(ext_m):
                 os.remove(ext_m)
+        mirror = (load_container_config().get("mirror") or "tuna").strip().lower()
+        pip_urls = {
+            "tuna": "https://pypi.tuna.tsinghua.edu.cn/simple",
+            "ustc": "https://pypi.mirrors.ustc.edu.cn/simple",
+            "official": "https://pypi.org/simple",
+        }
+        pip_url = pip_urls.get(mirror, pip_urls["tuna"])
         pip_conf = f"{ROOTFS}/etc/pip.conf"
-        if not os.path.exists(pip_conf):
-            with open(pip_conf, "w", encoding="utf-8") as f:
-                f.write("[global]\nindex-url = https://pypi.tuna.tsinghua.edu.cn/simple\n")
+        os.makedirs(os.path.dirname(pip_conf), exist_ok=True)
+        known_bare_confs = {
+            f"[global]\nindex-url = {u}"
+            for u in (*pip_urls.values(), "https://mirrors.ustc.edu.cn/pypi/simple")
+        }
+        should_write_pip = not os.path.exists(pip_conf)
+        if not should_write_pip:
+            try:
+                with open(pip_conf, "r", encoding="utf-8", errors="ignore") as f:
+                    existing_pip = f.read()
+                stripped_pip = existing_pip.strip()
+                if (
+                    not stripped_pip
+                    or "# AnCLI managed" in existing_pip
+                    or stripped_pip in known_bare_confs
+                ):
+                    should_write_pip = True
+            except OSError:
+                should_write_pip = False
+        if should_write_pip:
+            with open(pip_conf, "w", encoding="utf-8", newline="\n") as f:
+                f.write(f"# AnCLI managed\n[global]\nindex-url = {pip_url}\n")
         print("\033[92m[OK] Python pip 运行限制解除 (PEP 668 已解锁，镜像已就绪)。\033[0m")
     except Exception as e:
         print(f"\033[93m[!] 修复 Python pip 环境失败: {e}\033[0m")
@@ -2374,11 +2543,37 @@ def repair_env(registry):
     try:
         ancli_src = f"{MOD_DIR}/system/bin/ancli"
         if os.path.isfile(ancli_src):
-            for inst_b in (KSU_BIN, AP_BIN):
-                if os.path.isdir(inst_b):
+            tmp_ancli = f"{ANCLI_DIR}/bin/.ancli.tmp"
+            staged_ancli = ancli_src
+            try:
+                os.makedirs(os.path.dirname(tmp_ancli), exist_ok=True)
+                with open(ancli_src, "rb") as sf, open(tmp_ancli, "wb") as tf:
+                    tf.write(sf.read())
+                os.chmod(tmp_ancli, 0o755)
+                staged_ancli = tmp_ancli
+            except OSError:
+                staged_ancli = ancli_src
+            try:
+                for inst_b in (KSU_BIN, AP_BIN):
+                    if not os.path.isdir(inst_b):
+                        continue
                     dst = os.path.join(inst_b, "ancli")
-                    shutil.copy2(ancli_src, dst)
-                    os.chmod(dst, 0o755)
+                    try:
+                        if os.path.lexists(dst):
+                            os.remove(dst)
+                        shutil.copy2(ancli_src, dst)
+                        os.chmod(dst, 0o755)
+                    except OSError:
+                        os.system(
+                            f"cp -f {shlex.quote(staged_ancli)} {shlex.quote(dst)} "
+                            f">/dev/null 2>&1 && chmod 755 {shlex.quote(dst)} >/dev/null 2>&1"
+                        )
+            finally:
+                if staged_ancli == tmp_ancli and os.path.exists(tmp_ancli):
+                    try:
+                        os.remove(tmp_ancli)
+                    except OSError:
+                        pass
     except Exception:
         pass
 
@@ -2397,9 +2592,10 @@ def repair_env(registry):
             app_reg = registry['apps'].get(app_id) if registry and 'apps' in registry else None
             runtime_env = app_reg.get('runtime_env', []) if app_reg else []
             proxy_mode = app_reg.get('proxy_mode', 'system') if app_reg else 'system'
+            no_daemon = app_reg.get('no_daemon') if isinstance(app_reg, dict) else None
             stored_env = info.get('env', {})
             generate_proot_wrapper(exec_name, stored_env if stored_env else None, runtime_env,
-                                   proxy_mode)
+                                   proxy_mode, no_daemon=no_daemon)
         print("\033[92m[OK] Wrappers updated to latest engine.\033[0m")
     else:
         print("\033[90m[i] No installed apps to repair.\033[0m")
@@ -2458,6 +2654,14 @@ def patch_dsh_web_cookie(verbose=True):
     return patched
 
 
+def _should_patch_web_cookie(app, app_id=None):
+    """Return True when the app uses `patch_dsh_web_cookie` (registry-driven with fallback)."""
+    if isinstance(app, dict) and "patch_web_cookie" in app:
+        return bool(app.get("patch_web_cookie"))
+    exe = app.get("executable") if isinstance(app, dict) else None
+    return exe == "dsh" or app_id == "dsh"
+
+
 def _deploy_xdg_open():
     """Give the container a working `xdg-open`.
 
@@ -2466,8 +2670,7 @@ def _deploy_xdg_open():
     calls `am` there *looks* successful (exit 0) while opening nothing, which is
     exactly what `dsh web` (via the npm `open` package) hit. The container-side
     shim therefore only queues the URL; the generated wrapper on the host drains
-    that queue into `am start`. The host-side copy still calls `am` directly,
-    because all supported tools run inside the guest."""
+    that queue into `am start`, because all supported tools run inside the guest."""
     try:
         xdg_content = """#!/bin/sh
 # AnCLI: hand the URL to the host wrapper, which opens it with `am start`.
@@ -2530,7 +2733,7 @@ def _deploy_guest_ancli(verbose=True):
     script = (
         "#!/bin/sh\n"
         "export ANCLI_IN_CONTAINER=1\n"
-        'export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH"\n'
+        'export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/root/.local/bin:$PATH"\n'
         'exec python3 /data/local/tmp/ancli/bin/ancli-core.py "$@"\n'
     )
     try:
@@ -2564,7 +2767,7 @@ def _deploy_guest_ancli(verbose=True):
         etc_env = f"{ROOTFS}/etc/environment"
         try:
             with open(etc_env, "w", encoding="utf-8", newline="\n") as fh:
-                fh.write('PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/system/bin"\n')
+                fh.write('PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/root/.local/bin:/data/adb/ksu/bin:/data/adb/ap/bin:/system/bin"\n')
         except Exception:
             pass
 
@@ -2609,7 +2812,7 @@ def _install_proot_common(app_id, app, registry=None):
     if carried_env:
         print(f"\033[92m[i] Keeping the existing configuration: {', '.join(carried_env.keys())}\033[0m")
     generate_proot_wrapper(app['executable'], carried_env if carried_env else {}, runtime_env,
-                           proxy_mode)
+                           proxy_mode, no_daemon=app.get('no_daemon'))
     _deploy_xdg_open()
     _deploy_guest_ancli(verbose=False)
     installed[app_id] = {
@@ -2635,7 +2838,7 @@ def _install_proot_common(app_id, app, registry=None):
     setup_skill_dirs(verbose=False)
     # Refresh the summary only after recording a successful installation.
     setup_runtime_context(verbose=False, refresh=True)
-    if app.get('executable') == 'dsh':
+    if _should_patch_web_cookie(app, app_id):
         patch_dsh_web_cookie(verbose=False)
     try:
         official, source, err = _latest_version(app, registry)
@@ -2697,8 +2900,16 @@ def install_app(app_id, registry):
 
     print(f"\033[92m[*] Installing {app['name']}...\033[0m")
     print(f"\033[96m[i] Backend: proot\033[0m")
-    if app.get('executable') == 'codex':
-        print("\033[93m[!] Android PRoot cannot provide Codex's default bubblewrap mount sandbox. After installation, start Codex, run /permissions, select Full Access, then retry shell commands. Full Access disables Codex's command sandbox; use only in a trusted workspace.\033[0m")
+    notice = app.get('sandbox_notice') if 'sandbox_notice' in app else app.get('post_install_note')
+    if notice is None and app.get('executable') == 'codex':
+        notice = (
+            "Android PRoot cannot provide Codex's default bubblewrap mount sandbox. "
+            "After installation, start Codex, run /permissions, select Full Access, "
+            "then retry shell commands. Full Access disables Codex's command sandbox; "
+            "use only in a trusted workspace."
+        )
+    if isinstance(notice, str) and notice.strip():
+        print(f"\033[93m[!] {notice.strip()}\033[0m")
     return _install_proot(app_id, app, registry)
 
 def _build_pipe_script_cmd(script_path, installer_env=None, installer_args=""):
@@ -2786,6 +2997,22 @@ def _ensure_apt_sandbox():
         pass
 
 
+def _ensure_policy_rc_d():
+    """Ensure /usr/sbin/policy-rc.d prevents dpkg/apt maintainer scripts from invoking services under PRoot."""
+    targets = [f"{ROOTFS}/usr/sbin/policy-rc.d"]
+    if os.path.isdir("/etc/apt/apt.conf.d"):
+        targets.append("/usr/sbin/policy-rc.d")
+    for policy_rc in targets:
+        try:
+            sbin_dir = os.path.dirname(policy_rc)
+            if os.path.isdir(sbin_dir) and not os.path.isfile(policy_rc):
+                with open(policy_rc, "w", encoding="utf-8", newline="\n") as f:
+                    f.write("#!/bin/sh\nexit 101\n")
+                os.chmod(policy_rc, 0o755)
+        except Exception:
+            pass
+
+
 def _install_proot(app_id, app, registry=None):
     """Install a tool inside the Ubuntu PRoot container.
     Dispatches to the appropriate installer based on the registry 'install_method' field:
@@ -2796,7 +3023,8 @@ def _install_proot(app_id, app, registry=None):
     if not shutil.which("curl"):
         print("\033[96m[i] Container is missing 'curl'. Auto-installing dependencies via apt...\033[0m")
         _ensure_apt_sandbox()
-        apt_cmd = "apt-get update -qy && apt-get install -qy --no-install-recommends curl ca-certificates"
+        _ensure_policy_rc_d()
+        apt_cmd = "apt-get update -qy && env DEBIAN_FRONTEND=noninteractive apt-get install -qy --no-install-recommends curl ca-certificates"
         if not run_cmd(apt_cmd):
             print("\033[91m[X] Failed to install 'curl' inside container. Installation might fail.\033[0m")
         else:
@@ -2804,8 +3032,11 @@ def _install_proot(app_id, app, registry=None):
 
     # Old minimal containers may have no npm or an outdated Node. Repair the
     # runtime before invoking npm-based agent installers.
-    if app_id in ("codex-cli", "dsh"):
-        node_setup = "/data/local/tmp/ancli/node-setup.sh"
+    requires_node = app.get('requires_node')
+    if requires_node is None:
+        requires_node = app_id in ("codex-cli", "dsh")
+    if requires_node:
+        node_setup = f"{ANCLI_DIR}/node-setup.sh"
         if not os.path.isfile(node_setup):
             print("[X] Node.js 修复脚本缺失，请先升级 AnCLI 模块。")
             return False
@@ -2984,7 +3215,7 @@ def reset_environment(keep_log=None, verbose=True, reinstall=False):
     # Remove generated wrappers left by an old registry while keeping the core
     # runtime files that make the next install possible.
     bin_dir = os.path.join(ANCLI_DIR, "bin")
-    preserved_bin = {"proot", "ancli-core.py", "ancli_env.sh", "registry.json"}
+    preserved_bin = {"proot", "loader", "loader-m32", "ancli-core.py", "ancli_env.sh", "registry.json"}
     if os.path.isdir(bin_dir):
         for name in os.listdir(bin_dir):
             if name in preserved_bin:
@@ -3085,14 +3316,14 @@ def update_app(app_id, registry):
     runtime_env = app.get('runtime_env', [])
     proxy_mode = app.get('proxy_mode', 'system')
     generate_proot_wrapper(app.get('executable', app_id), None, runtime_env,
-                           proxy_mode)
+                           proxy_mode, no_daemon=app.get('no_daemon'))
 
     probed = _record_installed_version(installed, app_id, app, registry)
     installed[app_id]['installed_at'] = time.strftime("%Y-%m-%d %H:%M:%S")
     save_installed(installed)
     setup_runtime_context(verbose=False, refresh=True)
     _fix_config_permissions()
-    if app.get('executable') == 'dsh':
+    if _should_patch_web_cookie(app, app_id):
         # npm just replaced the packaged files: re-apply the Android cookie patch.
         patch_dsh_web_cookie(verbose=False)
 
@@ -3131,29 +3362,51 @@ def reconfigure_app(app_id, registry, set_env=None):
         print(f"\033[93m[!] App {app_id} is not installed.\033[0m")
         return
     app = registry['apps'].get(app_id, {})
+    executable = app.get('executable') or installed[app_id].get('executable') or app_id
     all_vars = app.get('env_vars', []) + app.get('optional_env_vars', [])
     if not all_vars and not set_env:
         # No configurable vars: drop any stale secrets file from earlier
         # versions (e.g. mimo's OPENAI_API_KEY, which the tool ignores).
-        secrets_path = f"{SECRETS_DIR}/{app_id}.env"
-        if os.path.exists(secrets_path):
-            try:
-                os.remove(secrets_path)
-                print(f"\033[93m[i] Removed stale secrets file for {app_id} (no env vars configured).\033[0m")
-            except Exception:
-                pass
+        for stale_name in dict.fromkeys((executable, app_id)):
+            secrets_path = f"{SECRETS_DIR}/{stale_name}.env"
+            if os.path.exists(secrets_path):
+                try:
+                    os.remove(secrets_path)
+                    print(f"\033[93m[i] Removed stale secrets file for {app_id} (no env vars configured).\033[0m")
+                except Exception:
+                    pass
+        if installed[app_id].get('configured_env') != [] or installed[app_id].get('env'):
+            installed[app_id]['configured_env'] = []
+            if 'env' in installed[app_id]:
+                installed[app_id]['env'] = {}
+            save_installed(installed)
         print(f"\033[93m[!] No configurable env vars for {app_id}.\033[0m")
         return
     print(f"\033[96m[*] Reconfiguring {app.get('name', app_id)}...\033[0m")
 
+    exec_secrets_path = f"{SECRETS_DIR}/{executable}.env"
+    legacy_secrets_path = f"{SECRETS_DIR}/{app_id}.env" if app_id != executable else None
+    existing_secrets = _read_secrets_file(executable)
+    if not os.path.exists(exec_secrets_path) and legacy_secrets_path and os.path.isfile(legacy_secrets_path):
+        existing_secrets = _read_secrets_file(app_id)
+    stored_mem_env = installed[app_id].get('env', {})
     env_dict = {}
     if set_env:
         # Non-interactive: keep existing values, overlay the --set pairs.
-        env_dict = dict(installed[app_id].get('env', {}))
-        env_dict.update(set_env)
+        env_dict.update(existing_secrets)
+        if isinstance(stored_mem_env, dict):
+            env_dict.update(stored_mem_env)
+        for k, v in set_env.items():
+            if v == "" or v is None:
+                env_dict.pop(k, None)
+            else:
+                env_dict[k] = v
     else:
         for var in all_vars:
-            prev_val = installed[app_id].get('env', {}).get(var, '')
+            prev_val = (
+                (stored_mem_env.get(var, '') if isinstance(stored_mem_env, dict) else '')
+                or existing_secrets.get(var, '')
+            )
             hint = f" [{prev_val}]" if prev_val else ""
             val = input(f"\033[96mEnter {var}{hint} (leave blank to keep/skip): \033[0m").strip()
 
@@ -3162,10 +3415,28 @@ def reconfigure_app(app_id, registry, set_env=None):
             elif prev_val:
                 env_dict[var] = prev_val  # Keep existing value if skipped
 
+    if not env_dict:
+        for stale_name in dict.fromkeys((executable, app_id)):
+            secrets_path = f"{SECRETS_DIR}/{stale_name}.env"
+            if os.path.exists(secrets_path):
+                try:
+                    os.remove(secrets_path)
+                except Exception:
+                    pass
+        installed[app_id]['configured_env'] = []
+    else:
+        installed[app_id]['configured_env'] = list(env_dict.keys())
+
     runtime_env = app.get('runtime_env', [])
     proxy_mode = app.get('proxy_mode', 'system')
-    generate_proot_wrapper(app.get('executable', app_id), env_dict if env_dict else None, runtime_env,
-                           proxy_mode)
+    generate_proot_wrapper(executable, env_dict if env_dict else None, runtime_env,
+                           proxy_mode, no_daemon=app.get('no_daemon'))
+
+    if env_dict and legacy_secrets_path and os.path.exists(legacy_secrets_path):
+        try:
+            os.remove(legacy_secrets_path)
+        except OSError:
+            pass
 
     installed[app_id]['env'] = env_dict
     save_installed(installed)
@@ -3327,7 +3598,11 @@ def _latest_version(app, registry):
             data = _http_json(f"https://registry.npmjs.org/{pkg.replace('/', '%2F')}/latest")
             return _first_version(_json_path(data, 'version')), label, None
         if src == 'json':
-            data = _http_json(spec.get('url', ''))
+            url = spec.get('url', '')
+            url_by_arch = spec.get('url_by_arch')
+            if isinstance(url_by_arch, dict):
+                url = url_by_arch.get(_detect_arch()) or url
+            data = _http_json(url)
             return _first_version(_json_path(data, spec.get('path', 'version'))), label, None
         if src == 'text':
             last_err = None
@@ -3486,17 +3761,29 @@ def check_updates(registry=None, probe=True, app_ids=None):
                 probe_results[aid] = bool(probed)
             integrity_results[aid] = bool(_binary_exists(app.get('executable', aid)))
             # npm can leave a command shim behind when an update is force-stopped.
-            # Check DSH's installed package metadata and executable entry point too,
-            # so a surviving shim is not mistaken for a complete installation.
-            if aid == 'dsh':
-                package_dir = f"{ROOTFS}/usr/local/lib/node_modules/@deepseek-ai/dsh"
-                package_json = os.path.join(package_dir, 'package.json')
+            # Check package metadata and executable entry point too when declared
+            # by registry `integrity_pkg_json`, so a surviving shim is not mistaken
+            # for a complete installation.
+            integrity_spec = app.get('integrity_pkg_json')
+            if integrity_spec is None and aid == 'dsh':
+                integrity_spec = '@deepseek-ai/dsh'
+            if isinstance(integrity_spec, str) and integrity_spec.strip():
+                spec_val = integrity_spec.strip()
+                if spec_val.endswith('/package.json') or spec_val == 'package.json':
+                    package_json = os.path.join(ROOTFS, spec_val.lstrip('/'))
+                    package_dir = os.path.dirname(package_json)
+                    expected_pkg_name = None
+                else:
+                    package_dir = f"{ROOTFS}/usr/local/lib/node_modules/{spec_val}"
+                    package_json = os.path.join(package_dir, 'package.json')
+                    expected_pkg_name = spec_val
                 try:
                     with open(package_json, 'r', encoding='utf-8') as fh:
                         package_data = json.load(fh)
                     bins = package_data.get('bin') or {}
                     bin_targets = [bins] if isinstance(bins, str) else list(bins.values()) if isinstance(bins, dict) else []
-                    package_ok = bool(package_data.get('name') == '@deepseek-ai/dsh' and bin_targets)
+                    name_ok = (package_data.get('name') == expected_pkg_name) if expected_pkg_name else bool(package_data.get('name'))
+                    package_ok = bool(name_ok and bin_targets)
                     package_ok = package_ok and all(
                         isinstance(target, str) and os.path.isfile(os.path.join(package_dir, target))
                         for target in bin_targets
@@ -3505,7 +3792,7 @@ def check_updates(registry=None, probe=True, app_ids=None):
                 except (OSError, ValueError, TypeError):
                     integrity_results[aid] = False
                 if not integrity_results[aid]:
-                    print("\033[91m[X] DSH installation integrity check failed: "
+                    print(f"\033[91m[X] {name} installation integrity check failed: "
                           "package metadata, CLI entry point, executable, or version probe is missing.\033[0m")
             if probed:
                 pending.setdefault(aid, {}).update(
@@ -3688,7 +3975,7 @@ def check_updates_json(app_ids=None):
 def _get_current_module_version():
     """读取当前模块版本名称与整型 versionCode。"""
     v_name = f"v{VERSION}" if not str(VERSION).startswith("v") else str(VERSION)
-    v_code = 25
+    v_code = VERSION_CODE
     for prop_path in (
         f"{MOD_DIR}/module.prop",
         "/data/adb/modules/ancli/module.prop",
@@ -3942,13 +4229,45 @@ def download_module_update(channel=None):
 
 
 
+def check_module_command(argv):
+    """CLI handler for `ancli check-module`."""
+    channel = None
+    json_mode = "--json" in argv
+    for arg in argv:
+        if arg.startswith("--channel="):
+            channel = arg.split("=", 1)[1]
+    if json_mode:
+        with _stdout_to_stderr():
+            res = check_module_update(channel)
+        print(json.dumps(res, ensure_ascii=False))
+    else:
+        res = check_module_update(channel)
+        print(f"=== AnCLI 模块更新检查 [{res.get('channel', 'stable')}] ===")
+        if res.get("status") == "error":
+            print(f"\033[91m[X] 检查失败: {res.get('error')}\033[0m")
+            return 1
+        if res.get("has_update"):
+            print(f"\033[92m[!] 发现新版本: {res.get('latest_version')} (Build {res.get('latest_version_code')})\033[0m")
+            if res.get("zip_url"):
+                print(f"下载链接: {res.get('zip_url')}")
+            if res.get("changelog"):
+                print(f"\n--- 更新说明 ---\n{res.get('changelog')[:500]}")
+        else:
+            print(f"\033[92m[OK] 当前已是最新版本 ({res.get('current_version')})\033[0m")
+    return 0 if res.get("status") == "ok" else 1
+
+
 def status_json():
     """Container/module status as pure JSON (used by the WebUI)."""
     with _stdout_to_stderr():
+        cfg = load_config()
+        _, version_code = _get_current_module_version()
         detected_proxy = _get_detected_proxy()
         host_arch = _detect_arch()
         payload = {
             "ancli_version": VERSION,
+            "version_code": version_code,
+            "execution_backend": "proot-ubuntu",
             "rootfs_ready": os.path.exists(f"{ROOTFS}/bin/bash") or os.path.exists("/bin/bash"),
             "proot_deployed": os.path.exists(f"{ANCLI_DIR}/bin/proot"),
             "host_arch": host_arch,
@@ -3956,11 +4275,13 @@ def status_json():
             "installed_count": len(load_installed()),
             "android_data": ensure_android_data(verbose=False),
             "host_bash_compat": any(
-                os.path.isfile(f"{path}/bash") for path in (KSU_BIN, AP_BIN)
+                os.path.isfile(f"{path}/bash") for path in (f"{MOD_DIR}/system/bin", KSU_BIN, AP_BIN)
             ),
+            "proxy_mode": cfg.get("proxy_mode", "system"),
+            "proxy_url": cfg.get("proxy_url", ""),
             "detected_proxy": detected_proxy,
             "proxy_connected": bool(detected_proxy),
-            "agent_memory": load_config().get("agent_memory", "unconfigured"),
+            "agent_memory": cfg.get("agent_memory", "unconfigured"),
             "container": container_status_payload(),
         }
     print(json.dumps(payload, ensure_ascii=False))
@@ -3992,6 +4313,14 @@ def doctor_json():
             "host_arch": host_arch,
             "rootfs_arch": host_arch,
             "android_data": ensure_android_data(verbose=False),
+            "host_compatibility": {
+                "bash": {
+                    "paths": [f"{MOD_DIR}/system/bin/bash", f"{KSU_BIN}/bash", f"{AP_BIN}/bash"],
+                    "installed": any(
+                        os.path.isfile(f"{path}/bash") for path in (f"{MOD_DIR}/system/bin", KSU_BIN, AP_BIN)
+                    ),
+                },
+            },
             "paths": paths,
             "commands": commands,
             "installed_apps": sorted(installed.keys()),
@@ -4031,31 +4360,30 @@ def container_command(argv):
         values = parse_set_env(argv)
         profile = values.get("profile") or values.get("container_profile")
         network = values.get("network") or values.get("network_mode")
+        mirror = values.get("mirror")
+        proxy_url = values.get("proxy_url") if "proxy_url" in values else None
         for arg in argv:
             if arg.startswith("--profile="):
-                profile = arg.split("=", 1)[1]
+                profile = urllib.parse.unquote(arg.split("=", 1)[1])
             elif arg.startswith("--network="):
-                network = arg.split("=", 1)[1]
-        profile = profile or payload["config"]["profile"]
-        network = network or payload["config"]["network_mode"]
-        if profile not in payload["profiles"]:
-            raise SystemExit(f"无效容器规格：{profile}")
-        if network not in ("system", "manual", "direct"):
-            raise SystemExit(f"无效网络模式：{network}")
-        new_config = {
-            "profile": profile,
-            "install_mode": payload["config"]["install_mode"],
-            "network_mode": network,
-            "estimated_size_mb": payload["profiles"][profile].get("estimated_size_mb", 0),
-        }
-        tmp = CONTAINER_CONFIG_FILE + ".tmp"
-        with open(tmp, "w", encoding="utf-8") as fh:
-            json.dump(new_config, fh, ensure_ascii=False, indent=2)
-            fh.write("\n")
-        os.replace(tmp, CONTAINER_CONFIG_FILE)
+                network = urllib.parse.unquote(arg.split("=", 1)[1])
+            elif arg.startswith("--mirror="):
+                mirror = urllib.parse.unquote(arg.split("=", 1)[1])
+            elif arg.startswith("--proxy-url="):
+                proxy_url = urllib.parse.unquote(arg.split("=", 1)[1])
+        ok, err = _update_container_config(
+            profile=profile if profile is not None else payload["config"]["profile"],
+            network=network if network is not None else payload["config"]["network_mode"],
+            mirror=mirror,
+            proxy_url=proxy_url,
+        )
+        if not ok:
+            raise SystemExit(err)
         result = container_status_payload()
         print(json.dumps(result, ensure_ascii=False) if "--json" in argv else
-              f"[OK] 已选择容器规格：{result['config']['profile_name']}，网络：{network}")
+              f"[OK] 已选择容器规格：{result['config']['profile_name']}，"
+              f"网络：{result['config']['network_mode']}，"
+              f"镜像：{result['config']['mirror']}")
         return
     if action in ("install", "apply"):
         # A host wrapper handles this before PRoot when the rootfs is absent.
@@ -4450,37 +4778,19 @@ if __name__ == "__main__":
                 doctor_json()
                 sys.exit(0)
             elif action == "check-module":
-                channel = None
-                json_mode = "--json" in sys.argv
-                for arg in sys.argv[2:]:
-                    if arg.startswith("--channel="):
-                        channel = arg.split("=", 1)[1]
-                res = check_module_update(channel)
-                if json_mode:
-                    print(json.dumps(res, ensure_ascii=False))
-                else:
-                    print(f"=== AnCLI 模块更新检查 [{res.get('channel', 'stable')}] ===")
-                    if res.get("status") == "error":
-                        print(f"\033[91m[X] 检查失败: {res.get('error')}\033[0m")
-                        sys.exit(1)
-                    if res.get("has_update"):
-                        print(f"\033[92m[!] 发现新版本: {res.get('latest_version')} (Build {res.get('latest_version_code')})\033[0m")
-                        if res.get("zip_url"):
-                            print(f"下载链接: {res.get('zip_url')}")
-                        if res.get("changelog"):
-                            print(f"\n--- 更新说明 ---\n{res.get('changelog')[:500]}")
-                    else:
-                        print(f"\033[92m[OK] 当前已是最新版本 ({res.get('current_version')})\033[0m")
-                sys.exit(0 if res.get("status") == "ok" else 1)
+                sys.exit(check_module_command(sys.argv[2:]))
             elif action == "download-module":
                 channel = None
                 json_mode = "--json" in sys.argv
                 for arg in sys.argv[2:]:
                     if arg.startswith("--channel="):
                         channel = arg.split("=", 1)[1]
-                downloaded = download_module_update(channel)
                 if json_mode:
+                    with _stdout_to_stderr():
+                        downloaded = download_module_update(channel)
                     print(json.dumps(downloaded or {"status": "error"}, ensure_ascii=False))
+                else:
+                    downloaded = download_module_update(channel)
                 sys.exit(0 if downloaded else 1)
             elif action == "config" and app_id in ("--help", "-h"):
                 # 2026-11-13: Keep config help offline and independent of the

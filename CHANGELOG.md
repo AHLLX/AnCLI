@@ -1,3 +1,22 @@
+## v1.2.654-beta (2026-11-20)
+
+- Align release version metadata and `ancli --version` fallback with `versionCode=66`.
+- Harden container repair, mirror-aware Python setup, x86_64 loader preservation, bridge task shutdown, and DSH backend working-directory handling.
+- Refine proxy/status settings and responsive WebUI behavior; preserve the container transfer and delete flows introduced in the previous beta.
+- Update runtime guidance for PRoot sandbox limitations and safe package handling.
+
+## v1.2.653-beta (2026-11-20)
+
+- Add Settings > Reset > Container transfer with full-container export to Android Download and offline ZIP import.
+- Add a separately confirmed action to delete the current Ubuntu rootfs while preserving the AnCLI module and host proxy/language/mirror preferences; refuse deletion while PRoot is active.
+- Export/import ZIP manifests carry the Ubuntu container profile and memory state; package names identify the Ubuntu version, architecture, profile and full development environment.
+
+## v1.2.652-beta (2026-11-20)
+
+- Add a WebUI option to import a local offline Ubuntu container bundle from Android shared storage.
+- Verify bundle format, SHA-256, archive paths, Ubuntu version and arm64 architecture before extraction; use the marked rootfs transaction and retain any existing container or checkpoint.
+- Add a separate Ubuntu 24.04 arm64 full-profile import bundle containing no Agent apps and no configured global Agent memory.
+
 ## v1.2.651-beta (2026-11-19)
 
 - Add KernelSU and APatch instant-access directories to the PRoot process PATH, so AGY's command runner can resolve the bundled `bash` compatibility shim and reach `ancli android` host commands.

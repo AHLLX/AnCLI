@@ -81,9 +81,6 @@ else
     APT_REPO_TYPE="ports"
 fi
 
-UBUNTU_PATH_PRIMARY="ubuntu-cdimage/ubuntu-base/releases/24.04/release/ubuntu-base-24.04.5-base-${ROOTFS_ARCH}.tar.gz"
-UBUNTU_PATH_FALLBACK="ubuntu-cdimage/ubuntu-base/releases/24.04/release/ubuntu-base-24.04.4-base-${ROOTFS_ARCH}.tar.gz"
-
 # 从 module.prop 动态读取版本号用于刷入日志横幅，避免硬编码与发布元数据脱节
 MODULE_VERSION="$(grep '^version=' "${MODPATH:-$(dirname "$0")}/module.prop" 2>/dev/null | cut -d= -f2)"
 [ -n "$MODULE_VERSION" ] || MODULE_VERSION="unknown"
@@ -166,6 +163,10 @@ if [ -f "$MODPATH/container-bootstrap.sh" ]; then
     cp -f "$MODPATH/container-bootstrap.sh" "$ANCLI_DIR/container-bootstrap.sh"
     chmod 755 "$ANCLI_DIR/container-bootstrap.sh"
 fi
+if [ -f "$MODPATH/container-export.py" ]; then
+    cp -f "$MODPATH/container-export.py" "$ANCLI_DIR/container-export.py" || installer_abort '无法部署容器导出工具' 'Could not deploy container export helper'
+    chmod 755 "$ANCLI_DIR/container-export.py"
+fi
 for _install_helper in install-network.sh install-transaction.sh node-setup.sh task-stop.sh container-mirror.sh dsh-web-control.sh; do
     [ -f "$MODPATH/$_install_helper" ] || installer_abort '缺少安装辅助脚本：%s' 'Missing installer helper: %s' "$_install_helper"
     cp -f "$MODPATH/$_install_helper" "$ANCLI_DIR/$_install_helper" || installer_abort '无法部署安装辅助脚本' 'Could not deploy installer helper'
@@ -188,6 +189,7 @@ fi
 }
 deploy_installer_assets
 . "$ANCLI_DIR/container-profile-data.sh" || installer_abort '无法载入容器规格清单' 'Could not load the container profile catalog'
+. "$ANCLI_DIR/container-mirror.sh" || installer_abort '无法载入容器下载站点配置' 'Could not load the container mirror catalog'
 
 # 1.2 容器尚未安装时始终提供选择，即使上次已经留下延后安装配置。
 # 已安装的 rootfs 保持原配置，不通过刷入流程覆盖用户环境。
@@ -357,7 +359,7 @@ if [ ! -f "$ROOTFS/bin/bash" ]; then
     break
     done
     [ "$_container_mode" = "deferred" ] && _defer_this_install=true
-    case "$_container_profile" in minimal) _container_size=0 ;; standard) _container_size=0 ;; developer) _container_size=0 ;; full) _container_size=0 ;; esac
+    _container_size=0
     if [ "$_config_exists" = true ]; then
         # Update only the three known values and retain proxy, language and other
         # existing configuration. Never overwrite an existing config on timeout.
@@ -446,6 +448,24 @@ if [ -f "$ROOTFS/bin/bash" ]; then
     fi
 fi
 
+_cfg_mirror=$(sed -n 's/^[[:space:]]*"mirror"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$ANCLI_DIR/container-config.json" 2>/dev/null | head -n 1)
+_pref_mirror=""
+_custom_mirror_host=""
+if [ -n "${ANCLI_MIRROR:-}" ]; then
+    case "$ANCLI_MIRROR" in
+        tuna|mirrors.tuna.tsinghua.edu.cn) _pref_mirror="tuna" ;;
+        ustc|mirrors.ustc.edu.cn) _pref_mirror="ustc" ;;
+        official|cdimage.ubuntu.com) _pref_mirror="official" ;;
+        *) _custom_mirror_host="$ANCLI_MIRROR"; _pref_mirror="tuna" ;;
+    esac
+else
+    case "$_cfg_mirror" in
+        tuna|ustc|official) _pref_mirror="$_cfg_mirror" ;;
+        *) _pref_mirror="tuna" ;;
+    esac
+fi
+_selected_apt_mirror="$_pref_mirror"
+
 if [ "$_container_mode" != "installed" ]; then
 ui_print "$(installer_text '>> 容器安装已延后；请在 WebUI 中配置。' '>> Container installation deferred; configure it in WebUI.')"
 else
@@ -453,15 +473,25 @@ if [ ! -f "$ROOTFS/bin/bash" ]; then
     ui_print "$(installer_text ">> 正在下载 Ubuntu Base（$ROOTFS_ARCH）..." ">> Downloading Ubuntu Base ($ROOTFS_ARCH)...")"
     TAR_PATH="${ANCLI_ROOTFS_ARCHIVE:-$ANCLI_DIR/ubuntu-base.tar.gz}"
     success=0
-    
-    for _path in "$UBUNTU_PATH_PRIMARY" "$UBUNTU_PATH_FALLBACK"; do
-        for mirror in \
-            "https://${UBUNTU_MIRROR}/${_path}" \
-            "https://mirrors.tuna.tsinghua.edu.cn/${_path}" \
-            "https://mirrors.ustc.edu.cn/${_path}" \
-            "https://cdimage.ubuntu.com/${_path#ubuntu-cdimage/}"; do
+
+    for _ver in 24.04.5 24.04.4; do
+        if [ -n "$_custom_mirror_host" ]; then
+            mirror="https://${_custom_mirror_host}/ubuntu-cdimage/ubuntu-base/releases/24.04/release/ubuntu-base-${_ver}-base-${ROOTFS_ARCH}.tar.gz"
             ui_print "$(installer_text ">> 正在尝试镜像：$mirror" ">> Trying mirror: $mirror")"
             if download_tarball "$TAR_PATH" "$mirror" && [ -s "$TAR_PATH" ]; then
+                success=1
+                break
+            fi
+        fi
+        _tried_mirrors=""
+        for _m_id in "$_pref_mirror" tuna ustc official; do
+            case " $_tried_mirrors " in *" $_m_id "*) continue ;; esac
+            _tried_mirrors="$_tried_mirrors $_m_id"
+            mirror=$(ancli_mirror_rootfs_url "$_m_id" "$_ver" "$ROOTFS_ARCH") || continue
+            ui_print "$(installer_text ">> 正在尝试镜像：$mirror" ">> Trying mirror: $mirror")"
+            if download_tarball "$TAR_PATH" "$mirror" && [ -s "$TAR_PATH" ]; then
+                _selected_apt_mirror="$_m_id"
+                _custom_mirror_host=""
                 success=1
                 break 2
             fi
@@ -477,12 +507,14 @@ if [ ! -f "$ROOTFS/bin/bash" ]; then
     tar -xf "$TAR_PATH" -C "$ROOTFS" || ancli_install_abort "$(installer_text 'rootfs 解压失败，下载文件可能已损坏' 'Failed to extract rootfs; the downloaded archive may be corrupted')"
     rm -f "$TAR_PATH"
 
-    # 初始化容器内 resolv.conf：优先写入宿主机 net.dns1/2，随后追加备用公共 DNS（去重且最多 3 条）
+    # 初始化容器内 resolv.conf：优先写入宿主机 net.dns1/2 与 dumpsys DnsAddresses，随后追加备用公共 DNS（去重且最多 3 条）
     rm -f "$ROOTFS/etc/resolv.conf"
     : > "$ROOTFS/etc/resolv.conf"
+    _dns_net=$(/system/bin/dumpsys connectivity 2>/dev/null | grep -o 'DnsAddresses: \[[^]]*\]' | head -n 1 \
+        | tr ',' '\n' | grep -oE '[0-9]{1,3}(\.[0-9]{1,3}){3}' | head -n 3)
     _dns_seen=""
     _dns_count=0
-    for _dns_val in "$(getprop net.dns1 2>/dev/null)" "$(getprop net.dns2 2>/dev/null)" 223.5.5.5 119.29.29.29 1.1.1.1 8.8.8.8; do
+    for _dns_val in "$(getprop net.dns1 2>/dev/null)" "$(getprop net.dns2 2>/dev/null)" $_dns_net 223.5.5.5 119.29.29.29 1.1.1.1 8.8.8.8; do
         case "$_dns_val" in
             ''|0.*|*[!0-9.]*) continue ;;
         esac
@@ -506,13 +538,33 @@ if [ "$_container_mode" = "installed" ] && [ -f "$ROOTFS/bin/bash" ]; then
 fi
 
 # 4. 通过 PRoot 引导或补齐容器内 APT 基础依赖（带幂等检查）
-PROOT_CMD="$BIN_DIR/proot -r $ROOTFS -b /dev -b /proc -b /sys -b $ANCLI_DIR -w /root"
+_ancli_dir_clean="${ANCLI_DIR%/}"
+_rootfs_clean="${ROOTFS%/}"
+[ -n "$_ancli_dir_clean" ] && [ -n "$_rootfs_clean" ] || installer_abort '无效的容器目录配置' 'Invalid container directory configuration'
+mkdir -p "$_rootfs_clean/root" 2>/dev/null || true
+_proot_binds=""
+_proot_seen=""
+for _pb in /dev /proc /sys "$_ancli_dir_clean"; do
+    _pb="${_pb%/}"
+    [ -n "$_pb" ] || continue
+    [ -e "$_pb" ] || [ -d "$_pb" ] || continue
+    case " $_proot_seen " in *" $_pb "*) continue ;; esac
+    _proot_seen="$_proot_seen $_pb"
+    _proot_binds="$_proot_binds -b $_pb"
+done
+export PROOT_NO_SECCOMP=1
+PROOT_CMD="$BIN_DIR/proot -r $_rootfs_clean$_proot_binds -w /root"
 
 # APT 依赖脚本生成（幂等）；软件包清单与安装菜单、WebUI 共用 container-profiles.json。
 # Java 17 供 jadx 等反编译工具；binutils 提供 strings/readelf/objdump；
 # 并解锁 PEP 668（Ubuntu 24.04 默认拒绝 pip install）以允许直接 pip 装库。
 _profile_packages=$(ancli_profile_packages "$_container_profile") || installer_abort '无效的容器规格：%s' 'Invalid container profile: %s' "$_container_profile"
 write_setup_script() {
+    case "$_selected_apt_mirror" in
+        ustc) _pip_url="https://pypi.mirrors.ustc.edu.cn/simple" ;;
+        official) _pip_url="https://pypi.org/simple" ;;
+        *) _pip_url="https://pypi.tuna.tsinghua.edu.cn/simple" ;;
+    esac
     _setup_proxy_exports=""
     if [ -n "${http_proxy:-}" ]; then
         _setup_proxy_exports="export http_proxy='${http_proxy}' https_proxy='${https_proxy:-${http_proxy}}' HTTP_PROXY='${HTTP_PROXY:-${http_proxy}}' HTTPS_PROXY='${HTTPS_PROXY:-${https_proxy:-${http_proxy}}}'"
@@ -525,23 +577,56 @@ export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 export TMPDIR=/tmp
 $_setup_proxy_exports
 
-# PRoot 环境下配置 APT sandbox 为 root，实现安全规范的 GPG 签名校验
+# 禁止 invoke-rc.d 在 PRoot 容器内拉起系统服务
+mkdir -p /usr/sbin
+printf '#!/bin/sh\nexit 101\n' > /usr/sbin/policy-rc.d
+chmod 755 /usr/sbin/policy-rc.d
+
+# PRoot 环境下配置 APT sandbox 为 root 与非交互 dpkg 选项，实现安全规范的 GPG 签名校验
 mkdir -p /etc/apt/apt.conf.d
 if [ -n "\${http_proxy:-}" ]; then
     printf 'Acquire::http::Proxy "%s";\n' "\$http_proxy" > /etc/apt/apt.conf.d/99ancli-proxy
     printf 'Acquire::https::Proxy "%s";\n' "\${https_proxy:-\$http_proxy}" >> /etc/apt/apt.conf.d/99ancli-proxy
 fi
-echo 'APT::Sandbox::User "root";' > /etc/apt/apt.conf.d/01sandbox
+printf 'APT::Sandbox::User "root";\n' > /etc/apt/apt.conf.d/01sandbox
+printf 'DPkg::Use-Pty "0";\nDPkg::Options {\n    "--force-confdef";\n    "--force-confold";\n};\n' > /etc/apt/apt.conf.d/02ancli-dpkg
+
+# 清理 PRoot 下无法执行的 systemd/udev postinst，避免半配置状态或 triggers 触发后续 apt/dpkg 崩溃
+ancli_harden_systemd_dpkg() {
+    for _pi in /var/lib/dpkg/info/systemd*.postinst /var/lib/dpkg/info/udev.postinst; do
+        [ -f "\$_pi" ] || continue
+        if grep -qE 'systemd-sysusers|systemd-tmpfiles|systemctl|udevadm' "\$_pi" 2>/dev/null; then
+            printf '#!/bin/sh\n# AnCLI PRoot stub: systemd/udev postinst cannot run under PRoot\nexit 0\n' > "\$_pi"
+            chmod 755 "\$_pi"
+        fi
+    done
+    if command -v dpkg >/dev/null 2>&1; then
+        dpkg --configure --pending >/dev/null 2>&1 || true
+    fi
+}
+
+ancli_harden_systemd_dpkg
 apt-get update -y
-apt-get install -y --no-install-recommends \\
-    $_profile_packages
+if ! apt-get install -y --no-install-recommends \\
+    $_profile_packages; then
+    if command -v dpkg >/dev/null 2>&1 && dpkg --audit 2>/dev/null | grep -qE 'systemd|udev'; then
+        ancli_harden_systemd_dpkg
+        apt-get install -y --no-install-recommends \\
+            $_profile_packages
+    else
+        exit 1
+    fi
+fi
+ancli_harden_systemd_dpkg
 apt-get clean
 rm -f /etc/apt/apt.conf.d/99ancli-proxy
 /bin/sh /data/local/tmp/ancli/node-setup.sh
 
-# 移除 PEP 668 限制标记并配置清华 PyPI 镜像，允许在容器系统 Python 中直接 pip install
-rm -f /usr/lib/python3.12/EXTERNALLY-MANAGED
-printf '[global]\nindex-url = https://pypi.tuna.tsinghua.edu.cn/simple\n' > /etc/pip.conf
+# 移除 PEP 668 限制标记并配置镜像对应的 PyPI 源，允许在容器系统 Python 中直接 pip install
+rm -f /usr/lib/python3*/EXTERNALLY-MANAGED
+if [ ! -f /etc/pip.conf ] || grep -q '# AnCLI managed' /etc/pip.conf 2>/dev/null || [ ! -s /etc/pip.conf ]; then
+    printf '# AnCLI managed\n[global]\nindex-url = %s\n' '$_pip_url' > /etc/pip.conf
+fi
 SETUP
     chmod 755 "$ROOTFS/root/setup.sh"
 }
@@ -551,29 +636,24 @@ if [ "$_container_mode" = "installed" ] && ! $PROOT_CMD /usr/bin/python3 --versi
     _profile_install_name=$($_profile_name_fn "$_container_profile")
     ui_print "$(installer_text ">> 正在安装容器规格“$_profile_install_name”所需的软件包..." ">> Installing packages for container profile '$_profile_install_name'...")"
 
-    # 宿主机侧预先替换 Ubuntu APT 源为国内镜像（使用 http 避免初期无 ca-certificates 时校验报错）
-    if [ "$APT_REPO_TYPE" = "main" ]; then
-        sed -i "s|http://archive.ubuntu.com/ubuntu|http://${UBUNTU_MIRROR}/ubuntu|g" \
-            "$ROOTFS/etc/apt/sources.list.d/ubuntu.sources" 2>/dev/null || true
-        sed -i "s|http://security.ubuntu.com/ubuntu|http://${UBUNTU_MIRROR}/ubuntu|g" \
-            "$ROOTFS/etc/apt/sources.list.d/ubuntu.sources" 2>/dev/null || true
-        sed -i "s|https://archive.ubuntu.com/ubuntu|http://${UBUNTU_MIRROR}/ubuntu|g" \
-            "$ROOTFS/etc/apt/sources.list.d/ubuntu.sources" 2>/dev/null || true
-        sed -i "s|https://security.ubuntu.com/ubuntu|http://${UBUNTU_MIRROR}/ubuntu|g" \
-            "$ROOTFS/etc/apt/sources.list.d/ubuntu.sources" 2>/dev/null || true
-        sed -i "s|http://archive.ubuntu.com/ubuntu|http://${UBUNTU_MIRROR}/ubuntu|g" \
-            "$ROOTFS/etc/apt/sources.list" 2>/dev/null || true
-        sed -i "s|http://security.ubuntu.com/ubuntu|http://${UBUNTU_MIRROR}/ubuntu|g" \
-            "$ROOTFS/etc/apt/sources.list" 2>/dev/null || true
+    # 宿主机侧预先替换 Ubuntu APT 源（复用 container-mirror.sh，自动备份 ubuntu.sources）
+    if [ -n "${_custom_mirror_host:-}" ]; then
+        if [ "$APT_REPO_TYPE" = "main" ]; then
+            _apt_url="http://${_custom_mirror_host}/ubuntu"
+        else
+            _apt_url="http://${_custom_mirror_host}/ubuntu-ports"
+        fi
     else
-        sed -i "s|http://ports.ubuntu.com/ubuntu-ports|http://${UBUNTU_MIRROR}/ubuntu-ports|g" \
-            "$ROOTFS/etc/apt/sources.list.d/ubuntu.sources" 2>/dev/null || true
-        sed -i "s|https://ports.ubuntu.com/ubuntu-ports|http://${UBUNTU_MIRROR}/ubuntu-ports|g" \
-            "$ROOTFS/etc/apt/sources.list.d/ubuntu.sources" 2>/dev/null || true
-        sed -i "s|http://ports.ubuntu.com/ubuntu-ports|http://${UBUNTU_MIRROR}/ubuntu-ports|g" \
-            "$ROOTFS/etc/apt/sources.list" 2>/dev/null || true
+        _apt_url=$(ancli_mirror_apt_url "$_selected_apt_mirror" "$ROOTFS_ARCH") || \
+            ancli_install_abort "$(installer_text '无法解析 APT 镜像地址' 'Could not resolve APT mirror URL')"
     fi
-    ui_print "$(installer_text ">> APT 镜像：${UBUNTU_MIRROR}（$APT_REPO_TYPE）" ">> APT mirror: ${UBUNTU_MIRROR} ($APT_REPO_TYPE)")"
+    if [ -f "$ROOTFS/etc/apt/sources.list.d/ubuntu.sources" ]; then
+        ancli_mirror_configure_apt "$ROOTFS" "$_apt_url" || \
+            ancli_install_abort "$(installer_text '无法写入 APT 源配置' 'Could not configure APT mirror')"
+    elif [ -f "$ROOTFS/etc/apt/sources.list" ]; then
+        sed -i "s|https\?://[^/]*\.ubuntu\.com/ubuntu\(-ports\)\?|$_apt_url|g" "$ROOTFS/etc/apt/sources.list" 2>/dev/null || true
+    fi
+    ui_print "$(installer_text ">> APT 镜像：$_apt_url（$APT_REPO_TYPE）" ">> APT mirror: $_apt_url ($APT_REPO_TYPE)")"
 
     write_setup_script
     $PROOT_CMD /root/setup.sh || ancli_install_abort "$(installer_text 'APT 引导安装失败' 'APT bootstrap failed')"
@@ -607,23 +687,25 @@ mkdir -p "$ROOTFS/usr/local/bin" \
          "$ROOTFS/usr/local/sbin" \
          "$ROOTFS/usr/local/lib/node_modules" \
          "$ROOTFS/usr/local/share" \
-         "$ROOTFS/root/.npm/_logs"
+         "$ROOTFS/root/.npm/_logs" \
+         "$ROOTFS/root/.ancli-work"
 chmod 755 "$ROOTFS/usr/local/bin" \
           "$ROOTFS/usr/local/sbin" \
           "$ROOTFS/usr/local/lib" \
-          "$ROOTFS/usr/local/lib/node_modules"
+          "$ROOTFS/usr/local/lib/node_modules" \
+          "$ROOTFS/root/.ancli-work"
 ui_print "$(installer_text '>> npm 路径已就绪。' '>> npm paths ready.')"
 fi
 
 # 5. 部署 AnCLI 核心脚本、环境桥接脚本、宿主机 bash 兼容模板与运行时上下文模板
 ui_print "$(installer_text '>> 正在部署 AnCLI 核心...' '>> Deploying AnCLI Core...')"
-cp "$MODPATH/ancli/ancli-core.py" "$BIN_DIR/ancli-core.py"
-cp "$MODPATH/ancli/ancli_env.sh" "$BIN_DIR/ancli_env.sh"
+cp -f "$MODPATH/ancli/ancli-core.py" "$BIN_DIR/ancli-core.py"
+cp -f "$MODPATH/ancli/ancli_env.sh" "$BIN_DIR/ancli_env.sh"
 chmod 755 "$BIN_DIR/ancli-core.py" "$BIN_DIR/ancli_env.sh"
 
 # 部署 AGY 宿主机 POSIX `bash -c` 兼容模板（Dual-Injection Path A：重启后通过 systemless overlay 生效）
 if [ -f "$MODPATH/ancli/bash-host-compat" ]; then
-    cp "$MODPATH/ancli/bash-host-compat" "$ANCLI_DIR/bash-host-compat"
+    cp -f "$MODPATH/ancli/bash-host-compat" "$ANCLI_DIR/bash-host-compat"
     chmod 755 "$ANCLI_DIR/bash-host-compat"
     mkdir -p "$MODPATH/system/bin"
     cp -f "$MODPATH/ancli/bash-host-compat" "$MODPATH/system/bin/bash"
@@ -642,18 +724,19 @@ EOF
     for link_dir in /usr/bin /bin; do
         [ -d "$ROOTFS$link_dir" ] && ln -sf /usr/local/bin/ancli "$ROOTFS$link_dir/ancli" 2>/dev/null || true
     done
+    ln -sf /bin/bash "$ROOTFS/usr/local/bin/bash" 2>/dev/null || true
 fi
 
 # 部署不可变运行时上下文模板（仅作基准模板，实际 /root/.agents/AGENTS.md 由 ancli agent-init/repair 生成）
 if [ -f "$MODPATH/ancli/runtime-context/AGENTS.md" ]; then
     mkdir -p "$ANCLI_DIR/runtime-context"
-    cp "$MODPATH/ancli/runtime-context/AGENTS.md" "$ANCLI_DIR/runtime-context/AGENTS.md"
+    cp -f "$MODPATH/ancli/runtime-context/AGENTS.md" "$ANCLI_DIR/runtime-context/AGENTS.md"
     chmod 644 "$ANCLI_DIR/runtime-context/AGENTS.md"
 fi
 
 # 同时部署 registry.json 到 $BIN_DIR 和 $ANCLI_DIR，兼容新旧核心版本的离线首启读取路径
-cp "$MODPATH/ancli/registry.json" "$BIN_DIR/registry.json" 2>/dev/null || true
-cp "$MODPATH/ancli/registry.json" "$ANCLI_DIR/registry.json" 2>/dev/null || true
+cp -f "$MODPATH/ancli/registry.json" "$BIN_DIR/registry.json" 2>/dev/null || true
+cp -f "$MODPATH/ancli/registry.json" "$ANCLI_DIR/registry.json" 2>/dev/null || true
 
 
 # 6. 向 KernelSU / APatch 动态路径注入即时生效入口（无需重启即可使用）：
@@ -681,7 +764,7 @@ ui_print "$(installer_text ">> AGY 宿主 bash 兼容入口：$host_bash" ">> AG
     fi
 
     # 注入主命令 ancli
-    cp "$MODPATH/system/bin/ancli" "$INSTANT_BIN/ancli"
+    cp -f "$MODPATH/system/bin/ancli" "$INSTANT_BIN/ancli"
     chmod 755 "$INSTANT_BIN/ancli"
 ui_print "$(installer_text ">> 快捷命令：$INSTANT_BIN/ancli" ">> Instant access: $INSTANT_BIN/ancli")"
 

@@ -3,6 +3,8 @@
 set -u
 ANCLI_DIR=/data/local/tmp/ancli
 id=${1:-}
+quiet=0
+case "${2:-}" in --quiet|--service) quiet=1 ;; esac
 case "$id" in ''|*[!0-9_]*|_*|*_*_*) echo 'Invalid task id'; exit 2 ;; esac
 case "$id" in *_*) ;; *) echo 'Invalid task id'; exit 2 ;; esac
 log="$ANCLI_DIR/.webui_${id}.log"
@@ -20,24 +22,45 @@ shift 19
 [ "${1:-}" = "$start" ] || { echo 'Task identity changed'; exit 3; }
 # kill the distinct session process group, not the manager or other tasks.
 /system/bin/kill -TERM -- "-$pid" 2>/dev/null || { echo 'Unable to signal task'; exit 3; }
-# A process in a new session keeps the group number reserved until it exits.
-group_alive() {
+signal_session() {
+    _sig=$1
+    /system/bin/kill "-$_sig" -- "-$pid" 2>/dev/null || true
     for statfile in /proc/[0-9]*/stat; do
+        _p=${statfile#/proc/}
+        _p=${_p%/stat}
+        [ "$_p" = "$$" ] || [ "$_p" = "$PPID" ] && continue
         stat=$(cat "$statfile" 2>/dev/null) || continue
         rest=${stat##*) }
         set -- $rest
-        [ "${3:-}" = "$pid" ] && [ "${4:-}" = "$pid" ] && [ "${1:-}" != Z ] && return 0
+        if [ "${4:-}" = "$pid" ] && [ "${1:-}" != Z ]; then
+            /system/bin/kill "-$_sig" "$_p" 2>/dev/null || true
+        fi
+    done
+}
+signal_session TERM
+# A process in a new session keeps the group number reserved until it exits.
+group_alive() {
+    for statfile in /proc/[0-9]*/stat; do
+        _p=${statfile#/proc/}
+        _p=${_p%/stat}
+        [ "$_p" = "$$" ] || [ "$_p" = "$PPID" ] && continue
+        stat=$(cat "$statfile" 2>/dev/null) || continue
+        rest=${stat##*) }
+        set -- $rest
+        if { [ "${3:-}" = "$pid" ] || [ "${4:-}" = "$pid" ]; } && [ "${1:-}" != Z ]; then
+            return 0
+        fi
     done
     return 1
 }
 n=0
 while group_alive && [ "$n" -lt 5 ]; do sleep 1; n=$((n+1)); done
 if group_alive; then
-    /system/bin/kill -KILL -- "-$pid" 2>/dev/null || true
+    signal_session KILL
     sleep 1
 fi
 if group_alive; then echo 'Task still running; no cleanup performed'; exit 3; fi
 . "$ANCLI_DIR/install-transaction.sh"
 ancli_cleanup_stopped_task "$id" || { echo 'Task stopped but cleanup failed'; exit 3; }
 [ -f "$log.exit" ] || { printf '143\n' > "$log.exit.tmp" && mv -f "$log.exit.tmp" "$log.exit"; }
-echo 'Task stopped; owned temporary installation data cleaned. Existing container data preserved.'
+[ "$quiet" -eq 1 ] || echo 'Task stopped; owned temporary installation data cleaned. Existing container data preserved.'

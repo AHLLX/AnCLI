@@ -29,27 +29,36 @@ def run_selection(tmp_path, initial=None, sequences=(), rootfs=False, healthy=Fa
     fake.write_text('''#!/bin/bash\nn=0; [ -f "$EVENT_DIR/count" ] && n=$(cat "$EVENT_DIR/count"); n=$((n+1)); echo "$n" > "$EVENT_DIR/count"\nif [ -f "$EVENT_DIR/$n" ]; then cat "$EVENT_DIR/$n"; sleep 5; fi\n''', encoding='utf-8')
     fake.chmod(0o755)
     source = SOURCE.read_text(encoding='utf-8')
+    key_block = source[source.index('read_container_key() {'):source.index('ui_print "Select installer language')]
+    i18n_block = source[source.index('installer_text() {'):source.index('if [ "$HOST_ARCH" = "unknown" ]')]
     block = source[source.index('# 1.2 容器尚未安装时'):source.index('\n_container_mode=$(sed', source.index('# 1.2 容器尚未安装时'))]
-    block = block.replace('/system/bin/getevent', '"$ANCLI_TEST_GETEVENT"').replace('/system/bin/sleep 1', 'sleep 0.05')
+    combined = key_block + '\n' + i18n_block + '\n' + block
+    combined = combined.replace('/system/bin/getevent', '"$ANCLI_TEST_GETEVENT"').replace('/system/bin/sleep 1', 'sleep 0.05')
     mounts = tmp_path / 'mounts'
     mounts.write_text('')
     old_prop = tmp_path / 'old-module.prop'
     if old_version is not None:
         old_prop.write_text('version=' + old_version + '\n')
-    block = block.replace('\"$ANCLI_DIR\" = \"/data/local/tmp/ancli\"', '\"$ANCLI_DIR\" = \"$ANCLI_TEST_ALLOWED\"').replace('/proc/mounts', '\"$ANCLI_TEST_MOUNTS\"').replace('/data/adb/modules/ancli/module.prop', '\"$ANCLI_TEST_OLD_PROP\"')
-    script = tmp_path / 'test.sh'
-    script.write_text('''#!/bin/bash\nui_print() { printf '%s\\n' "$*"; }\nabort() { echo "$*"; exit 1; }\ndeploy_installer_assets() { :; }\nps() { :; }\n''' + block, encoding='utf-8')
+    combined = combined.replace('"$ANCLI_DIR" = "/data/local/tmp/ancli"', '"$ANCLI_DIR" = "$ANCLI_TEST_ALLOWED"').replace('/proc/mounts', '"$ANCLI_TEST_MOUNTS"').replace('/data/adb/modules/ancli/module.prop', '"$ANCLI_TEST_OLD_PROP"')
     # Git Bash uses POSIX paths for external programs and shell redirections.
     def posix(path):
         value = str(path).replace('\\', '/')
         return '/' + value[0].lower() + value[2:] if len(value) > 1 and value[1] == ':' else value
+    profile_data = posix(SOURCE.parent / 'container-profile-data.sh')
+    script = tmp_path / 'test.sh'
+    script.write_text(
+        f'#!/bin/bash\nINSTALL_LANG=zh\n. "{profile_data}"\n'
+        'ui_print() { printf \'%s\\n\' "$*"; }\nabort() { echo "$*"; exit 1; }\ndeploy_installer_assets() { :; }\nps() { :; }\n'
+        + combined,
+        encoding='utf-8',
+    )
     if mounted:
         mounts.write_text('test ' + posix(base) + '/rootfs/bind x rw 0 0\n')
     env = dict(os.environ, ANCLI_DIR=posix(base), ROOTFS=posix(base / 'rootfs'),
                ANCLI_TEST_GETEVENT=posix(fake), EVENT_DIR=posix(eventdir),
                ANCLI_TEST_ALLOWED=posix(base), ANCLI_TEST_MOUNTS=posix(mounts),
                ANCLI_TEST_OLD_PROP=posix(old_prop), BIN_DIR=posix(base / 'bin'), MODULE_VERSION='v1.2.634-beta')
-    result = subprocess.run([BASH, posix(script)], env=env, text=True, encoding="utf-8", capture_output=True, timeout=8)
+    result = subprocess.run([BASH, posix(script)], env=env, text=True, encoding="utf-8", capture_output=True, timeout=20)
     assert (result.returncode != 0) == expect_failure, result.stdout + result.stderr
     return result.stdout, json.loads(config.read_text(encoding='utf-8')) if config.exists() else None
 

@@ -1,61 +1,119 @@
 """Deploy AnCLI build to specified devices via ADB and KernelSU."""
+import argparse
 import os
+from pathlib import Path
 import subprocess
 import sys
 
-DEVICES = [
-    ("k80p", "192.168.1.174:37785"),
-    ("6spro", "192.168.1.207:36657"),
-]
+ROOT = Path(__file__).resolve().parent.parent
 
-ZIP_NAME = "ancli-63-v1.2.651-beta.zip"
+
+def parse_devices(device_args):
+    raw_items = list(device_args or [])
+    if not raw_items:
+        env_devices = os.environ.get("ANCLI_DEVICES", "").strip()
+        if env_devices:
+            raw_items = [item.strip() for item in env_devices.split(",") if item.strip()]
+        else:
+            single = os.environ.get("ANCLI_DEVICE_SERIAL", "").strip()
+            if single:
+                raw_items = [single]
+    devices = []
+    for item in raw_items:
+        if "=" in item:
+            name, serial = item.split("=", 1)
+            devices.append((name.strip() or serial.strip(), serial.strip()))
+        else:
+            devices.append((item.strip(), item.strip()))
+    return [(n, s) for n, s in devices if s]
+
+
+def resolve_zip(zip_arg):
+    if zip_arg:
+        path = Path(zip_arg)
+        if not path.is_absolute():
+            path = ROOT / path
+        if not path.is_file():
+            raise SystemExit(f"[X] ZIP file not found: {path}")
+        return path
+    candidates = sorted(ROOT.glob("ancli-*.zip"), key=lambda p: p.stat().st_mtime, reverse=True)
+    if not candidates:
+        raise SystemExit("[X] No ancli-*.zip found in repo root; pass --zip or set ANCLI_ZIP")
+    return candidates[0]
+
 
 def run_adb(device_serial, cmd):
     full_cmd = ["adb", "-s", device_serial] + cmd
     res = subprocess.run(full_cmd, capture_output=True, text=True)
     return res.returncode, res.stdout, res.stderr
 
-def deploy(name, serial):
+
+def deploy(name, serial, zip_path):
+    zip_name = zip_path.name
     print(f"\n==========================================")
-    print(f"Deploying to {name} ({serial})...")
+    print(f"Deploying {zip_name} to {name} ({serial})...")
     print(f"==========================================")
 
-    # 1. Connect
-    subprocess.run(["adb", "connect", serial], capture_output=True)
+    # 1. Connect (network ADB targets only)
+    if ":" in serial:
+        subprocess.run(["adb", "connect", serial], capture_output=True)
 
     # 2. Push ZIP
-    print(f"[*] Pushing {ZIP_NAME}...")
-    rc, out, err = run_adb(serial, ["push", ZIP_NAME, f"/data/local/tmp/{ZIP_NAME}"])
+    print(f"[*] Pushing {zip_name}...")
+    rc, out, err = run_adb(serial, ["push", str(zip_path), f"/data/local/tmp/{zip_name}"])
     if rc != 0:
         print(f"[FAIL] Push zip: {err}")
         return False
-    print(f"[OK] Zip pushed.")
+    print("[OK] Zip pushed.")
 
     # 3. ksud module install
-    print(f"[*] Running ksud module install...")
-    rc, out, err = run_adb(serial, ["shell", "su", "-c", f"/data/adb/ksu/bin/ksud module install /data/local/tmp/{ZIP_NAME}"])
+    print("[*] Running ksud module install...")
+    rc, out, err = run_adb(serial, ["shell", "su", "-c", f"/data/adb/ksu/bin/ksud module install /data/local/tmp/{zip_name}"])
     print(out)
     if "Module installed successfully" not in out and "Installation complete" not in out:
         print(f"[WARN] Install output: {err}")
 
     # 4. Stage live hot-deploy files
-    print(f"[*] Staging live hot-patch files...")
+    print("[*] Staging live hot-patch files...")
     stages = [
         ("src/ancli-core.py", "/data/local/tmp/ancli-core.py.new"),
         ("src/registry.json", "/data/local/tmp/ancli-registry.new"),
+        ("src/container-profiles.json", "/data/local/tmp/container-profiles.json.new"),
+        ("src/bash-host-compat", "/data/local/tmp/bash-host-compat.new"),
         ("src/module/ancli_env.sh", "/data/local/tmp/ancli-env.sh.new"),
         ("src/runtime-context/AGENTS.md", "/data/local/tmp/ancli-runtime-context.md.new"),
         ("src/module/module.prop", "/data/local/tmp/ancli-module.prop.new"),
+        ("src/module/service.sh", "/data/local/tmp/service.sh.new"),
+        ("src/module/customize.sh", "/data/local/tmp/customize.sh.new"),
+        ("src/module/uninstall.sh", "/data/local/tmp/uninstall.sh.new"),
+        ("src/module/hotinstall.sh", "/data/local/tmp/hotinstall.sh.new"),
+        ("src/module/hot-install-policy.sh", "/data/local/tmp/hot-install-policy.sh.new"),
+        ("src/module/dsh-web-control.sh", "/data/local/tmp/dsh-web-control.sh.new"),
+        ("src/module/container-bootstrap.sh", "/data/local/tmp/container-bootstrap.sh.new"),
+        ("src/module/container-profile-data.sh", "/data/local/tmp/container-profile-data.sh.new"),
+        ("src/module/android-probe.sh", "/data/local/tmp/android-probe.sh.new"),
+        ("src/module/container-mirror.sh", "/data/local/tmp/container-mirror.sh.new"),
+        ("src/module/apt-key-compat.sh", "/data/local/tmp/apt-key-compat.sh.new"),
+        ("src/module/install-network.sh", "/data/local/tmp/install-network.sh.new"),
+        ("src/module/install-transaction.sh", "/data/local/tmp/install-transaction.sh.new"),
+        ("src/module/node-setup.sh", "/data/local/tmp/node-setup.sh.new"),
+        ("src/module/task-stop.sh", "/data/local/tmp/task-stop.sh.new"),
+        ("src/module/ancli/catalog-cache.json", "/data/local/tmp/catalog-cache.json.new"),
         ("src/module/system/bin/ancli", "/data/local/tmp/ancli-launcher.new"),
         ("src/module/webroot/index.html", "/data/local/tmp/ancli-webui.html.new"),
+        ("src/module/webroot/logo.png", "/data/local/tmp/ancli-webui-logo.png.new"),
     ]
-    for local_f, remote_f in stages:
-        run_adb(serial, ["push", local_f, remote_f])
+    for rel_local, remote_f in stages:
+        local_f = ROOT / rel_local
+        if local_f.is_file():
+            run_adb(serial, ["push", str(local_f), remote_f])
+    icons_dir = ROOT / "src/module/webroot/assets/app-icons"
+    if icons_dir.is_dir():
+        run_adb(serial, ["push", str(icons_dir) + "/.", "/data/local/tmp/ancli-app-icons"])
 
     # 5. Run device_deploy_helper inside container
-    print(f"[*] Executing device_deploy_helper via container python3...")
-    with open("scripts/device_deploy_helper.py", "r", encoding="utf-8") as f:
-        helper_code = f.read()
+    print("[*] Executing device_deploy_helper via container python3...")
+    helper_code = (ROOT / "scripts/device_deploy_helper.py").read_text(encoding="utf-8")
 
     proot_cmd = (
         "/data/local/tmp/ancli/bin/proot "
@@ -90,6 +148,26 @@ def deploy(name, serial):
 
     return True
 
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(description="Deploy AnCLI ZIP and live hot-patch files to target ADB devices.")
+    parser.add_argument("--device", action="append", default=[],
+                        help="Target device serial or name=serial (repeatable; or set ANCLI_DEVICES / ANCLI_DEVICE_SERIAL)")
+    parser.add_argument("--zip", dest="zip_path", default=os.environ.get("ANCLI_ZIP", ""),
+                        help="Module ZIP path (default: newest ancli-*.zip in repo root or ANCLI_ZIP)")
+    args = parser.parse_args(argv)
+
+    devices = parse_devices(args.device)
+    if not devices:
+        print("[X] No devices specified: pass --device or set ANCLI_DEVICES / ANCLI_DEVICE_SERIAL", file=sys.stderr)
+        return 2
+
+    zip_path = resolve_zip(args.zip_path)
+    ok = True
+    for name, serial in devices:
+        ok = deploy(name, serial, zip_path) and ok
+    return 0 if ok else 1
+
+
 if __name__ == "__main__":
-    for name, serial in DEVICES:
-        deploy(name, serial)
+    raise SystemExit(main())

@@ -41,7 +41,7 @@ for BIN_DIR in /data/adb/ksu/bin /data/adb/ap/bin; do
             rm -f "$f" 2>/dev/null || true
         done
         if [ -f "$BIN_DIR/bash" ] && head -n 8 "$BIN_DIR/bash" 2>/dev/null \
-            | grep -q 'AnCLI AGY host bash compatibility'; then
+            | grep -qE 'AnCLI AGY host bash compatibility|AnCLI proot shim'; then
             rm -f "$BIN_DIR/bash" 2>/dev/null || true
         fi
     fi

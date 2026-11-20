@@ -11,29 +11,174 @@ fi
 
 . /data/local/tmp/ancli/bin/ancli_env.sh 2>/dev/null || true
 
+_ancli_json_read_key() {
+    _ajr_file="$1"
+    _ajr_key="$2"
+    [ -n "$_ajr_key" ] && [ -f "$_ajr_file" ] || return 1
+    LC_ALL=C awk -v target="$_ajr_key" '
+    BEGIN {
+        for (i = 0; i < 10; i++) hex[sprintf("%d", i)] = i
+        hex["a"] = 10; hex["b"] = 11; hex["c"] = 12; hex["d"] = 13; hex["e"] = 14; hex["f"] = 15
+        hex["A"] = 10; hex["B"] = 11; hex["C"] = 12; hex["D"] = 13; hex["E"] = 14; hex["F"] = 15
+        bom = sprintf("%c%c%c", 239, 187, 191)
+        buf = ""
+    }
+    {
+        if (NR == 1) {
+            if (substr($0, 1, 3) == bom) $0 = substr($0, 4)
+            buf = $0
+        } else {
+            buf = buf "\n" $0
+        }
+    }
+    function skip_ws(b, p, n,    c) {
+        while (p <= n) {
+            c = substr(b, p, 1)
+            if (c == " " || c == "\t" || c == "\r" || c == "\n") p++
+            else break
+        }
+        return p
+    }
+    function read_str(b, p, n,    c, r, h1, h2, h3, h4, cp) {
+        p++
+        r = ""
+        while (p <= n) {
+            c = substr(b, p, 1)
+            if (c == "\"") {
+                _rs_next = p + 1
+                _rs_val = r
+                return 1
+            }
+            if (c == "\\") {
+                p++
+                if (p > n) return 0
+                c = substr(b, p, 1)
+                if (c == "\"" || c == "\\" || c == "/") r = r c
+                else if (c == "b") r = r "\b"
+                else if (c == "f") r = r "\f"
+                else if (c == "n") r = r "\n"
+                else if (c == "r") r = r "\r"
+                else if (c == "t") r = r "\t"
+                else if (c == "u" && p + 4 <= n) {
+                    h1 = substr(b, p + 1, 1); h2 = substr(b, p + 2, 1)
+                    h3 = substr(b, p + 3, 1); h4 = substr(b, p + 4, 1)
+                    if ((h1 in hex) && (h2 in hex) && (h3 in hex) && (h4 in hex)) {
+                        cp = hex[h1] * 4096 + hex[h2] * 256 + hex[h3] * 16 + hex[h4]
+                        if (cp >= 1 && cp < 128) r = r sprintf("%c", cp)
+                        else if (cp >= 128 && cp < 2048) r = r sprintf("%c%c", 192 + int(cp / 64), 128 + (cp % 64))
+                        else if (cp >= 2048) r = r sprintf("%c%c%c", 224 + int(cp / 4096), 128 + (int(cp / 64) % 64), 128 + (cp % 64))
+                        p += 4
+                    } else {
+                        r = r "\\u"
+                    }
+                } else {
+                    r = r "\\" c
+                }
+                p++
+                continue
+            }
+            r = r c
+            p++
+        }
+        return 0
+    }
+    END {
+        n = length(buf)
+        p = skip_ws(buf, 1, n)
+        if (p > n || substr(buf, p, 1) != "{") exit 1
+        depth = 0
+        expect_key = 0
+        while (p <= n) {
+            p = skip_ws(buf, p, n)
+            if (p > n) break
+            c = substr(buf, p, 1)
+            if (c == "{") {
+                depth++
+                if (depth == 1) expect_key = 1
+                p++
+            } else if (c == "}") {
+                depth--
+                if (depth <= 0) break
+                expect_key = 0
+                p++
+            } else if (c == "[") {
+                depth++
+                expect_key = 0
+                p++
+            } else if (c == "]") {
+                depth--
+                expect_key = 0
+                p++
+            } else if (c == ",") {
+                if (depth == 1) expect_key = 1
+                p++
+            } else if (c == "\"") {
+                if (!read_str(buf, p, n)) exit 1
+                str_val = _rs_val
+                p = _rs_next
+                if (depth == 1 && expect_key) {
+                    p = skip_ws(buf, p, n)
+                    if (p <= n && substr(buf, p, 1) == ":") {
+                        p++
+                        p = skip_ws(buf, p, n)
+                        if (p <= n && substr(buf, p, 1) == "\"") {
+                            if (!read_str(buf, p, n)) exit 1
+                            if (str_val == target) {
+                                printf "%s\n", _rs_val
+                                exit 0
+                            }
+                            p = _rs_next
+                            expect_key = 0
+                        } else {
+                            if (str_val == target) {
+                                if (substr(buf, p, 4) == "null") {
+                                    printf "\n"
+                                    exit 0
+                                }
+                                exit 1
+                            }
+                            expect_key = 0
+                        }
+                    } else {
+                        expect_key = 0
+                    }
+                }
+            } else {
+                expect_key = 0
+                p++
+            }
+        }
+        exit 1
+    }' "$_ajr_file" 2>/dev/null
+}
+
 # 容器专用网络模式覆盖全局代理模式；WebUI 和 `ancli container set`
 # 会把两者同步，直接编辑容器配置时也能在这里即时生效。
-_ancli_container_network=$(sed -n 's/^[[:space:]]*"network_mode"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' /data/local/tmp/ancli/container-config.json 2>/dev/null | head -n 1)
+_ancli_container_network=$(_ancli_json_read_key /data/local/tmp/ancli/container-config.json network_mode || true)
 case "$_ancli_container_network" in
     direct)
-        unset http_proxy https_proxy all_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY ;;
+        unset http_proxy https_proxy all_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY npm_config_proxy npm_config_https_proxy NPM_CONFIG_PROXY NPM_CONFIG_HTTPS_PROXY ;;
     manual)
-        _ancli_manual_proxy=$(sed -n 's/^[[:space:]]*"proxy_url"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' /data/local/tmp/ancli/container-config.json 2>/dev/null | head -n 1)
-        [ -n "$_ancli_manual_proxy" ] || _ancli_manual_proxy=$(sed -n 's/^[[:space:]]*"proxy_url"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' /data/local/tmp/ancli/rootfs/root/.ancli-config.json 2>/dev/null | head -n 1)
+        _ancli_manual_proxy=$(_ancli_json_read_key /data/local/tmp/ancli/container-config.json proxy_url || true)
+        [ -n "$_ancli_manual_proxy" ] || _ancli_manual_proxy=$(_ancli_json_read_key /data/local/tmp/ancli/rootfs/root/.ancli-config.json proxy_url || true)
         if [ -n "$_ancli_manual_proxy" ]; then
-            export http_proxy="$_ancli_manual_proxy" https_proxy="$_ancli_manual_proxy" HTTP_PROXY="$_ancli_manual_proxy" HTTPS_PROXY="$_ancli_manual_proxy" ALL_PROXY="$_ancli_manual_proxy"
+            export http_proxy="$_ancli_manual_proxy" https_proxy="$_ancli_manual_proxy" all_proxy="$_ancli_manual_proxy" HTTP_PROXY="$_ancli_manual_proxy" HTTPS_PROXY="$_ancli_manual_proxy" ALL_PROXY="$_ancli_manual_proxy" npm_config_proxy="$_ancli_manual_proxy" npm_config_https_proxy="$_ancli_manual_proxy"
+            export no_proxy="localhost,127.0.0.1,::1,0.0.0.0" NO_PROXY="localhost,127.0.0.1,::1,0.0.0.0"
         else
-            unset http_proxy https_proxy all_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY
+            unset http_proxy https_proxy all_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY npm_config_proxy npm_config_https_proxy NPM_CONFIG_PROXY NPM_CONFIG_HTTPS_PROXY
         fi ;;
 esac
 
 # 1. 读取全局配置中的默认工作目录（通过 `ancli config --set default_cwd=...` 或 WebUI 设置）
-#    为空时默认回落至容器内的 /root
+#    为空时默认回落至容器内的 /root/.ancli-work
 _ancli_default_cwd=""
 _ancli_cfg=/data/local/tmp/ancli/rootfs/root/.ancli-config.json
 if [ -f "$_ancli_cfg" ]; then
-    _ancli_default_cwd=$(sed -n 's/^[[:space:]]*"default_cwd"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$_ancli_cfg" 2>/dev/null | head -n 1)
+    _ancli_default_cwd=$(_ancli_json_read_key "$_ancli_cfg" default_cwd || true)
 fi
+while [ "${_ancli_default_cwd%/}" != "$_ancli_default_cwd" ]; do
+    _ancli_default_cwd=${_ancli_default_cwd%/}
+done
 # 校验 default_cwd 是否在容器内可见（要么是挂载的 Android 公共目录，要么是 rootfs 内存在的目录）
 case "$_ancli_default_cwd" in
     "") ;;
@@ -79,29 +224,36 @@ mkdir -p "/data/local/tmp/ancli/rootfs$ANCLI_TUI_CWD" 2>/dev/null || true
 
 # 确保 Android 宿主桥接守护服务存活（供容器内 ancli android shell IPC 调用）
 _bridge_dir=/data/local/tmp/ancli/.bridge
-if [ ! -f "$_bridge_dir/active" ] || [ ! -f "$_bridge_dir/pid" ] || ! kill -0 "$(cat "$_bridge_dir/pid" 2>/dev/null)" 2>/dev/null; then
+_bridge_pid=$(cat "$_bridge_dir/pid" 2>/dev/null)
+if [ ! -f "$_bridge_dir/active" ] || [ -z "$_bridge_pid" ] || { ! kill -0 "$_bridge_pid" 2>/dev/null && [ ! -d "/proc/$_bridge_pid" ]; }; then
     mkdir -p "$_bridge_dir/reqs" 2>/dev/null || true
+    chmod 777 "$_bridge_dir" "$_bridge_dir/reqs" 2>/dev/null || true
+    rm -f "$_bridge_dir"/reqs/*.run "$_bridge_dir"/exit_*.tmp 2>/dev/null || true
     touch "$_bridge_dir/active" 2>/dev/null || true
+    chmod 644 "$_bridge_dir/active" 2>/dev/null || true
     nohup /system/bin/sh -c '
         _b=/data/local/tmp/ancli/.bridge
         echo $$ > "$_b/pid"
+        rm -f "$_b"/reqs/*.run "$_b"/exit_*.tmp 2>/dev/null || true
         while [ -f "$_b/active" ]; do
             for _r in "$_b"/reqs/req_*.sh; do
                 [ -f "$_r" ] || continue
+                mv "$_r" "${_r}.run" 2>/dev/null || continue
+                _run="${_r}.run"
                 _base="${_r##*/}"
                 _id="${_base#req_}"
                 _id="${_id%.sh}"
                 _out="$_b/out_$_id"
                 _err="$_b/err_$_id"
                 _exit="$_b/exit_$_id"
-                /system/bin/sh "$_r" > "$_out" 2> "$_err"
-                echo $? > "$_exit.tmp"
-                mv -f "$_exit.tmp" "$_exit"
-                rm -f "$_r"
+                /system/bin/sh "$_run" > "$_out" 2> "$_err"
+                _rc=$?
+                printf "%s\n" "$_rc" > "$_exit.tmp" && mv -f "$_exit.tmp" "$_exit"
+                rm -f "$_run"
             done
             /system/bin/sleep 0.1 2>/dev/null || sleep 1
         done
-        rm -f "$_b/pid"
+        rm -f "$_b/pid" "$_b"/reqs/*.run "$_b"/exit_*.tmp 2>/dev/null || true
     ' </dev/null >/dev/null 2>&1 &
 fi
 PROOT_CWD="$PWD"
@@ -110,7 +262,11 @@ case "$PROOT_CWD" in
         ;;
     *)
         if [ ! -d "/data/local/tmp/ancli/rootfs$PROOT_CWD" ]; then
-            PROOT_CWD="$ANCLI_TUI_CWD"
+            if [ -n "$_ancli_default_cwd" ]; then
+                PROOT_CWD="$_ancli_default_cwd"
+            else
+                PROOT_CWD="$ANCLI_TUI_CWD"
+            fi
         fi
         ;;
 esac
@@ -129,7 +285,7 @@ fi
 #    在进入 PRoot 删除文件前，先向存活的 Agent 与 PRoot 进程发送 SIGTERM/SIGKILL，
 #    防止旧进程占用文件或残留后台实例。
 if [ "${1:-}" = "reset" ] && [ "$(id -u 2>/dev/null)" = "0" ]; then
-    _ancli_agent_re='(/data/adb/(ksu|ap)/bin|/usr/local/bin)/(aider|mimo|agy|dsh|claude|opencode|grok)'
+    _ancli_agent_re='(/data/adb/(ksu|ap)/bin|/usr/local/bin)/(aider|mimo|agy|dsh|claude|opencode|grok|codex)'
     /system/bin/toybox pkill -TERM -f "$_ancli_agent_re" 2>/dev/null || true
     /system/bin/toybox pkill -TERM -f "proot.*\/data\/local\/tmp\/ancli\/rootfs" 2>/dev/null || true
     /system/bin/sleep 1
@@ -167,4 +323,4 @@ fi
 export PROOT_NO_SECCOMP=1
 exec /data/local/tmp/ancli/bin/proot -r /data/local/tmp/ancli/rootfs -b /dev -b /proc -b /sys -b /data/local/tmp/ancli \
     $ANCLI_BIND_ARGS -b /data/local/tmp/ancli/hosts:/etc/hosts -b /data/adb $SHM_BIND \
-    -w "$PROOT_CWD" /usr/bin/env ANCLI_IN_CONTAINER=1 PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/system/bin python3 /data/local/tmp/ancli/bin/ancli-core.py "$@"
+    -w "$PROOT_CWD" /usr/bin/env ANCLI_IN_CONTAINER=1 PWD="$PROOT_CWD" PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/root/.local/bin:/data/adb/ksu/bin:/data/adb/ap/bin:/system/bin python3 /data/local/tmp/ancli/bin/ancli-core.py "$@"

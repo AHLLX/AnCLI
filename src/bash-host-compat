@@ -7,15 +7,31 @@
 # - 本脚本保持极简且克制：仅将 POSIX 兼容命令转发给 `/system/bin/sh` 执行，绝不在此启动第二层 PRoot（避免嵌套虚拟化 ptrace 死锁）。
 # - 若需使用 GNU Bash 专有语法，仍应进入容器内的 `/bin/bash` 执行。
 # - 注入动态与模块 bin 目录到 PATH，确保宿主机继承极简 PATH（仅 `/system/bin`）时也能找到 `ancli`/`agy`/`dsh` 等托管命令的包装脚本。
-# 如果是在 PRoot 容器内被误调，直接转交容器内真正的 GNU Bash
-if [ "$ANCLI_IN_CONTAINER" = "1" ] || [ -n "$PROOT_TMP_DIR" ] || [ -f "/.proot" ] || [ -e "/bin/bash" ]; then
-    if [ -e "/bin/bash" ]; then
-        exec /bin/bash "$@"
-    elif [ -e "/usr/bin/bash" ]; then
-        exec /usr/bin/bash "$@"
-    fi
+# 如果是在 PRoot 容器内被误调，直接转交容器内真正的 GNU Bash（跳过带有 AnCLI 标记的宿主机兼容脚本，防止自循环 exec）
+# 使用纯 POSIX sh 内置语法读取前 8 行，避免在 PATH="" 或 unset PATH 时外部 head/grep 返回 127 并被 `!` 取反导致自循环。
+_ancli_is_marked_bash() {
+    _compat_file="$1"
+    [ -r "$_compat_file" ] || return 1
+    _compat_n=0
+    _compat_line=""
+    while [ "$_compat_n" -lt 8 ] && { IFS= read -r _compat_line || [ -n "$_compat_line" ]; }; do
+        case "$_compat_line" in
+            *'AnCLI AGY host bash compatibility'*|*'AnCLI proot shim'*)
+                return 0
+                ;;
+        esac
+        _compat_n=$((_compat_n + 1))
+    done < "$_compat_file" 2>/dev/null
+    return 1
+}
+if [ "${ANCLI_IN_CONTAINER:-}" = "1" ] || [ -n "${PROOT_TMP_DIR:-}" ] || [ -f "/.proot" ] || [ -f "/etc/os-release" ] || [ -f "/etc/debian_version" ]; then
+    for _real_bash in /bin/bash /usr/bin/bash; do
+        if [ -x "$_real_bash" ] && ! _ancli_is_marked_bash "$_real_bash"; then
+            exec "$_real_bash" "$@"
+        fi
+    done
 fi
-export PATH=/data/adb/ksu/bin:/data/adb/ap/bin:/data/adb/modules/ancli/system/bin:/system/bin:/system/xbin:$PATH
+export PATH="/data/adb/ksu/bin:/data/adb/ap/bin:/data/adb/modules/ancli/system/bin:/system/bin:/system/xbin${PATH:+:$PATH}"
 # 剥离 bash 常见的非交互启动参数（--noprofile / --norc），避免 mksh 因无法识别参数而报错退出
 while [ "$#" -gt 0 ]; do
     case "$1" in

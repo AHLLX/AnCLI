@@ -36,8 +36,13 @@ ancli_mirror_configure_apt() {
 }
 ancli_mirror_speed_test() (
     _speed_mirror="$1"; _speed_arch="$2"
-    _speed_limit=50000000
-    _speed_url='https://speed.cloudflare.com/__down?bytes=50000000'
+    ancli_mirror_valid "$_speed_mirror" || return 1
+    case "$_speed_arch" in arm64|amd64) ;; *) return 1 ;; esac
+    _speed_limit="${ANCLI_SPEED_BYTES:-1048576}"
+    case "$_speed_limit" in ''|0|*[!0-9]*) _speed_limit=1048576 ;; esac
+    _speed_limit=$(printf '%s' "$_speed_limit" | sed 's/^0*//')
+    [ -n "$_speed_limit" ] && [ "$_speed_limit" -gt 0 ] 2>/dev/null || _speed_limit=1048576
+    _speed_url="https://speed.cloudflare.com/__down?bytes=$_speed_limit"
     _speed_file=$(mktemp "$ANCLI_DIR/.mirror-speed.XXXXXX") || return 1
     _speed_exit="$_speed_file.exit"
     trap 'rm -f "$_speed_file" "$_speed_file.cap" "$_speed_file.part" "$_speed_exit"' EXIT HUP INT TERM
@@ -72,7 +77,7 @@ ancli_mirror_speed_test() (
         case "$_speed_bytes" in ''|*[!0-9]*) _speed_bytes=0 ;; esac
         [ "$_speed_bytes" -gt "$_speed_limit" ] && _speed_bytes=$_speed_limit
         printf 'ANCLI_SPEED_PROGRESS=%s/%s\n' "$_speed_bytes" "$_speed_limit"
-        sleep 0.5
+        sleep 0.5 2>/dev/null || sleep 1
     done
     wait "$_speed_pid" 2>/dev/null || true
     _speed_rc=$(cat "$_speed_exit" 2>/dev/null || echo 1)
@@ -90,5 +95,5 @@ ancli_mirror_speed_test() (
         echo 'ANCLI_SPEED_ERROR=download_failed'; return 1
     fi
     _speed_result=$(awk -v a="$_speed_start" -v b="$_speed_end" -v n="$_speed_bytes" 'BEGIN { d=b-a; if (d<0.01) d=0.01; printf "%.2f %d", d, n/d }')
-    printf 'ANCLI_SPEED_SOURCE=cloudflare\nANCLI_SPEED_BYTES=%s\nANCLI_SPEED_SECONDS=%s\nANCLI_SPEED_BPS=%s\n' "$_speed_bytes" "${_speed_result% *}" "${_speed_result##* }"
+    printf 'ANCLI_SPEED_SOURCE=cloudflare\nANCLI_SPEED_MIRROR=%s\nANCLI_SPEED_BYTES=%s\nANCLI_SPEED_SECONDS=%s\nANCLI_SPEED_BPS=%s\n' "$_speed_mirror" "$_speed_bytes" "${_speed_result% *}" "${_speed_result##* }"
 )

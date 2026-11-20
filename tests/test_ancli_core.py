@@ -1164,10 +1164,14 @@ def test_release_version_strings_move_together():
     # so KernelSU / Magisk managers do not alert production users of a test build.
     if "-beta" in prop_version or "-test" in prop_version:
         assert 'v' + core.VERSION == prop_version
+        assert core.VERSION_CODE == prop_code
+        with open(os.path.join(root, 'scripts', 'prepare_release.py'), encoding='utf-8') as f:
+            prepare = f.read()
+        assert 'VERSION_CODE' in prepare
         return
 
     assert prop_version == manifest['version'] == 'v' + core.VERSION
-    assert prop_code == manifest['versionCode']
+    assert prop_code == manifest['versionCode'] == core.VERSION_CODE
     assert manifest['zipUrl'].endswith(f"ancli-{prop_code}-{prop_version}.zip")
 
     # customize.sh announces the version in the flash log: it must read module.prop,
@@ -1320,14 +1324,17 @@ class TestBrowserHandoff:
             assert (tmp_path / "rootfs" / "usr" / "bin" / "xdg-open").is_symlink()
             assert (tmp_path / "rootfs" / "bin" / "sensible-browser").is_symlink()
 
-    @pytest.mark.skipif(os.name != "posix", reason="the host copy is installed with `cp`")
-    def test_host_copy_still_uses_am(self, tmp_path, monkeypatch):
+    def test_deploy_xdg_open_never_clobbers_host_bin(self, tmp_path, monkeypatch):
         self._paths(tmp_path, monkeypatch)
         os.makedirs(tmp_path / "ksu", exist_ok=True)
+        host_xdg = tmp_path / "ksu" / "xdg-open"
+        host_xdg.write_text("unrelated host handler", encoding="utf-8")
+
         core._deploy_xdg_open()
 
-        host = (tmp_path / "ksu" / "xdg-open").read_text(encoding="utf-8")
-        assert "/system/bin/am start" in host
+        assert host_xdg.read_text(encoding="utf-8") == "unrelated host handler"
+        assert (tmp_path / "rootfs" / "usr" / "local" / "bin" / "xdg-open").exists()
+        assert (tmp_path / "rootfs" / "usr" / "local" / "bin" / "sensible-browser").exists()
 
     def test_generated_wrapper_drains_the_queue_with_am(self, tmp_path, monkeypatch):
         self._paths(tmp_path, monkeypatch)
@@ -1354,7 +1361,7 @@ class TestBrowserHandoff:
 
         wrapper = (tmp_path / "ancli" / "bin" / "dsh").read_text(encoding="utf-8")
         assert "export PROOT_NO_SECCOMP=1" in wrapper
-        assert "/usr/bin/env ANCLI_IN_CONTAINER=1 PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/data/adb/ksu/bin:/data/adb/ap/bin:/system/bin SHELL=/bin/bash BROWSER=/usr/local/bin/xdg-open dsh" in wrapper
+        assert "/usr/bin/env ANCLI_IN_CONTAINER=1 PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/root/.local/bin:/data/adb/ksu/bin:/data/adb/ap/bin:/system/bin SHELL=/bin/bash BROWSER=/usr/local/bin/xdg-open dsh" in wrapper
         assert "/data/adb/ksu/bin:/data/adb/ap/bin" in wrapper.split("PATH=")[1].split()[0]
 
     def test_wrapper_prefers_a_full_browser_over_the_chooser(self, tmp_path, monkeypatch):
@@ -1471,7 +1478,8 @@ class TestDefaultWorkingDirectory:
         payload = json.loads(capsys.readouterr().out)
         assert payload["effective_cwd"] == core.DEFAULT_CWD
         assert payload["default_cwd"] == ""
-        assert payload["supported_keys"] == ["default_cwd", "lang", "proxy_mode", "proxy_url", "agent_memory", "update_channel"]
+        assert payload["supported_keys"] == ["default_cwd", "lang", "proxy_mode", "proxy_url", "agent_memory", "update_channel", "container_profile"]
+        assert payload["container_profile"] == "standard"
         assert payload["agent_memory"] == "unconfigured"
         assert payload["update_channel"] == "stable"
         assert "detected_proxy" in payload
@@ -2261,3 +2269,487 @@ class TestAptSecurityRegression:
             "trusted=yes",
         ):
             assert forbidden not in lower_apt, f"Forbidden APT bypass flag found: {forbidden}"
+
+
+class TestMilestoneM1Fixes:
+    """Offline unit coverage for M1 fixes F1-F9 and Interface Contracts 1-3."""
+
+    def test_f1_module_version_fallback_matches_version_code(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(core, "MOD_DIR", str(tmp_path / "missing-mod"))
+        monkeypatch.setattr(core, "ANCLI_DIR", str(tmp_path / "missing-ancli"))
+        real_exists = os.path.exists
+        monkeypatch.setattr(
+            core.os.path,
+            "exists",
+            lambda p: False if str(p) == "/data/adb/modules/ancli/module.prop" else real_exists(p),
+        )
+        v_name, v_code = core._get_current_module_version()
+        assert v_name == "v" + core.VERSION
+        assert v_code == core.VERSION_CODE
+
+    def test_f1_f9_prepare_release_prerelease_keeps_update_json_and_syncs_code(self, tmp_path):
+        import importlib.util
+        prep_path = os.path.join(os.path.dirname(__file__), "..", "scripts", "prepare_release.py")
+        prep_spec = importlib.util.spec_from_file_location("prepare_release_mod", prep_path)
+        prep = importlib.util.module_from_spec(prep_spec)
+        prep_spec.loader.exec_module(prep)
+
+        (tmp_path / "src" / "module").mkdir(parents=True)
+        (tmp_path / "src" / "module" / "module.prop").write_text(
+            "id=ancli\nversion=v1.2.650-beta\nversionCode=62\n", encoding="utf-8"
+        )
+        (tmp_path / "src" / "ancli-core.py").write_text(
+            'VERSION = "1.2.650-beta"\nVERSION_CODE = 62\n', encoding="utf-8"
+        )
+        (tmp_path / "src" / "registry.json").write_text(
+            '{\n  "version": "1.2.650-beta",\n  "apps": {}\n}\n', encoding="utf-8"
+        )
+        stable_manifest = {
+            "version": "v1.2.612",
+            "versionCode": 24,
+            "zipUrl": "https://github.com/AHLLX/AnCLI/releases/download/v1.2.612/ancli-24-v1.2.612.zip",
+        }
+        (tmp_path / "update.json").write_text(json.dumps(stable_manifest, indent=2), encoding="utf-8")
+        (tmp_path / "CHANGELOG.md").write_text("# Changelog\n\n## Unreleased — Notes\n- Fix\n", encoding="utf-8")
+
+        prep.sync_release("v1.2.651-beta", 63, root=tmp_path)
+
+        assert json.loads((tmp_path / "update.json").read_text(encoding="utf-8")) == stable_manifest
+        core_txt = (tmp_path / "src" / "ancli-core.py").read_text(encoding="utf-8")
+        assert 'VERSION = "1.2.651-beta"' in core_txt
+        assert "VERSION_CODE = 63" in core_txt
+
+    def test_f2_reset_environment_preserves_x86_64_loaders(self, tmp_path, monkeypatch):
+        ancli_dir = tmp_path / "ancli"
+        rootfs = tmp_path / "rootfs"
+        bin_dir = ancli_dir / "bin"
+        bin_dir.mkdir(parents=True)
+        (rootfs / "root").mkdir(parents=True)
+        (ancli_dir / "registry.json").write_text('{"apps": {}}', encoding="utf-8")
+        for keep in ("proot", "loader", "loader-m32", "ancli-core.py", "ancli_env.sh", "registry.json"):
+            (bin_dir / keep).write_text("keep", encoding="utf-8")
+        (bin_dir / "stale-wrapper").write_text("drop", encoding="utf-8")
+
+        monkeypatch.setattr(core, "ANCLI_DIR", str(ancli_dir))
+        monkeypatch.setattr(core, "ROOTFS", str(rootfs))
+        monkeypatch.setattr(core, "MOD_DIR", str(tmp_path / "mod"))
+        monkeypatch.setattr(core, "KSU_BIN", str(tmp_path / "ksu"))
+        monkeypatch.setattr(core, "AP_BIN", str(tmp_path / "ap"))
+        monkeypatch.setattr(core, "INSTALLED_FILE", str(ancli_dir / "installed.json"))
+        monkeypatch.setattr(core, "SECRETS_DIR", str(ancli_dir / "secrets"))
+        monkeypatch.setattr(core, "UPDATE_CACHE", str(ancli_dir / ".update_cache.json"))
+        monkeypatch.setattr(core, "DNS_CACHE", str(ancli_dir / ".dns_cache"))
+        monkeypatch.setattr(core, "SHARED_SKILL_DIR", str(rootfs / "root" / ".agents" / "skills"))
+        monkeypatch.setattr(core, "SKILL_LINK_DIRS", ())
+        monkeypatch.setattr(core, "_fix_config_permissions", lambda: None)
+
+        core.reset_environment(verbose=False)
+        for keep in ("proot", "loader", "loader-m32", "ancli-core.py", "ancli_env.sh", "registry.json"):
+            assert (bin_dir / keep).exists()
+        assert not (bin_dir / "stale-wrapper").exists()
+
+    def test_f3_f8_repair_env_glob_mirror_single_guest_deploy_and_cp_fallback(self, tmp_path, monkeypatch):
+        ancli_dir = tmp_path / "ancli"
+        rootfs = tmp_path / "rootfs"
+        mod_dir = tmp_path / "mod"
+        ksu_bin = tmp_path / "ksu"
+        ap_bin = tmp_path / "ap"
+        (ancli_dir / "bin").mkdir(parents=True)
+        (rootfs / "etc").mkdir(parents=True)
+        (rootfs / "usr" / "lib" / "python3.13").mkdir(parents=True)
+        (rootfs / "usr" / "lib" / "python3.13" / "EXTERNALLY-MANAGED").write_text("x", encoding="utf-8")
+        (mod_dir / "system" / "bin").mkdir(parents=True)
+        (mod_dir / "system" / "bin" / "ancli").write_text("#!/bin/sh\n", encoding="utf-8")
+        ksu_bin.mkdir()
+        ap_bin.mkdir()
+
+        monkeypatch.setattr(core, "ANCLI_DIR", str(ancli_dir))
+        monkeypatch.setattr(core, "ROOTFS", str(rootfs))
+        monkeypatch.setattr(core, "MOD_DIR", str(mod_dir))
+        monkeypatch.setattr(core, "KSU_BIN", str(ksu_bin))
+        monkeypatch.setattr(core, "AP_BIN", str(ap_bin))
+        monkeypatch.setattr(core, "INSTALLED_FILE", str(ancli_dir / "installed.json"))
+        monkeypatch.setattr(core, "CONTAINER_CONFIG_FILE", str(ancli_dir / "container-config.json"))
+        monkeypatch.setattr(core, "CONTAINER_PROFILES_FILE", str(ancli_dir / "container-profiles.json"))
+        (ancli_dir / "container-config.json").write_text(json.dumps({"mirror": "ustc"}), encoding="utf-8")
+
+        deploy_calls = []
+        sys_cmds = []
+        monkeypatch.setattr(core, "_deploy_xdg_open", lambda: None)
+        monkeypatch.setattr(core, "_deploy_guest_ancli", lambda verbose=True: deploy_calls.append(verbose) or True)
+        monkeypatch.setattr(core, "patch_dsh_web_cookie", lambda verbose=True: [])
+        monkeypatch.setattr(core, "_fix_config_permissions", lambda: None)
+        monkeypatch.setattr(core, "setup_skill_dirs", lambda verbose=False: {})
+        monkeypatch.setattr(core, "setup_runtime_context", lambda verbose=False, refresh=True: {})
+        monkeypatch.setattr(core, "ensure_android_data", lambda verbose=False: True)
+        monkeypatch.setattr(core, "_deploy_agy_host_bash_compat", lambda verbose=False: [])
+        monkeypatch.setattr(core, "_write_resolv_conf", lambda: None)
+        monkeypatch.setattr(core.shutil, "copy2", lambda *a, **k: (_ for _ in ()).throw(OSError("SELinux denied")))
+        monkeypatch.setattr(core.os, "system", lambda cmd: sys_cmds.append(cmd) or 0)
+
+        core.repair_env({"apps": {}})
+
+        assert not (rootfs / "usr" / "lib" / "python3.13" / "EXTERNALLY-MANAGED").exists()
+        pip_conf = (rootfs / "etc" / "pip.conf").read_text(encoding="utf-8")
+        assert "pypi.mirrors.ustc.edu.cn/simple" in pip_conf
+        assert "# AnCLI managed" in pip_conf
+        assert len(deploy_calls) == 1
+        assert any("cp -f" in c and "ksu" in c for c in sys_cmds)
+        assert any("cp -f" in c and "ap" in c for c in sys_cmds)
+
+        # Custom user pip.conf without AnCLI marker must be preserved
+        (rootfs / "etc" / "pip.conf").write_text("[global]\nindex-url = https://custom.example/simple\n", encoding="utf-8")
+        core.repair_env({"apps": {}})
+        assert "https://custom.example/simple" in (rootfs / "etc" / "pip.conf").read_text(encoding="utf-8")
+
+    def test_f4_container_set_merges_existing_and_parses_mirror_proxy(self, tmp_path, monkeypatch, capsys):
+        ancli_dir = tmp_path / "ancli"
+        ancli_dir.mkdir(parents=True)
+        cfg_file = ancli_dir / "container-config.json"
+        profiles_file = ancli_dir / "container-profiles.json"
+        profiles_file.write_text(json.dumps({
+            "profiles": {
+                "standard": {"name": "Standard", "estimated_size_mb": 420},
+                "developer": {"name": "Developer", "estimated_size_mb": 900},
+            }
+        }), encoding="utf-8")
+        cfg_file.write_text(json.dumps({
+            "profile": "standard",
+            "install_mode": "installed",
+            "network_mode": "system",
+            "mirror": "tuna",
+            "proxy_url": "",
+            "lang": "en",
+            "default_cwd": "/sdcard/work",
+            "agent_memory": "enabled",
+        }), encoding="utf-8")
+
+        monkeypatch.setattr(core, "ANCLI_DIR", str(ancli_dir))
+        monkeypatch.setattr(core, "ROOTFS", str(tmp_path / "rootfs"))
+        monkeypatch.setattr(core, "CONTAINER_CONFIG_FILE", str(cfg_file))
+        monkeypatch.setattr(core, "CONTAINER_PROFILES_FILE", str(profiles_file))
+
+        core.container_command([
+            "set", "--profile=developer", "--network=manual",
+            "--mirror=ustc", "--proxy-url=http%3A%2F%2F127.0.0.1%3A7890", "--json"
+        ])
+        out = json.loads(capsys.readouterr().out)
+        assert out["config"]["profile"] == "developer"
+        assert out["config"]["network_mode"] == "manual"
+        assert out["config"]["mirror"] == "ustc"
+        assert out["config"]["proxy_url"] == "http://127.0.0.1:7890"
+        raw = json.loads(cfg_file.read_text(encoding="utf-8"))
+        assert raw["lang"] == "en"
+        assert raw["default_cwd"] == "/sdcard/work"
+        assert raw["agent_memory"] == "enabled"
+        assert raw["install_mode"] == "installed"
+
+        # Empty --proxy-url= clears proxy_url
+        core.container_command(["set", "--proxy-url=", "--json"])
+        out2 = json.loads(capsys.readouterr().out)
+        assert out2["config"]["proxy_url"] == ""
+
+    def test_f5_settings_status_doctor_and_check_module_contracts(self, tmp_path, monkeypatch, capsys):
+        ancli_dir = tmp_path / "ancli"
+        mod_dir = tmp_path / "mod"
+        (ancli_dir / "bin").mkdir(parents=True)
+        (mod_dir / "system" / "bin").mkdir(parents=True)
+        (mod_dir / "system" / "bin" / "bash").write_text("#!/system/bin/sh\n", encoding="utf-8")
+
+        monkeypatch.setattr(core, "ANCLI_DIR", str(ancli_dir))
+        monkeypatch.setattr(core, "ROOTFS", str(tmp_path / "missing-rootfs"))
+        monkeypatch.setattr(core, "MOD_DIR", str(mod_dir))
+        monkeypatch.setattr(core, "KSU_BIN", str(tmp_path / "ksu"))
+        monkeypatch.setattr(core, "AP_BIN", str(tmp_path / "ap"))
+        monkeypatch.setattr(core, "CONFIG_FILE", str(tmp_path / "cfg.json"))
+        monkeypatch.setattr(core, "INSTALLED_FILE", str(ancli_dir / "installed.json"))
+        monkeypatch.setattr(core, "CONTAINER_CONFIG_FILE", str(ancli_dir / "container-config.json"))
+        monkeypatch.setattr(core, "CONTAINER_PROFILES_FILE", str(ancli_dir / "container-profiles.json"))
+        monkeypatch.setattr(core, "ensure_android_data", lambda verbose=False: True)
+
+        # container_profile works without rootfs
+        core.settings_command(["--set", "container_profile=developer", "--set", "proxy_mode=manual", "--json"])
+        cfg_payload = json.loads(capsys.readouterr().out)
+        assert cfg_payload["container_profile"] == "developer"
+        assert "container_profile" in cfg_payload["supported_keys"]
+
+        # errors in --json mode go to stderr, stdout remains valid JSON
+        with pytest.raises(SystemExit) as exc:
+            core.settings_command(["--set", "unknown_key=1", "--json"])
+        assert exc.value.code == 1
+        captured = capsys.readouterr()
+        assert json.loads(captured.out)["container_profile"] == "developer"
+        assert "未知配置项" in captured.err
+
+        core.status_json()
+        st = json.loads(capsys.readouterr().out)
+        assert st["version_code"] == core.VERSION_CODE
+        assert st["execution_backend"] == "proot-ubuntu"
+        assert st["proxy_mode"] == "manual"
+        assert st["proxy_url"] == ""
+        assert st["host_bash_compat"] is True
+
+        core.doctor_json()
+        doc = json.loads(capsys.readouterr().out)
+        assert doc["host_compatibility"]["bash"]["installed"] is True
+
+        monkeypatch.setattr(core, "check_module_update", lambda ch=None: (print("TLS warn"), {"status": "ok", "channel": ch or "stable"})[1])
+        rc = core.check_module_command(["--channel=beta", "--json"])
+        assert rc == 0
+        cm = capsys.readouterr()
+        assert json.loads(cm.out) == {"status": "ok", "channel": "beta"}
+        assert "TLS warn" in cm.err
+
+    def test_f6_registry_driven_metadata_and_agy_arch(self, tmp_path, monkeypatch):
+        ancli_dir = tmp_path / "ancli"
+        rootfs = tmp_path / "rootfs"
+        (ancli_dir / "bin").mkdir(parents=True)
+        (rootfs / "usr" / "local" / "lib" / "node_modules" / "custom-pkg").mkdir(parents=True)
+        monkeypatch.setattr(core, "ANCLI_DIR", str(ancli_dir))
+        monkeypatch.setattr(core, "ROOTFS", str(rootfs))
+        monkeypatch.setattr(core, "MOD_DIR", str(tmp_path / "mod"))
+        monkeypatch.setattr(core, "KSU_BIN", str(tmp_path / "ksu"))
+        monkeypatch.setattr(core, "AP_BIN", str(tmp_path / "ap"))
+        monkeypatch.setattr(core, "SECRETS_DIR", str(tmp_path / "secrets"))
+        monkeypatch.setattr(core, "INSTALLED_FILE", str(ancli_dir / "installed.json"))
+        monkeypatch.setattr(core, "UPDATE_CACHE", str(ancli_dir / ".update_cache.json"))
+
+        # no_daemon override
+        core.generate_proot_wrapper("codex", {}, [], no_daemon=False)
+        assert "--no-daemon" not in (ancli_dir / "bin" / "codex").read_text(encoding="utf-8")
+        core.generate_proot_wrapper("customcli", {}, [], no_daemon=True)
+        assert "customcli --no-daemon" in (ancli_dir / "bin" / "customcli").read_text(encoding="utf-8")
+
+        # requires_node driven by registry
+        monkeypatch.setattr(core.shutil, "which", lambda n: "/usr/bin/curl")
+        monkeypatch.setattr(core, "run_cmd", lambda cmd: True)
+        monkeypatch.setattr(core, "_install_proot_common", lambda *a, **k: True)
+        assert core._install_proot("custom-node", {"install_cmd": "npm i -g x", "requires_node": True}) is False
+        assert core._install_proot("dsh", {"install_cmd": "npm i -g @deepseek-ai/dsh", "requires_node": False}) is True
+
+        # agy url_by_arch
+        seen_urls = []
+        monkeypatch.setattr(core, "_detect_arch", lambda: "x86_64")
+        monkeypatch.setattr(core, "_http_json", lambda u: seen_urls.append(u) or {"version": "9.9.9"})
+        ver, _, err = core._latest_version({
+            "latest": {
+                "source": "json",
+                "url": "https://example.com/linux_arm64.json",
+                "url_by_arch": {
+                    "arm64": "https://example.com/linux_arm64.json",
+                    "x86_64": "https://example.com/linux_amd64.json",
+                },
+                "path": "version",
+            }
+        }, {})
+        assert ver == "9.9.9" and err is None
+        assert seen_urls == ["https://example.com/linux_amd64.json"]
+
+        # integrity_pkg_json for arbitrary app
+        (rootfs / "usr" / "local" / "bin").mkdir(parents=True, exist_ok=True)
+        (rootfs / "usr" / "local" / "bin" / "ccli").write_text("x", encoding="utf-8")
+        core.save_installed({"custom-app": {"executable": "ccli", "installed_version": "1.0.0"}})
+        monkeypatch.setattr(core, "_probe_installed_version", lambda app, reg=None: "1.0.0")
+        cache = core.check_updates({
+            "apps": {
+                "custom-app": {
+                    "name": "Custom",
+                    "executable": "ccli",
+                    "version_cmd": "ccli --version",
+                    "integrity_pkg_json": "custom-pkg",
+                    "latest": {"source": "none"},
+                }
+            }
+        })
+        assert cache["integrity_results"]["custom-app"] is False
+
+    def test_f7_f8_wrapper_bridge_isolation_direct_npm_unset_and_path(self, tmp_path, monkeypatch):
+        ancli_dir = tmp_path / "ancli"
+        rootfs = tmp_path / "rootfs"
+        (ancli_dir / "bin").mkdir(parents=True)
+        (rootfs / "etc").mkdir(parents=True)
+        (rootfs / "usr" / "local" / "bin").mkdir(parents=True)
+        monkeypatch.setattr(core, "ANCLI_DIR", str(ancli_dir))
+        monkeypatch.setattr(core, "ROOTFS", str(rootfs))
+        monkeypatch.setattr(core, "MOD_DIR", str(tmp_path / "mod"))
+        monkeypatch.setattr(core, "KSU_BIN", str(tmp_path / "ksu"))
+        monkeypatch.setattr(core, "AP_BIN", str(tmp_path / "ap"))
+        monkeypatch.setattr(core, "SECRETS_DIR", str(tmp_path / "secrets"))
+
+        core.generate_proot_wrapper("dsh", {}, [], proxy_mode="direct")
+        wrapper = (ancli_dir / "bin" / "dsh").read_text(encoding="utf-8")
+        assert "ancli_open_drain" in wrapper
+        assert ".open_url" in wrapper
+        assert "ANCLI_BRIDGE_DIR" not in wrapper
+        assert "ancli_bridge_drain" not in wrapper
+        assert ".bridge/active" not in wrapper
+        assert "npm_config_proxy" in wrapper and "npm_config_https_proxy" in wrapper
+        assert "/root/.local/bin" in wrapper
+
+        core._deploy_guest_ancli(verbose=False)
+        etc_env = (rootfs / "etc" / "environment").read_text(encoding="utf-8")
+        assert "/root/.local/bin" in etc_env
+
+    def test_f8_reconfigure_executable_secrets_and_codex_perms_and_anchor(self, tmp_path, monkeypatch):
+        ancli_dir = tmp_path / "ancli"
+        rootfs = tmp_path / "rootfs"
+        secrets = tmp_path / "secrets"
+        (ancli_dir / "bin").mkdir(parents=True)
+        (rootfs / "root" / ".codex").mkdir(parents=True)
+        secrets.mkdir(parents=True)
+
+        monkeypatch.setattr(core, "ANCLI_DIR", str(ancli_dir))
+        monkeypatch.setattr(core, "ROOTFS", str(rootfs))
+        monkeypatch.setattr(core, "MOD_DIR", str(tmp_path / "mod"))
+        monkeypatch.setattr(core, "KSU_BIN", str(tmp_path / "ksu"))
+        monkeypatch.setattr(core, "AP_BIN", str(tmp_path / "ap"))
+        monkeypatch.setattr(core, "SECRETS_DIR", str(secrets))
+        monkeypatch.setattr(core, "INSTALLED_FILE", str(ancli_dir / "installed.json"))
+
+        # Check _fix_config_permissions includes .codex
+        sys_cmds = []
+        monkeypatch.setattr(core.os, "system", lambda cmd: sys_cmds.append(cmd) or 0)
+        core._fix_config_permissions()
+        assert any(".codex" in cmd for cmd in sys_cmds)
+
+        # Check reconfigure_app clears {executable}.env when values become empty
+        reg = {"apps": {"codex-cli": {"name": "Codex", "executable": "codex", "optional_env_vars": ["OPENAI_API_KEY"]}}}
+        core.save_installed({"codex-cli": {"executable": "codex", "installed_version": "0.1"}})
+        core.reconfigure_app("codex-cli", reg, set_env={"OPENAI_API_KEY": "sk-123"})
+        assert (secrets / "codex.env").exists()
+        core.reconfigure_app("codex-cli", reg, set_env={"OPENAI_API_KEY": ""})
+        assert not (secrets / "codex.env").exists()
+        assert not (secrets / "codex-cli.env").exists()
+        assert core.load_installed()["codex-cli"].get("configured_env", []) == []
+
+        # Check runtime-context end marker anchor
+        tpl = "<!-- ancli:runtime-context v1 -->\n<!-- ancli:first-run:end -->\n工具通过宿主 wrapper\n"
+        injected = core._inject_runtime_context_bootstrap(tpl)
+        assert core.RUNTIME_CONTEXT_PENDING_MARKER in injected
+        assert injected.index(core.RUNTIME_CONTEXT_PENDING_MARKER) < injected.index(core.RUNTIME_CONTEXT_END_MARKER)
+        replaced = core._replace_runtime_context_bootstrap(injected, {
+            "checked_at": "2026-11-19T12:00:00+08:00",
+            "execution_backend": "proot-ubuntu",
+            "ancli_version": core.VERSION,
+            "uid": 0, "euid": 0, "cwd": "/root",
+            "android_data_mounted": True,
+            "paths": {"rootfs": str(rootfs), "data_channel": "/mnt/ancli-data"},
+            "commands": {"bash": True},
+            "android_paths": {},
+            "host_commands": {},
+            "host_compatibility": {"bash": {"installed": True, "paths": []}},
+            "installed_apps": [],
+        })
+        assert core.RUNTIME_CONTEXT_END_MARKER in replaced
+        assert core.RUNTIME_CONTEXT_PENDING_MARKER not in replaced
+
+    def test_f9_scripts_and_build_sh_hygiene(self):
+        import subprocess
+        root = os.path.join(os.path.dirname(__file__), "..")
+        build_bytes = open(os.path.join(root, "build.sh"), "rb").read()
+        assert b"\r" not in build_bytes
+        assert b"build_module.py" in build_bytes
+
+        probe_src = open(os.path.join(root, "scripts", "probe_dsh_web_page.py"), encoding="utf-8").read()
+        assert "fFAqBwZUXRGOoCz" not in probe_src
+        res = subprocess.run([sys.executable, os.path.join(root, "scripts", "probe_dsh_web_page.py")],
+                             capture_output=True, text=True, env={k: v for k, v in os.environ.items() if k != "DSH_WEB_TOKEN"})
+        assert res.returncode == 2
+        assert "Missing dsh web token" in res.stderr
+
+    def test_f4_normalize_proxy_url_and_cli_reject_malformed_urls(self, tmp_path, monkeypatch, capsys):
+        ancli_dir = tmp_path / "ancli"
+        ancli_dir.mkdir(parents=True)
+        cfg_file = tmp_path / "cfg.json"
+        container_cfg = ancli_dir / "container-config.json"
+        profiles_file = ancli_dir / "container-profiles.json"
+        profiles_file.write_text(json.dumps({
+            "profiles": {"standard": {"name": "Standard", "estimated_size_mb": 420}}
+        }), encoding="utf-8")
+        container_cfg.write_text(json.dumps({"profile": "standard", "proxy_url": "http://127.0.0.1:7890"}), encoding="utf-8")
+        cfg_file.write_text(json.dumps({"proxy_mode": "manual", "proxy_url": "http://127.0.0.1:7890"}), encoding="utf-8")
+
+        monkeypatch.setattr(core, "ANCLI_DIR", str(ancli_dir))
+        monkeypatch.setattr(core, "ROOTFS", str(tmp_path / "rootfs"))
+        monkeypatch.setattr(core, "CONFIG_FILE", str(cfg_file))
+        monkeypatch.setattr(core, "CONTAINER_CONFIG_FILE", str(container_cfg))
+        monkeypatch.setattr(core, "CONTAINER_PROFILES_FILE", str(profiles_file))
+
+        assert core._normalize_proxy_url("http://[::1]:7890") == (True, "http://[::1]:7890")
+        assert core._normalize_proxy_url("127.0.0.1:7890") == (True, "http://127.0.0.1:7890")
+
+        malformed = ("http://127.0.0.1:99999", "http://127.0.0.1:abc", "http://[::1", "127.0.0.1:99999")
+        for bad in malformed:
+            ok, msg = core._normalize_proxy_url(bad)
+            assert ok is False and isinstance(msg, str) and msg
+
+            ok_set, msg_set = core.set_proxy_url(bad)
+            assert ok_set is False and msg_set == msg
+
+            with pytest.raises(SystemExit) as c_exc:
+                core.container_command(["set", f"--proxy-url={bad}"])
+            assert str(c_exc.value) == msg
+
+            with pytest.raises(SystemExit) as s_exc:
+                core.settings_command(["--set", f"proxy_url={bad}", "--json"])
+            assert s_exc.value.code == 1
+            captured = capsys.readouterr()
+            payload = json.loads(captured.out)
+            assert payload["proxy_url"] == "http://127.0.0.1:7890"
+            assert msg in captured.err
+
+        assert json.loads(container_cfg.read_text(encoding="utf-8"))["proxy_url"] == "http://127.0.0.1:7890"
+
+    def test_f8_reconfigure_app_legacy_secrets_migration_and_empty_all_vars_clears_configured_env(self, tmp_path, monkeypatch):
+        ancli_dir = tmp_path / "ancli"
+        rootfs = tmp_path / "rootfs"
+        secrets = tmp_path / "secrets"
+        (ancli_dir / "bin").mkdir(parents=True)
+        (rootfs / "root").mkdir(parents=True)
+        secrets.mkdir(parents=True)
+
+        monkeypatch.setattr(core, "ANCLI_DIR", str(ancli_dir))
+        monkeypatch.setattr(core, "ROOTFS", str(rootfs))
+        monkeypatch.setattr(core, "MOD_DIR", str(tmp_path / "mod"))
+        monkeypatch.setattr(core, "KSU_BIN", str(tmp_path / "ksu"))
+        monkeypatch.setattr(core, "AP_BIN", str(tmp_path / "ap"))
+        monkeypatch.setattr(core, "SECRETS_DIR", str(secrets))
+        monkeypatch.setattr(core, "INSTALLED_FILE", str(ancli_dir / "installed.json"))
+
+        # 1. Legacy {app_id}.env migrates to {executable}.env when {executable}.env is absent
+        (secrets / "codex-cli.env").write_text("export OPENAI_API_KEY=sk-legacy\n", encoding="utf-8")
+        reg_with_vars = {
+            "apps": {
+                "codex-cli": {
+                    "name": "Codex",
+                    "executable": "codex",
+                    "optional_env_vars": ["OPENAI_API_KEY", "OPENAI_BASE_URL"],
+                }
+            }
+        }
+        core.save_installed({"codex-cli": {"executable": "codex", "installed_version": "0.1"}})
+
+        core.reconfigure_app("codex-cli", reg_with_vars, set_env={"OPENAI_BASE_URL": "https://api.example/v1"})
+
+        assert not (secrets / "codex-cli.env").exists()
+        assert (secrets / "codex.env").exists()
+        migrated_txt = (secrets / "codex.env").read_text(encoding="utf-8")
+        assert "OPENAI_API_KEY=sk-legacy" in migrated_txt
+        assert "OPENAI_BASE_URL=https://api.example/v1" in migrated_txt
+        installed = core.load_installed()["codex-cli"]
+        assert set(installed["configured_env"]) == {"OPENAI_API_KEY", "OPENAI_BASE_URL"}
+        assert "env" not in installed
+        assert core._read_secrets_file("codex") == {
+            "OPENAI_API_KEY": "sk-legacy",
+            "OPENAI_BASE_URL": "https://api.example/v1",
+        }
+
+        # 2. When registry no longer defines any env vars and set_env is None, configured_env is cleared
+        reg_no_vars = {"apps": {"codex-cli": {"name": "Codex", "executable": "codex"}}}
+        (secrets / "codex-cli.env").write_text("export OLD_VAR=1\n", encoding="utf-8")
+        core.reconfigure_app("codex-cli", reg_no_vars)
+        assert not (secrets / "codex.env").exists()
+        assert not (secrets / "codex-cli.env").exists()
+        cleared = core.load_installed()["codex-cli"]
+        assert cleared["configured_env"] == []
+        assert "env" not in cleared

@@ -32,7 +32,7 @@
   --console-text: #2b3138;
   --shadow-sm: 0 1px 2px rgba(16, 24, 40, .05);
   --shadow: 0 12px 28px -18px rgba(16, 24, 40, .35);
-  --r-xs: 8px; --r-sm: 10px; --r: 14px; --r-lg: 18px; --r-pill: 999px;
+  --r-xs: 8px; --r-sm: 10px; --r-md: 12px; --r: 14px; --r-lg: 18px; --r-pill: 999px;
   --gap: 12px;
 }
 :root[data-theme="dark"] {
@@ -62,6 +62,7 @@
   --shadow: 0 14px 30px -20px rgba(0, 0, 0, .8);
 }
 * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+[hidden] { display: none !important; }
 html { -webkit-text-size-adjust: 100%; }
 body {
   overflow-x: hidden;
@@ -96,6 +97,7 @@ body {
 }
 body.ime-open .topbar { backdrop-filter: none; -webkit-backdrop-filter: none; background: var(--surface); }
 .brand { display: flex; align-items: center; gap: 9px; min-width: 0; }
+.brand > span { min-width: 0; }
 .mark {
   width: 32px; height: 32px; flex: none; border-radius: 9px;
   display: grid; place-items: center; overflow: hidden;
@@ -266,6 +268,7 @@ button, select { touch-action: manipulation; -webkit-tap-highlight-color: transp
 .app-log-toggle { font-size: 11px; color: var(--muted); border: 0; background: transparent; padding: 2px 0; cursor: pointer; }
 .app-log-toggle:hover { color: var(--accent); }
 .app-log { max-height: 150px; overflow: auto; margin-top: 5px; padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--r-sm); background: var(--console-bg); color: var(--console-text); font: 11px/1.55 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
+.app-log:empty { display: none; }
 
 .chip {
   display: inline-flex; align-items: center; gap: 4px; max-width: 100%;
@@ -320,7 +323,7 @@ button, select { touch-action: manipulation; -webkit-tap-highlight-color: transp
 .log .l-ok { color: var(--ok); }
 .log .l-err { color: var(--danger); }
 .log .l-dim { color: var(--faint); }
-.log:empty::after { content: "等待操作…"; color: var(--faint); }
+.log:empty::after { content: attr(data-empty); color: var(--faint); }
 
 /* 2026-11-16：弹窗只在显示时接收触摸，隐藏状态不再拦截首屏点击。 */
 /* ============================ 配置弹窗 ============================ */
@@ -360,7 +363,7 @@ button, select { touch-action: manipulation; -webkit-tap-highlight-color: transp
   min-width: 0; min-height: 0; flex: 1 1 auto; display: flex; flex-direction: column;
 }
 .dlg-foot {
-  display: flex; gap: 8px; justify-content: flex-end;
+  display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap;
   padding: 10px 16px;
   border-top: 1px solid var(--border); background: var(--surface); flex-shrink: 0;
   border-radius: 0 0 var(--r-lg) var(--r-lg);
@@ -372,6 +375,7 @@ button, select { touch-action: manipulation; -webkit-tap-highlight-color: transp
 .guide-page-indicator { color: var(--faint); font-size: 12px; min-width: 44px; text-align: center; }
 .guide-steps { display: grid; gap: 10px; }
 .guide-step { display: grid; grid-template-columns: 28px minmax(0, 1fr); gap: 9px; align-items: start; padding: 11px; border: 1px solid var(--border); border-radius: var(--r); background: var(--surface-2); }
+.guide-step > div { min-width: 0; }
 .guide-step-num { display: grid; place-items: center; width: 24px; height: 24px; border-radius: 50%; background: var(--accent-soft); color: var(--accent); font-weight: 700; }
 .guide-step p { color: var(--muted); margin-bottom: 7px; }
 .guide-commands { display: flex; flex-wrap: wrap; gap: 7px; }
@@ -858,6 +862,7 @@ button, select { touch-action: manipulation; -webkit-tap-highlight-color: transp
   .console-head .spacer { display: none; }
   .console-head .icon-btn:first-of-type { margin-left: auto; }
   .log { max-height: 230px; padding: 9px 10px; font-size: 11px; }
+  .overlay { padding: 14px 10px; }
   .dialog { width: min(480px, calc(100vw - 20px)); max-height: min(86vh, 520px); border-radius: var(--r-lg); }
   .dlg-body { padding: 11px 12px 4px; }
   .dlg-foot { padding: 9px 12px; border-radius: 0 0 var(--r-lg) var(--r-lg); }
@@ -910,7 +915,7 @@ body.ime-open .settings-viewport { min-height: 0; }
 <header class="topbar">
   <div class="brand">
     <span class="mark" aria-hidden="true">
-      <img src="logo.png?v=1.2.618" alt="">
+      <img src="logo.png" alt="">
     </span>
     <span>
       <b>AnCLI</b>
@@ -967,13 +972,13 @@ body.ime-open .settings-viewport { min-height: 0; }
 
   <div class="sec-head">
     <h2 data-i18n="tools">工具</h2>
-    <span class="meta" id="checkInfo">尚未检查</span>
+    <span class="meta" id="checkInfo" data-i18n="notChecked">尚未检查</span>
   </div>
   <div class="list" id="apps">
     <div class="skeleton"></div><div class="skeleton"></div>
   </div>
 
-  <div id="pendingActivationNotice" class="note" role="status" hidden style="margin:8px 0; color:var(--warn);">模块更新尚未激活；请重启手机后重新打开 WebUI。</div>
+  <div id="pendingActivationNotice" class="note" role="status" hidden style="margin:8px 0; color:var(--warn);" data-i18n="pendingActivation">模块更新尚未激活；请重启手机后重新打开 WebUI。</div>
 
   <section class="card console" id="taskConsole" aria-label="输出" tabindex="-1">
     <div class="log-tabs" id="logTabs" role="tablist"></div>
@@ -982,7 +987,7 @@ body.ime-open .settings-viewport { min-height: 0; }
       <b data-i18n="output">输出</b>
       <span class="meta" id="logCount">0 行</span>
       <span class="spacer"></span>
-      <button class="btn xs danger" type="button" id="btnStopTask" hidden>强制停止</button>
+      <button class="btn xs danger" type="button" id="btnStopTask" data-i18n="forceStop" hidden>强制停止</button>
       <button class="icon-btn" id="btnLogCopy" title="复制全部" aria-label="复制全部" data-i18n-title="copyAll">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h8"/></svg>
       </button>
@@ -993,7 +998,7 @@ body.ime-open .settings-viewport { min-height: 0; }
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M6 13l6 6 6-6"/></svg>
       </button>
     </div>
-    <div class="log" id="log" role="log" aria-live="polite" aria-relevant="additions"></div>
+    <div class="log" id="log" role="log" aria-live="polite" aria-relevant="additions" data-empty="等待操作…"></div>
   </section>
 
   <div class="foot" data-i18n="footer">AnCLI · Android CLI 环境管理器</div>
@@ -1143,11 +1148,11 @@ body.ime-open .settings-viewport { min-height: 0; }
               <select id="setContainerProfile" class="setting-select">
                 <option value="standard">标准 Agent 环境</option>
               </select>
-              <small class="hint" id="containerProfileAdditive">切换较小规格不会卸载已有软件包。</small>
+              <small class="hint" id="containerProfileAdditive" data-i18n="containerProfileAdditive">切换较小规格不会卸载已有软件包。</small>
             </div>
 
             <div class="setting-item wrap">
-              <div class="setting-item-left"><span class="setting-icon" aria-hidden="true">⇩</span><div class="setting-item-text"><b>容器下载站点</b><small>仅用于 Ubuntu 容器基础镜像和软件包。下方显示各站点 Ping 延迟。</small></div></div>
+              <div class="setting-item-left"><span class="setting-icon" aria-hidden="true">⇩</span><div class="setting-item-text"><b data-i18n="containerMirror">容器下载站点</b><small data-i18n="containerMirrorHint">仅用于 Ubuntu 容器基础镜像和软件包。下方显示各站点 Ping 延迟。</small></div></div>
               <select id="setContainerMirror" class="setting-select"><option value="tuna">清华镜像（国内）</option><option value="ustc">中科大镜像（国内）</option><option value="official">Ubuntu 官方（国外）</option></select>
               <div class="mirror-ping-grid" data-mirror-pings role="status" aria-live="polite"></div>
             </div>
@@ -1168,7 +1173,7 @@ body.ime-open .settings-viewport { min-height: 0; }
               <div class="field">
                 <label data-i18n="defaultCwd">默认工作目录</label>
                 <input id="setCwd" autocomplete="off" spellcheck="false" placeholder="/sdcard/projects">
-                <div class="hint" id="setCwdHint" data-i18n="cwdHint">从 / 启动工具时使用；必须是容器内存在的绝对路径。留空使用 /root。</div>
+                <div class="hint" id="setCwdHint" data-i18n="cwdHint">从 / 启动工具时使用；必须是容器内存在的绝对路径。留空使用 /root/.ancli-work。</div>
               </div>
             </div>
 
@@ -1187,7 +1192,7 @@ body.ime-open .settings-viewport { min-height: 0; }
               <span class="proxy-badge disconnected" id="setProxyCurrentBadge" data-i18n="proxyDisconnected">未连接</span>
             </div>
 
-            <div class="hint" id="setVpnStatus" role="status" style="margin-bottom:8px;">VPN：尚未检测</div>
+            <div class="hint" id="setVpnStatus" role="status" style="margin-bottom:8px;" data-i18n="vpnNotChecked">VPN：尚未检测</div>
             <div class="setting-item">
               <div class="setting-item-left">
                 <span class="setting-icon" aria-hidden="true">⇄</span>
@@ -1204,7 +1209,7 @@ body.ime-open .settings-viewport { min-height: 0; }
             </div>
 
             <div style="margin-top: 10px;">
-              <button type="button" class="btn xs" id="btnProxyProbe">手动检测网络 / 代理</button>
+              <button type="button" class="btn xs" id="btnProxyProbe" data-i18n="proxyProbeBtn">手动检测网络 / 代理</button>
               <div id="proxyProbeResult" role="status" aria-live="polite"></div>
             </div>
 
@@ -1237,6 +1242,31 @@ body.ime-open .settings-viewport { min-height: 0; }
           <div class="settings-panel" id="panel-reset">
             <section class="settings-danger" style="margin-bottom: 10px;">
               <div class="setting-card-head">
+                <span class="setting-icon" aria-hidden="true">⇅</span>
+                <div><b data-i18n="containerTransferTitle">容器导出与导入</b><small data-i18n="containerTransferSubtitle">备份完整 Ubuntu 容器，或从备份恢复</small></div>
+              </div>
+              <p data-i18n="containerTransferHint">导出会将当前容器（包括已安装软件、Agent、容器内配置与密钥）打包到 Download。导入会替换当前容器，请先删除现有容器。</p>
+              <button class="btn xs" id="btnContainerExport" data-i18n="containerExportAction">导出当前容器到 Download</button>
+              <div class="field" style="margin-top: 12px;">
+                <label for="settingsImportBundlePath" data-i18n="containerImportLabel">Download 中的容器备份路径</label>
+                <input type="text" id="settingsImportBundlePath" autocomplete="off" spellcheck="false" value="/sdcard/Download/AnCLI-Ubuntu-24.04-ARM64-Full-Development-Environment-v1.2.651-Offline-Import.zip" placeholder="/sdcard/Download/AnCLI-Ubuntu-24.04-ARM64-Full-Development-Environment-v1.2.651-Offline-Import.zip">
+              </div>
+              <button class="btn xs danger" id="btnContainerImport" data-i18n="containerImportAction">从备份导入容器</button>
+              <div class="settings-task" data-task-slot="container-transfer"></div>
+            </section>
+
+            <section class="settings-danger" style="margin-bottom: 10px;">
+              <div class="setting-card-head">
+                <span class="setting-icon" aria-hidden="true" style="color: var(--danger); background: var(--surface);">⌫</span>
+                <div><b data-i18n="containerRemoveTitle">删除当前容器</b><small data-i18n="containerRemoveSubtitle">只删除 Ubuntu rootfs，保留 AnCLI 模块</small></div>
+              </div>
+              <p data-i18n="containerRemoveHint">删除容器中的应用、配置、密钥、全局记忆和未完成安装检查点。模块与代理、语言、下载站点设置会保留。删除前请先退出所有 Agent 和容器终端。</p>
+              <button class="btn xs danger" id="btnContainerRemove" data-i18n="containerRemoveAction">删除当前容器</button>
+              <div class="settings-task" data-task-slot="container-remove"></div>
+            </section>
+
+            <section class="settings-danger" style="margin-bottom: 10px;">
+              <div class="setting-card-head">
                 <span class="setting-icon" aria-hidden="true">!</span>
                 <div><b data-i18n="factoryReset">完全初始化环境</b><small data-i18n="factoryResetTitle">恢复模块自带的干净 Agent 环境</small></div>
               </div>
@@ -1259,10 +1289,10 @@ body.ime-open .settings-viewport { min-height: 0; }
           <!-- 面板 5：关于 -->
           <div class="settings-panel" id="panel-about">
             <div class="about-hero">
-              <img src="logo.png?v=1.2.618" class="about-logo" alt="AnCLI Logo">
+              <img src="logo.png" class="about-logo" alt="AnCLI Logo">
               <div class="about-brand">
                 <span class="about-name">AnCLI</span>
-                <span class="about-badge" id="aboutVer">v1.2.623-beta</span>
+                <span class="about-badge" id="aboutVer">…</span>
               </div>
               <p class="about-desc" data-i18n="aboutDesc">统一的 Android 命令行与 AI Agent 环境管理器</p>
             </div>
@@ -1300,7 +1330,7 @@ body.ime-open .settings-viewport { min-height: 0; }
                   </div>
                 </div>
 
-                <div style="margin-top: 10px; display: flex; align-items: center; justify-content: space-between; gap: 8px;">
+                <div style="margin-top: 10px; display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap;">
                   <div class="seg" id="channelSwitch" role="group" aria-label="更新通道">
                     <button type="button" class="active" data-channel="stable" id="chanStable" data-i18n="channelStable">正式主线</button>
                     <button type="button" data-channel="beta" id="chanBeta" data-i18n="channelBeta">Beta 预览</button>
@@ -1363,6 +1393,28 @@ body.ime-open .settings-viewport { min-height: 0; }
   </div>
 </div>
 
+<div class="overlay" id="containerRemoveOverlay" aria-hidden="true">
+  <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="containerRemoveDialogTitle">
+    <div class="dlg-head">
+      <h3 id="containerRemoveDialogTitle" data-i18n="containerRemoveTitle">删除当前容器</h3>
+      <button class="icon-btn" id="containerRemoveClose" aria-label="关闭" data-i18n-title="close">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      </button>
+    </div>
+    <div class="dlg-body">
+      <div class="note" data-i18n="containerRemoveWarning">此操作会永久删除完整 Ubuntu rootfs，包括已安装 Agent、软件包、配置、密钥和记忆文件。AnCLI 模块及模块设置会保留。请先退出正在运行的 Agent。此操作无法撤销。</div>
+      <div class="field">
+        <label data-i18n="containerRemoveConfirmLabel">输入 DELETE CONTAINER 确认</label>
+        <input id="containerRemoveConfirm" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="DELETE CONTAINER">
+      </div>
+    </div>
+    <div class="dlg-foot">
+      <button class="btn" id="containerRemoveCancel" data-i18n="cancel">取消</button>
+      <button class="btn danger" id="containerRemoveApply" data-i18n="containerRemoveAction">删除当前容器</button>
+    </div>
+  </div>
+</div>
+
 <div class="overlay" id="uninstallOverlay" aria-hidden="true">
   <div class="dialog uninstall-dialog" role="dialog" aria-modal="true" aria-labelledby="uninstallTitle">
     <div class="dlg-head">
@@ -1395,7 +1447,7 @@ body.ime-open .settings-viewport { min-height: 0; }
         模块提供面向 AI Agent（AGY、Claude、Grok 等）的全局规范记忆模板（/root/.agents/AGENTS.md）与配套环境检测机制。首次运行时要求 Agent 执行环境探测以自适应本机硬件与挂载边界。请选择是否向容器添加该文件：
       </div>
       <div style="display: flex; flex-direction: column; gap: 8px; margin-top: 10px;">
-        <label class="setting-item" style="cursor: pointer; margin-bottom: 0;">
+        <label class="setting-item wrap" style="cursor: pointer; margin-bottom: 0;">
           <div class="setting-item-left">
             <input type="radio" name="memChoice" id="memChoiceAdd" value="enabled" checked style="width: 17px; height: 17px; accent-color: var(--accent);">
             <div class="setting-item-text">
@@ -1404,7 +1456,7 @@ body.ime-open .settings-viewport { min-height: 0; }
             </div>
           </div>
         </label>
-        <label class="setting-item" style="cursor: pointer; margin-bottom: 0;">
+        <label class="setting-item wrap" style="cursor: pointer; margin-bottom: 0;">
           <div class="setting-item-left">
             <input type="radio" name="memChoice" id="memChoiceSkip" value="disabled" style="width: 17px; height: 17px; accent-color: var(--accent);">
             <div class="setting-item-text">
@@ -1424,17 +1476,17 @@ body.ime-open .settings-viewport { min-height: 0; }
 <div class="overlay" id="uninstallAppOverlay" aria-hidden="true">
   <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="uninstAppTitle">
     <div class="dlg-head">
-      <h3 id="uninstAppTitle">卸载应用</h3>
+      <h3 id="uninstAppTitle" data-i18n="uninstallAppTitle">卸载应用</h3>
     </div>
     <div class="dlg-body">
       <div class="note" id="uninstAppDesc" style="line-height:1.5;"></div>
-      <div class="detail" style="margin-top:10px; color:var(--faint); font-size:13px;">
+      <div class="detail" style="margin-top:10px; color:var(--faint); font-size:13px;" data-i18n="uninstallAppKeepData">
         卸载后用户数据与密钥将继续保留在容器中，只有再次安装时才会用到。
       </div>
     </div>
     <div class="dlg-foot">
       <button class="btn" type="button" id="uninstAppCancel" data-i18n="cancel">取消</button>
-      <button class="btn danger" type="button" id="uninstAppConfirm">确认卸载</button>
+      <button class="btn danger" type="button" id="uninstAppConfirm" data-i18n="uninstallAppConfirm">确认卸载</button>
     </div>
   </div>
 </div>
@@ -1442,25 +1494,25 @@ body.ime-open .settings-viewport { min-height: 0; }
 <div class="overlay" id="repairOverlay" aria-hidden="true">
   <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="repairTitle">
     <div class="dlg-head">
-      <h3 id="repairTitle">运行环境修复</h3>
+      <h3 id="repairTitle" data-i18n="repairTitle">运行环境修复</h3>
     </div>
     <div class="dlg-body">
-      <div class="note" style="line-height:1.5;">
+      <div class="note" style="line-height:1.5;" data-i18n="repairDesc">
         将重新配置容器 DNS、修复权限与包装器，统一全局 Skills 规范，并刷新双注入兼容环境。是否立即开始修复？
       </div>
     </div>
     <div class="dlg-foot">
       <button class="btn" type="button" id="repairCancel" data-i18n="cancel">取消</button>
-      <button class="btn primary" type="button" id="repairConfirm">开始修复</button>
+      <button class="btn primary" type="button" id="repairConfirm" data-i18n="repairConfirm">开始修复</button>
     </div>
   </div>
 </div>
 
 <div class="overlay" id="stopTaskOverlay" aria-hidden="true">
   <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="stopTaskTitle">
-    <div class="dlg-head"><h3 id="stopTaskTitle">强制停止安装？</h3></div>
-    <div class="dlg-body"><div class="note" id="stopTaskDescription">将终止当前安装任务，并清理该任务创建的临时容器文件。已有容器和数据会保留；中断的软件包可能需要修复。</div></div>
-    <div class="dlg-foot"><button class="btn" id="stopTaskCancel" type="button">取消</button><button class="btn danger" id="stopTaskConfirm" type="button">确认停止</button></div>
+    <div class="dlg-head"><h3 id="stopTaskTitle" data-i18n="stopTaskTitle">强制停止安装？</h3></div>
+    <div class="dlg-body"><div class="note" id="stopTaskDescription" data-i18n="stopTaskDesc">将终止当前安装任务，并清理该任务创建的临时容器文件。已有容器和数据会保留；中断的软件包可能需要修复。</div></div>
+    <div class="dlg-foot"><button class="btn" id="stopTaskCancel" type="button" data-i18n="cancel">取消</button><button class="btn danger" id="stopTaskConfirm" type="button" data-i18n="stopTaskConfirm">确认停止</button></div>
   </div>
 </div>
 
@@ -1492,7 +1544,7 @@ async function checkPendingActivation() {
   try {
     const r = await execCmd('if [ -d /data/adb/modules_update/ancli ] || [ -f /data/adb/modules/ancli/remove ]; then echo pending; else echo clear; fi');
     notice.hidden = !(r.code === 0 && (r.stdout || '').trim() === 'pending');
-    notice.textContent = uiLang === 'en' ? 'Module activation is pending. Reboot the device, then reopen WebUI.' : '模块安装或移除尚未完成，请重启手机后重新打开 WebUI。';
+    notice.textContent = uiText('pendingActivation');
   } catch (_) { notice.hidden = true; }
 }
 
@@ -1582,10 +1634,10 @@ async function execCmdDirect(cmd, deadline, retryHttp) {
       const found = await waitForBridge(10000);
       bridge = found.obj;
       bridgeName = found.name;
-      if (!bridgeLogged) { bridgeLogged = true; logLine('已连接 KernelSU WebUI 桥接', 'dim'); }
+      if (!bridgeLogged) { bridgeLogged = true; logLine(uiLang === 'en' ? 'Connected to KernelSU WebUI bridge' : '已连接 KernelSU WebUI 桥接', 'dim'); }
     } catch (e) {
       try { return await shHttp(cmd, deadline, retryHttp); }
-      catch (e2) { throw new Error('WebUI 桥接不可用（等待超时且 KKHTTP 失败）：需要 KernelSU 0.9.5+ 或 KsuWebUI 框架'); }
+      catch (e2) { throw new Error(uiLang === 'en' ? 'WebUI bridge unavailable (timeout and KKHTTP failed): KernelSU 0.9.5+ or KsuWebUI is required' : 'WebUI 桥接不可用（等待超时且 KKHTTP 失败）：需要 KernelSU 0.9.5+ 或 KsuWebUI 框架'); }
     }
   }
   if (Date.now() >= deadline) throw new Error('命令等待超时');
@@ -1656,7 +1708,13 @@ const expandedAppLogs = new Set();
 const logEl = () => document.getElementById('log');
 
 function updateLogCount() {
-  document.getElementById('logCount').textContent = logLines + ' 行' + (logLines > LOG_MAX ? '（仅保留最近 ' + LOG_MAX + ' 行）' : '');
+  const el = document.getElementById('logCount');
+  if (!el) return;
+  if (uiLang === 'en') {
+    el.textContent = logLines + (logLines === 1 ? ' line' : ' lines') + (logLines > LOG_MAX ? ' (showing last ' + LOG_MAX + ')' : '');
+  } else {
+    el.textContent = logLines + ' 行' + (logLines > LOG_MAX ? '（仅保留最近 ' + LOG_MAX + ' 行）' : '');
+  }
 }
 
 function isLogAtBottom() {
@@ -1819,12 +1877,19 @@ function revealAppLog(id) {
   const button = Array.from(document.querySelectorAll('#apps [data-log-id]'))
     .find(el => el.dataset.logId === id);
   if (!pane || !button) return;
+  const tasks = Array.from(taskTabs.values()).filter(task => task.scope === id);
+  const task = tasks[tasks.length - 1];
+  if (!task) {
+    expandedAppLogs.delete(id);
+    pane.hidden = true;
+    pane.textContent = '';
+    button.setAttribute('aria-expanded', 'false');
+    button.textContent = logToggleText(false);
+    return;
+  }
   pane.hidden = false;
   button.setAttribute('aria-expanded', 'true');
   button.textContent = logToggleText(true);
-  const tasks = Array.from(taskTabs.values()).filter(task => task.scope === id);
-  const task = tasks[tasks.length - 1];
-  if (!task) return;
   const cached = task.output || [];
   if (cached.length) {
     pane.textContent = cached.join('\n');
@@ -1836,8 +1901,13 @@ function revealAppLog(id) {
   pane.textContent = uiText('logHistoryLoading');
   void execCmd('cat ' + shQuote(task.logFile) + ' 2>/dev/null').then(r => {
     if (!pane.hidden) {
-      pane.textContent = strip(r.stdout || '');
-      pane.scrollTop = pane.scrollHeight;
+      const text = strip(r.stdout || '').trim();
+      if (text) {
+        pane.textContent = text;
+        pane.scrollTop = pane.scrollHeight;
+      } else {
+        pane.textContent = taskUnresolved(task) ? '' : uiText('historyEmpty');
+      }
     }
   }).catch(() => { pane.textContent = uiText('historyEmpty'); });
 }
@@ -1891,7 +1961,7 @@ function updateBusyUI() {
   document.body.classList.toggle('busy', busy > 0);
   const spin = document.getElementById('busySpin');
   if (spin) spin.hidden = busy === 0;
-  ['btnCheck', 'btnRefresh', 'btnRepair', 'btnContainerInstall', 'btnInitInstall', 'btnUninstallModule', 'repairConfirm', 'resetApply', 'uninstallApply', 'uninstAppConfirm'].forEach(id => {
+  ['btnCheck', 'btnRefresh', 'btnRepair', 'btnContainerInstall', 'btnInitInstall', 'btnInitImport', 'btnContainerExport', 'btnContainerImport', 'btnContainerRemove', 'btnUninstallModule', 'repairConfirm', 'resetApply', 'containerRemoveApply', 'uninstallApply', 'uninstAppConfirm'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.disabled = busy > 0;
   });
@@ -2033,7 +2103,9 @@ async function pollTask(task, deadline) {
       failures = 0;
       if (result === 'pending') continue;
       task.status = taskResultStatus(result);
-      appendTaskOutput(task, task.status === 'done' ? '✓ 完成' : '退出码: ' + result, task.status === 'done' ? 'ok' : 'err');
+      const doneMsg = (typeof uiLang !== 'undefined' && uiLang === 'en') ? '✓ Done' : '✓ 完成';
+      const exitMsg = ((typeof uiLang !== 'undefined' && uiLang === 'en') ? 'Exit code: ' : '退出码: ') + result;
+      appendTaskOutput(task, task.status === 'done' ? doneMsg : exitMsg, task.status === 'done' ? 'ok' : 'err');
       renderTaskTabs();
       return;
     } catch (e) {
@@ -2087,7 +2159,8 @@ async function runBackground(cmd, preface, options = {}) {
     logFollow = true;
     clearLogView();
     if (preface) appendLogRow(preface, 'dim');
-    appendLogRow('$ ' + cmd + '  （后台执行）', 'cmd');
+    const bgTag = (typeof uiLang !== 'undefined' && uiLang === 'en') ? '  (background)' : '  （后台执行）';
+    appendLogRow('$ ' + cmd + bgTag, 'cmd');
   }
   renderTaskTabs();
 
@@ -2116,11 +2189,11 @@ async function runBackground(cmd, preface, options = {}) {
   try {
     const result = await taskBridge('sh -c ' + shQuote(launch), Math.min(deadline, Date.now() + BRIDGE_COMMAND_TIMEOUT_MS), false);
     if (result.code !== 0 && result.stdout.trim() === 'ancli-no-setsid') {
-      task.status = 'failed'; appendTaskOutput(task, '系统不支持安全的任务停止，未启动安装。', 'err'); renderTaskTabs(); return task;
+      task.status = 'failed'; appendTaskOutput(task, (typeof uiLang !== 'undefined' && uiLang === 'en') ? 'System does not support safe task cancellation; installation was not started.' : '系统不支持安全的任务停止，未启动安装。', 'err'); renderTaskTabs(); return task;
     }
     if (result.code !== 0 && result.stdout.trim() === 'ancli-meta-failed') {
       task.status = 'failed';
-      appendTaskOutput(task, '无法保存后台任务记录，命令未启动。', 'err');
+      appendTaskOutput(task, (typeof uiLang !== 'undefined' && uiLang === 'en') ? 'Could not save background task metadata; command was not started.' : '无法保存后台任务记录，命令未启动。', 'err');
       renderTaskTabs();
       return task;
     }
@@ -2227,8 +2300,8 @@ async function proxyDownloadNote(app) {
       proxy = cfg.detected_proxy || '';
     }
     if (proxy) {
-      let note = '[AnCLI] 下载代理: ' + proxy;
-      if (app && app.id === 'dsh') note += '。dsh 安装完成后的运行模式仍为直连。';
+      let note = (uiLang === 'en' ? '[AnCLI] Download proxy: ' : '[AnCLI] 下载代理: ') + proxy;
+      if (app && app.id === 'dsh') note += uiLang === 'en' ? '. dsh still runs in direct network mode after installation.' : '。dsh 安装完成后的运行模式仍为直连。';
       return note;
     }
     return '';
@@ -2289,7 +2362,7 @@ async function restoreTasks({ showHistory = true } = {}) {
     task.interrupted = result === 'rebooted';
     if (taskUnresolved(task)) taskTabs.set(task.id, task);
     else completed.push(task);
-    if (task.scope) expandedAppLogs.add(task.scope);
+    if (task.scope && taskUnresolved(task)) expandedAppLogs.add(task.scope);
   }
   if (showHistory) {
     completed.sort((a, b) => b.id.localeCompare(a.id));
@@ -2314,9 +2387,9 @@ async function runDetached(cmd) {
   const inner = "nohup sh -c '" + quoted + "' > " + logFile + " 2>&1 </dev/null &";
   const outer = "sh -c '" + inner.replace(/'/g, "'\\''") + "'";
   const r = await execCmd(outer);
-  if (r.code !== 0) throw new Error('启动命令失败（exit ' + r.code + '）');
-  logLine('$ ' + cmd + '  （已启动）', 'cmd');
-  logLine('服务正在后台运行，输出写入 ' + logFile, 'dim');
+  if (r.code !== 0) throw new Error((uiLang === 'en' ? 'Launch command failed (exit ' : '启动命令失败（exit ') + r.code + (uiLang === 'en' ? ')' : '）'));
+  logLine('$ ' + cmd + (uiLang === 'en' ? '  (started)' : '  （已启动）'), 'cmd');
+  logLine((uiLang === 'en' ? 'Service running in background; output written to ' : '服务正在后台运行，输出写入 ') + logFile, 'dim');
   return logFile;
 }
 
@@ -2330,7 +2403,15 @@ function shQuote(value) {
 }
 
 async function dshPortInUse() {
-  const r = await execCmd("ss -ltn 2>/dev/null | grep -qE '127\\.0\\.0\\.1:3080|0\\.0\\.0\\.0:3080' || netstat -ltn 2>/dev/null | grep -q ':3080'");
+  const cmd = 'set --; [ -r /proc/net/tcp ] && set -- "$@" /proc/net/tcp; [ -r /proc/net/tcp6 ] && set -- "$@" /proc/net/tcp6; ' +
+    'if [ "$#" -gt 0 ]; then ' +
+    'awk \'FNR > 1 && $2 ~ /:0[cC]08$/ && ($4 == "0A" || $4 == "0a") { found=1; exit 0 } END { exit !found }\' "$@" 2>/dev/null; ' +
+    'elif command -v ss >/dev/null 2>&1; then ' +
+    'ss -ltn 2>/dev/null | awk \'$1 == "LISTEN" && $4 ~ /:3080$/ { found=1; exit 0 } END { exit !found }\'; ' +
+    'elif command -v netstat >/dev/null 2>&1; then ' +
+    'netstat -ltn 2>/dev/null | awk \'$4 ~ /:3080$/ && $6 == "LISTEN" { found=1; exit 0 } END { exit !found }\'; ' +
+    'else exit 1; fi';
+  const r = await execCmd(cmd);
   return r.code === 0;
 }
 
@@ -2366,9 +2447,9 @@ async function startDshBackend() {
   const tag = Date.now() + '_' + Math.floor(Math.random() * 100000);
   const logFile = TASK_LOG_DIR + tag + '.log';
   const r = await execCmd('/system/bin/sh /data/local/tmp/ancli/dsh-web-control.sh start ' + tag + ' ' + shQuote(logFile));
-  if (r.code !== 0) throw new Error('启动命令失败（exit ' + r.code + '）');
-  logLine('$ dsh web --no-open  （后台启动）', 'cmd');
-  logLine('服务输出：' + logFile, 'dim');
+  if (r.code !== 0) throw new Error((uiLang === 'en' ? 'Launch command failed (exit ' : '启动命令失败（exit ') + r.code + (uiLang === 'en' ? ')' : '）'));
+  logLine(uiLang === 'en' ? '$ dsh web --no-open  (background)' : '$ dsh web --no-open  （后台启动）', 'cmd');
+  logLine((uiLang === 'en' ? 'Service output: ' : '服务输出：') + logFile, 'dim');
   const deadline = Date.now() + 30000;
   while (Date.now() < deadline) {
     const result = await probeDshBackend();
@@ -2380,7 +2461,11 @@ async function startDshBackend() {
   const result = await probeDshBackend();
   dshBackendState = result.state;
   dshBackendUrl = result.url;
-  if (result.state !== 'running') throw new Error(result.state === 'unresponsive' ? 'DSH 占用端口但没有响应；可以停止后端再重启。' : 'DSH 后端启动超时，请检查输出日志：' + logFile);
+  if (result.state !== 'running') {
+    throw new Error(result.state === 'unresponsive'
+      ? (uiLang === 'en' ? 'DSH is holding the port without responding; stop and restart the backend.' : 'DSH 占用端口但没有响应；可以停止后端再重启。')
+      : (uiLang === 'en' ? 'DSH backend startup timed out; check output log: ' : 'DSH 后端启动超时，请检查输出日志：') + logFile);
+  }
 }
 
 async function stopDshBackend() {
@@ -2393,8 +2478,8 @@ async function stopDshBackend() {
   const launch = 'rm -f ' + shQuote(stopExit) + ' ' + shQuote(stopExitTmp) + '; nohup /system/bin/sh -c ' +
     shQuote(worker) + ' > ' + shQuote(stopLog) + ' 2>&1 </dev/null &';
   const launched = await execCmd(launch);
-  if (launched.code !== 0) throw new Error('无法提交 DSH 后端停止任务（exit ' + launched.code + '）');
-  logLine('停止请求已提交，等待后端释放端口…', 'dim');
+  if (launched.code !== 0) throw new Error((uiLang === 'en' ? 'Could not submit DSH backend stop task (exit ' : '无法提交 DSH 后端停止任务（exit ') + launched.code + (uiLang === 'en' ? ')' : '）'));
+  logLine(uiLang === 'en' ? 'Stop request submitted; waiting for backend to release port…' : '停止请求已提交，等待后端释放端口…', 'dim');
   const deadline = Date.now() + 20000;
   while (Date.now() < deadline) {
     const status = await execCmd('if [ -f ' + shQuote(stopExit) + ' ]; then cat ' + shQuote(stopExit) + '; else printf pending; fi');
@@ -2402,7 +2487,7 @@ async function stopDshBackend() {
     if (result && result !== 'pending') {
       if (!/^\d{1,3}$/.test(result) || result !== '0') {
         const details = strip((await execCmd('cat ' + shQuote(stopLog) + ' 2>/dev/null')).stdout || '').trim();
-        throw new Error(details || 'DSH 后端停止失败（exit ' + result + '），日志：' + stopLog);
+        throw new Error(details || ((uiLang === 'en' ? 'DSH backend stop failed (exit ' : 'DSH 后端停止失败（exit ') + result + (uiLang === 'en' ? '), log: ' : '），日志：') + stopLog));
       }
       if (!(await dshPortInUse())) {
         const details = strip((await execCmd('cat ' + shQuote(stopLog) + ' 2>/dev/null')).stdout || '').trim();
@@ -2415,7 +2500,9 @@ async function stopDshBackend() {
     }
     await sleep(400);
   }
-  throw new Error('停止仍在后台执行，页面保持可用；请稍后刷新 DSH 状态。日志：' + stopLog);
+  const err = new Error((uiLang === 'en' ? 'Stop is still running in background; page remains usable. Check DSH status later. Log: ' : '停止仍在后台执行，页面保持可用；请稍后刷新 DSH 状态。日志：') + stopLog);
+  err.dshStopPending = true;
+  throw err;
 }
 
 async function dshUrlFromLog(logFile) {
@@ -2427,11 +2514,11 @@ async function dshUrlFromLog(logFile) {
 }
 
 async function openAndroidUrl(url) {
-  if (!url || !/^https?:\/\//.test(url)) throw new Error('dsh 未返回有效的浏览器地址');
+  if (!url || !/^https?:\/\//.test(url)) throw new Error(uiLang === 'en' ? 'dsh did not return a valid browser URL' : 'dsh 未返回有效的浏览器地址');
   const arg = shQuote(url);
   let r = await execCmd('/system/bin/am start -a android.intent.action.VIEW -d ' + arg + ' >/dev/null 2>&1');
   if (r.code !== 0) r = await execCmd('/system/bin/am start --user 0 -a android.intent.action.VIEW -d ' + arg + ' >/dev/null 2>&1');
-  if (r.code !== 0) throw new Error('Android 浏览器启动失败，请手动打开：' + url);
+  if (r.code !== 0) throw new Error((uiLang === 'en' ? 'Could not launch Android browser; open manually: ' : 'Android 浏览器启动失败，请手动打开：') + url);
 }
 
 async function waitForDshUrl(logFile, timeoutMs) {
@@ -2463,7 +2550,10 @@ async function loadStatus() {
   try {
     const s = JSON.parse(await ancli('status --json', true));
     latestStatus = s;
-    document.getElementById('stVer').textContent = 'v' + String(s.ancli_version || '?').replace(/^v/i, '');
+    const verText = 'v' + String(s.ancli_version || '?').replace(/^v/i, '');
+    document.getElementById('stVer').textContent = verText;
+    const aboutVer = document.getElementById('aboutVer');
+    if (aboutVer) aboutVer.textContent = verText;
     renderStatusText(s);
     setStat('stCount', formatCount(s.installed_count ?? '?'));
     if (s.container) renderContainerSettings(s.container, s.ancli_version);
@@ -2478,7 +2568,7 @@ async function loadStatus() {
     // Re-render even when the catalog was already loaded before status arrived.
     renderApps(currentApps || []);
   } catch (e) {
-    logLine('状态加载失败: ' + e, 'err');
+    logLine((uiLang === 'en' ? 'Failed to load status: ' : '状态加载失败: ') + e, 'err');
   }
 }
 
@@ -2529,13 +2619,18 @@ async function readApps() {
     lastCheckFailed = data.check_failed || 0;
     supportsCheck = Number.isFinite(data.check_ttl) && data.check_ttl >= 0;
     checkTtl = supportsCheck ? data.check_ttl : 0;
-    if (data.ancli_version) document.getElementById('stVer').textContent = 'v' + String(data.ancli_version).replace(/^v/i, '');
+    if (data.ancli_version) {
+      const verText = 'v' + String(data.ancli_version).replace(/^v/i, '');
+      document.getElementById('stVer').textContent = verText;
+      const aboutVer = document.getElementById('aboutVer');
+      if (aboutVer) aboutVer.textContent = verText;
+    }
     renderApps(currentApps);
     void refreshDshBackendState();
     renderCheckInfo();
   } catch (e) {
-    if (!currentApps.length) wrap.innerHTML = '<div class="empty">加载失败：' + esc(e.message || e) + '</div>';
-    logLine('应用列表加载失败: ' + e, 'err');
+    if (!currentApps.length) wrap.innerHTML = '<div class="empty">' + (uiLang === 'en' ? 'Failed to load: ' : '加载失败：') + esc(e.message || e) + '</div>';
+    logLine((uiLang === 'en' ? 'Failed to load app list: ' : '应用列表加载失败: ') + e, 'err');
   }
 }
 
@@ -2636,7 +2731,23 @@ const UI_TEXT = {
     confirm: '确认',
     backend: '运行后端', dataChannel: '数据通道', effectiveCwd: '生效目录', proxyStatus: '代理状态',
     containerProfile: '容器规格', containerInstall: '容器状态', containerInstallAction: '安装 / 应用规格', containerInstallStarting: '正在安装或应用容器规格…', containerInstallFailed: '容器安装失败，请查看输出日志',
-    defaultCwd: '默认工作目录', cwdHint: '从 / 启动工具时使用；必须是容器内存在的绝对路径。留空使用 /root。',
+    defaultCwd: '默认工作目录', cwdHint: '从 / 启动工具时使用；必须是容器内存在的绝对路径。留空使用 /root/.ancli-work。',
+    pendingActivation: '模块更新尚未激活；请重启手机后重新打开 WebUI。',
+    forceStop: '强制停止',
+    containerMirror: '容器下载站点',
+    containerMirrorHint: '仅用于 Ubuntu 容器基础镜像和软件包。下方显示各站点 Ping 延迟。',
+    containerProfileAdditive: '切换较小规格不会卸载已有软件包。',
+    vpnNotChecked: 'VPN：尚未检测',
+    proxyProbeBtn: '手动检测网络 / 代理',
+    uninstallAppTitle: '卸载应用',
+    uninstallAppKeepData: '卸载后用户数据与密钥将继续保留在容器中，只有再次安装时才会用到。',
+    uninstallAppConfirm: '确认卸载',
+    repairTitle: '运行环境修复',
+    repairDesc: '将重新配置容器 DNS、修复权限与包装器，统一全局 Skills 规范，并刷新双注入兼容环境。是否立即开始修复？',
+    repairConfirm: '开始修复',
+    stopTaskTitle: '强制停止安装？',
+    stopTaskDesc: '将终止当前安装任务，并清理该任务创建的临时容器文件。已有容器和数据会保留；中断的软件包可能需要修复。',
+    stopTaskConfirm: '确认停止',
     proxyHint: '直接填写 IP:端口（如 192.168.1.10:7890）；直连模式清除工具代理。',
     proxyMode: '代理模式', proxyModeHint: '网络连接策略', manualProxyAddress: '代理地址',
     proxyConnected: '已连接', proxyDisconnected: '未连接', proxyDetecting: '代理检测中…',
@@ -2651,6 +2762,16 @@ const UI_TEXT = {
     taskRebooted: '设备已重启，未收到该任务的退出结果。',
     historyCleared: '历史日志已清理', historyNothingToClear: '没有可清理的历史日志', logHistoryLoading: '正在读取日志历史…',
     factoryReset: '完全初始化环境', factoryResetTitle: '恢复模块自带的干净 Agent 环境',
+    containerTransferTitle: '容器导出与导入', containerTransferSubtitle: '备份完整 Ubuntu 容器，或从备份恢复',
+    containerTransferHint: '导出会将当前容器（包括已安装软件、Agent、容器内配置与密钥）打包到 Download。导入会替换当前容器，请先删除现有容器。',
+    containerExportAction: '导出当前容器到 Download', containerImportLabel: 'Download 中的容器备份路径', containerImportAction: '从备份导入容器',
+    containerRemoveTitle: '删除当前容器', containerRemoveSubtitle: '只删除 Ubuntu rootfs，保留 AnCLI 模块',
+    containerRemoveHint: '删除容器中的应用、配置、密钥、全局记忆和未完成安装检查点。模块与代理、语言、下载站点设置会保留。删除前请先退出所有 Agent 和容器终端。',
+    containerRemoveAction: '删除当前容器', containerRemoveWarning: '此操作会永久删除完整 Ubuntu rootfs，包括已安装 Agent、软件包、配置、密钥和记忆文件。AnCLI 模块及模块设置会保留。请先退出正在运行的 Agent。此操作无法撤销。',
+    containerRemoveConfirmLabel: '输入 DELETE CONTAINER 确认', containerRemoveInvalid: '请输入 DELETE CONTAINER 才能继续',
+    containerRemoveStarting: '正在删除 Ubuntu 容器…', containerRemoveDone: '当前容器已删除；AnCLI 模块和模块设置已保留', containerRemoveFailed: '容器删除失败，请查看任务日志',
+    containerExportStarting: '正在压缩并导出容器到 Download…', containerExportDone: '容器备份已保存到 Download', containerExportFailed: '容器导出失败，请查看任务日志',
+    containerImportStarting: '正在校验并导入容器备份…', containerImportDone: '容器备份已导入', containerImportFailed: '容器导入失败，请查看任务日志',
     factoryResetHint: '删除已安装应用、密钥、配置、skills、记忆文件和日志，保留 Ubuntu 容器、规格和模块本体。操作完成后需要重新安装应用。',
     factoryResetWarning: '此操作不可恢复。它会删除容器中的应用、密钥、配置、skills、Agent 记忆和全部旧日志；Ubuntu 容器、规格和 AnCLI 模块文件会保留。',
     factoryResetReinstall: '清除后重新配置环境', factoryResetReinstallHint: '保留清理前的应用清单，在干净 PRoot 中重新安装；不会恢复 API key、代理和应用配置。',
@@ -2715,7 +2836,23 @@ const UI_TEXT = {
     memSkipTitle: 'Do not add (Clean mode)', memSkipDesc: 'Do not write global AGENTS.md; manage yourself',
     confirm: 'Confirm',
     backend: 'Backend', dataChannel: 'Data channel', effectiveCwd: 'Effective directory', proxyStatus: 'Proxy',
-    defaultCwd: 'Default working directory', cwdHint: 'Used when a tool starts from /. Use an absolute path inside the container; blank uses /root.',
+    defaultCwd: 'Default working directory', cwdHint: 'Used when a tool starts from /. Use an absolute path inside the container; blank uses /root/.ancli-work.',
+    pendingActivation: 'Module update is pending activation; reboot your device and reopen WebUI.',
+    forceStop: 'Force stop',
+    containerMirror: 'Container download site',
+    containerMirrorHint: 'Used only for Ubuntu base image and packages. Mirror Ping latency is shown below.',
+    containerProfileAdditive: 'Switching to a smaller profile does not remove installed packages.',
+    vpnNotChecked: 'VPN: not checked yet',
+    proxyProbeBtn: 'Check network / proxy',
+    uninstallAppTitle: 'Uninstall app',
+    uninstallAppKeepData: 'User data and secrets remain in the container after uninstall and are reused if reinstalled.',
+    uninstallAppConfirm: 'Uninstall',
+    repairTitle: 'Environment repair',
+    repairDesc: 'Reconfigures container DNS, repairs permissions and wrappers, unifies global Skills, and refreshes dual-injection host compatibility. Start repair now?',
+    repairConfirm: 'Start repair',
+    stopTaskTitle: 'Force stop installation?',
+    stopTaskDesc: 'Stops the current installation task and cleans temporary container files created by it. Existing containers and data are preserved; interrupted packages may need repair.',
+    stopTaskConfirm: 'Confirm stop',
     proxyHint: 'Enter IP:port (e.g. 192.168.1.10:7890); direct mode clears tool proxy variables.',
     proxyMode: 'Proxy mode', proxyModeHint: 'Network routing policy', manualProxyAddress: 'Proxy address',
     proxyConnected: 'Connected', proxyDisconnected: 'Not connected', proxyDetecting: 'Detecting proxy…',
@@ -2731,6 +2868,16 @@ const UI_TEXT = {
     taskRebooted: 'The device restarted before this task reported an exit result.',
     historyCleared: 'Task history cleared', historyNothingToClear: 'No completed logs to clear', logHistoryLoading: 'Reading log history…',
     factoryReset: 'Factory reset environment', factoryResetTitle: 'Restore the clean Agent environment from the module',
+    containerTransferTitle: 'Container export and import', containerTransferSubtitle: 'Back up the full Ubuntu container or restore a backup',
+    containerTransferHint: 'Export saves the current container, including installed packages, Agents, container settings and secrets, to Download. Import replaces the current container; remove it first.',
+    containerExportAction: 'Export current container to Download', containerImportLabel: 'Container backup path in Download', containerImportAction: 'Import container backup',
+    containerRemoveTitle: 'Delete current container', containerRemoveSubtitle: 'Remove Ubuntu rootfs only; keep the AnCLI module',
+    containerRemoveHint: 'Deletes container apps, settings, secrets, global memory and incomplete install checkpoints. The module and its proxy, language and mirror settings remain. Exit all Agents and container terminals first.',
+    containerRemoveAction: 'Delete current container', containerRemoveWarning: 'This permanently deletes the complete Ubuntu rootfs, including installed Agents, packages, settings, secrets and memory files. The AnCLI module and its settings remain. Exit running Agents first. This cannot be undone.',
+    containerRemoveConfirmLabel: 'Type DELETE CONTAINER to confirm', containerRemoveInvalid: 'Type DELETE CONTAINER to continue',
+    containerRemoveStarting: 'Deleting Ubuntu container…', containerRemoveDone: 'Container deleted; AnCLI module and module settings remain', containerRemoveFailed: 'Container deletion failed; see the task log',
+    containerExportStarting: 'Compressing and exporting container to Download…', containerExportDone: 'Container backup saved to Download', containerExportFailed: 'Container export failed; see the task log',
+    containerImportStarting: 'Verifying and importing container backup…', containerImportDone: 'Container backup imported', containerImportFailed: 'Container import failed; see the task log',
      factoryResetHint: 'Delete installed apps, secrets, config, skills, memory and logs while keeping the Ubuntu container, profile and module payload. Reinstall tools after the reset.',
      factoryResetWarning: 'This cannot be undone. It deletes container apps, secrets, config, skills, Agent memory and all old logs; the Ubuntu container, profile and AnCLI module files remain.',
      containerProfile: 'Container profile', containerInstall: 'Container status', containerInstallAction: 'Install / apply profile', containerInstallStarting: 'Installing or applying the container profile…', containerInstallFailed: 'Container installation failed; see the output log',
@@ -2793,7 +2940,11 @@ function applyLanguage(lang) {
   renderContainerProfileOptions();
   // 2026-11-16：语言切换时同步首页更新提示，避免徽章继续显示旧语言。
   syncModuleUpdateIndicatorText();
-  if (lastProxyCheck) updateMainProxyBadge(lastProxyCheck.proxyUrl, lastProxyCheck.mode, lastProxyCheck.vpn, lastProxyCheck.proxyUrl ? lastProxyCheck.proxyOk : null);
+  const logNode = document.getElementById('log');
+  if (logNode && logNode.dataset) logNode.dataset.empty = uiLang === 'en' ? 'Waiting for action…' : '等待操作…';
+  if (typeof updateLogCount === 'function') updateLogCount();
+  if (typeof lastVpnStatus !== 'undefined' && lastVpnStatus && typeof updateVpnStatus === 'function') updateVpnStatus(lastVpnStatus);
+  if (typeof lastProxyCheck !== 'undefined' && lastProxyCheck) updateMainProxyBadge(lastProxyCheck.proxyUrl, lastProxyCheck.mode, lastProxyCheck.vpn, lastProxyCheck.proxyUrl ? lastProxyCheck.proxyOk : null);
   else if (latestStatus) updateMainProxyBadge(latestStatus.detected_proxy || '', latestStatus.proxy_mode || 'system', null);
   else {
     const headerBadge = document.getElementById('mainProxyBadge');
@@ -2887,9 +3038,15 @@ function buildContainerInitCardHtml() {
         '<input type="text" id="initProxyUrl" placeholder="http://127.0.0.1:7890" value="' + esc(latestStatus.proxy_url || '') + '" />' +
       '</div>' +
     '</div>' +
-    '<div style="display: flex; gap: 8px; margin-top: 10px;">' +
+    '<div style="display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap;">' +
       '<button type="button" class="btn primary" id="btnInitInstall" style="flex: 1;">' + (uiLang === 'en' ? 'Install Container' : '立即安装容器') + '</button>' +
       '<button type="button" class="btn" id="btnInitSettings">' + (uiLang === 'en' ? 'Settings' : '详细设置') + '</button>' +
+    '</div>' +
+    '<div class="field" style="margin-top: 12px;">' +
+      '<label for="initOfflineBundlePath">' + (uiLang === 'en' ? 'Offline container import' : '离线容器导入') + '</label>' +
+      '<input type="text" id="initOfflineBundlePath" autocomplete="off" spellcheck="false" value="/sdcard/Download/AnCLI-Ubuntu-24.04-ARM64-Full-Development-Environment-v1.2.651-Offline-Import.zip" placeholder="/sdcard/Download/AnCLI-Ubuntu-24.04-ARM64-Full-Development-Environment-v1.2.651-Offline-Import.zip" />' +
+      '<small class="hint">' + (uiLang === 'en' ? 'Copy the downloaded import ZIP to Download, then enter its Android storage path. It contains the Ubuntu 24.04 arm64 full profile only; no Agent apps or configured global memory.' : '将下载的导入 ZIP 放到 Download，再填写其安卓存储路径。包内只有 Ubuntu 24.04 arm64 完整规格，不含 Agent 应用或已配置的全局记忆。') + '</small>' +
+      '<button type="button" class="btn" id="btnInitImport" style="width: 100%; margin-top: 8px;">' + (uiLang === 'en' ? 'Import offline container' : '导入离线容器包') + '</button>' +
     '</div>' +
   '</div>';
 }
@@ -2926,16 +3083,38 @@ function wireContainerInitCard() {
   if (btnInst) {
     btnInst.onclick = async () => {
       if (btnInst.disabled) return;
+      let initProxyValue = '';
+      if (selNet && selNet.value === 'manual') {
+        const rawProxy = proxyInput ? proxyInput.value.trim() : '';
+        if (!rawProxy) {
+          toast(uiText('invalidProxy'), 'err');
+          return;
+        }
+        let normalized = rawProxy;
+        if (!/^[a-zA-Z]+:\/\//.test(normalized)) {
+          normalized = 'http://' + normalized;
+        }
+        try {
+          const u = new URL(normalized);
+          if (!['http:', 'https:'].includes(u.protocol) || !u.hostname || !u.port || isNaN(Number(u.port)) || Number(u.port) < 1 || Number(u.port) > 65535) {
+            throw new Error('invalid');
+          }
+          initProxyValue = normalized;
+        } catch (e) {
+          toast(uiText('invalidProxy'), 'err');
+          return;
+        }
+      }
       const originalText = btnInst.textContent;
       btnInst.disabled = true;
       btnInst.textContent = uiLang === 'en' ? 'Preparing…' : '正在准备…';
       document.getElementById('taskConsole')?.scrollIntoView({ behavior: 'smooth', block: 'end' });
       try {
-        if (selNet && selNet.value === 'manual' && proxyInput && proxyInput.value.trim()) {
-          await ancli('config --set proxy_mode=manual --set proxy_url=' + encodeURIComponent(proxyInput.value.trim()));
+        if (selNet && selNet.value === 'manual') {
+          await ancli('config --set proxy_mode=manual --set proxy_url=' + encodeURIComponent(initProxyValue));
         }
         if (selProf && selNet) {
-          await ancli('container set --profile=' + selProf.value + ' --network=' + selNet.value + ' --mirror=' + (selMirror ? selMirror.value : 'tuna'), true);
+          await ancli('container set --profile=' + selProf.value + ' --network=' + selNet.value + ' --mirror=' + (selMirror ? selMirror.value : 'tuna') + ' --proxy-url=' + encodeURIComponent(initProxyValue), true);
         }
       } catch (e) {
         toast(uiLang === 'en' ? 'Could not save container settings; see output.' : '容器设置保存失败，请查看输出。', 'err');
@@ -2950,6 +3129,9 @@ function wireContainerInitCard() {
   }
   const btnSet = document.getElementById('btnInitSettings');
   if (btnSet) btnSet.onclick = openSettings;
+  const btnImport = document.getElementById('btnInitImport');
+  const bundleInput = document.getElementById('initOfflineBundlePath');
+  if (btnImport) btnImport.onclick = () => void importContainerFromUi(bundleInput?.value || '');
 }
 
 function formatCount(count) { return uiLang === 'en' ? String(count) : count + ' 个'; }
@@ -2964,7 +3146,7 @@ function renderApps(apps) {
   if (isDeferred) {
     let out = buildContainerInitCardHtml();
     if (apps && apps.length > 0) {
-      out += '<div style="margin: 16px 4px 8px; font-weight: 600; font-size: 13px; color: var(--text-dim);">' +
+      out += '<div style="margin: 16px 4px 8px; font-weight: 600; font-size: 13px; color: var(--muted);">' +
         (uiLang === 'en' ? 'Available Tools in Catalog (Container required)' : '可选工具目录（需先安装容器）') + '</div>';
       out += apps.map(a => {
         const chips = ['<span class="chip warn"><span class="dot"></span>' + (uiLang === 'en' ? 'Container required' : '待安装容器') + '</span>'];
@@ -3072,7 +3254,7 @@ function renderApps(apps) {
              '</div>' +
              '<div class="app-actions">' + btns.join('') + '</div>' +
              '<div class="app-task" data-task-slot="app:' + esc(a.id) + '"></div>' +
-             ((a.installed || Array.from(taskTabs.values()).some(task => task.scope === a.id)) ? '<div class="app-log-wrap"><button class="app-log-toggle" data-act="toggle-log" aria-expanded="false" data-log-id="' + esc(a.id) + '">' + esc(logToggleText(false)) + '</button><pre class="app-log" id="app-log-' + esc(a.id) + '" hidden></pre></div>' : '') +
+             ((Array.from(taskTabs.values()).some(task => task.scope === a.id)) ? '<div class="app-log-wrap"><button class="app-log-toggle" data-act="toggle-log" aria-expanded="false" data-log-id="' + esc(a.id) + '">' + esc(logToggleText(false)) + '</button><pre class="app-log" id="app-log-' + esc(a.id) + '" hidden></pre></div>' : '') +
            '</div>';
   }).join('');
   for (const id of expandedAppLogs) revealAppLog(id);
@@ -3096,10 +3278,11 @@ async function toggleAppLog(id, button) {
   if (open) return;
   const tasks = Array.from(taskTabs.values()).filter(task => task.scope === id);
   const task = tasks[tasks.length - 1];
-  if (!task) { pane.textContent = uiLang === 'en' ? 'No task log' : '暂无任务日志'; return; }
+  if (!task) { pane.textContent = uiText('historyEmpty'); return; }
   try {
     const r = await execCmd('cat ' + shQuote(task.logFile) + ' 2>/dev/null');
-    pane.textContent = strip(r.stdout || '');
+    const text = strip(r.stdout || '').trim();
+    pane.textContent = text || (taskUnresolved(task) ? '' : uiText('historyEmpty'));
     pane.scrollTop = pane.scrollHeight;
   } catch (e) { pane.textContent = String(e); }
 }
@@ -3113,8 +3296,8 @@ async function doInstall(id) {
   if (id === 'codex-cli' && !(await confirmCodexSandboxNotice())) return;
   const app = currentApps.find(a => a.id === id) || { name: id };
   // 2026-11-16：安装按钮直接启动后台任务，避免移动端出现二次确认界面。
-  toast('开始安装 ' + app.name + '，日志已打开');
-  const release = setBusy(true, '开始安装 ' + app.name);
+  toast(uiLang === 'en' ? 'Installing ' + app.name + '; log opened' : '开始安装 ' + app.name + '，日志已打开');
+  const release = setBusy(true, (uiLang === 'en' ? 'Installing ' : '开始安装 ') + app.name);
   let task;
   try { task = await runBackground(ANCLI + ' install ' + id, await proxyDownloadNote(app)); }
   finally {
@@ -3122,8 +3305,8 @@ async function doInstall(id) {
     release();
     await loadApps();
     await loadStatus();
-    if (task && task.status === 'done') toast(app.name + ' 安装完成');
-    else if (task && task.status === 'failed') toast(app.name + ' 安装失败，请查看日志', 'err');
+    if (task && task.status === 'done') toast(app.name + (uiLang === 'en' ? ' installed' : ' 安装完成'));
+    else if (task && task.status === 'failed') toast(app.name + (uiLang === 'en' ? ' installation failed; check log' : ' 安装失败，请查看日志'), 'err');
   }
 }
 
@@ -3139,12 +3322,18 @@ function confirmCodexSandboxNotice() {
       document.body.style.overflow = '';
       cancel.removeEventListener('click', onCancel);
       proceed.removeEventListener('click', onProceed);
+      overlay.removeEventListener('click', onBackdrop);
+      document.removeEventListener('keydown', onKeydown);
       resolve(value);
     };
     const onCancel = () => finish(false);
     const onProceed = () => finish(true);
+    const onBackdrop = e => { if (e.target === overlay) finish(false); };
+    const onKeydown = e => { if (e.key === 'Escape' && overlay.classList.contains('show')) finish(false); };
     cancel.addEventListener('click', onCancel);
     proceed.addEventListener('click', onProceed);
+    overlay.addEventListener('click', onBackdrop);
+    document.addEventListener('keydown', onKeydown);
     overlay.classList.add('show');
     overlay.setAttribute('aria-hidden', 'false');
     document.body.style.overflow = 'hidden';
@@ -3215,8 +3404,8 @@ async function doUpdate(id) {
     release();
     await loadApps();
     await loadStatus();
-    if (updateTask && updateTask.status === 'done') toast(app.name + ' 更新完成');
-    else if (updateTask && updateTask.status === 'failed') toast(app.name + ' 更新失败，请查看日志', 'err');
+    if (updateTask && updateTask.status === 'done') toast(app.name + (uiLang === 'en' ? ' updated' : ' 更新完成'));
+    else if (updateTask && updateTask.status === 'failed') toast(app.name + (uiLang === 'en' ? ' update failed; check log' : ' 更新失败，请查看日志'), 'err');
   }
 }
 
@@ -3236,6 +3425,7 @@ function promptUninstall(id) {
     : '确定要从容器中卸载 <b>' + esc(app.name) + '</b> 吗？';
   overlay.classList.add('show');
   overlay.setAttribute('aria-hidden', 'false');
+  document.body.style.overflow = 'hidden';
 }
 
 function closeUninstallAppPrompt() {
@@ -3243,52 +3433,53 @@ function closeUninstallAppPrompt() {
   const overlay = document.getElementById('uninstallAppOverlay');
   overlay.classList.remove('show');
   overlay.setAttribute('aria-hidden', 'true');
+  document.body.style.overflow = '';
 }
 
 async function doUninstall(id) {
   if (busy > 0) return;
   const app = currentApps.find(a => a.id === id) || { name: id };
-  const release = setBusy(true, '开始卸载 ' + app.name);
+  const release = setBusy(true, (uiLang === 'en' ? 'Uninstalling ' : '开始卸载 ') + app.name);
   let task;
-  try { task = await runBackground(ANCLI + ' uninstall ' + id, '卸载任务已开始，日志已打开'); }
+  try { task = await runBackground(ANCLI + ' uninstall ' + id, uiLang === 'en' ? 'Uninstall task started; log opened' : '卸载任务已开始，日志已打开'); }
   catch (e) { /* 已在输出面板记录 */ }
   finally {
     await trimTaskLogs();
     release();
     await loadApps();
     await loadStatus();
-    if (task && task.status === 'done') toast(app.name + ' 卸载完成');
-    else if (task && task.status === 'failed') toast(app.name + ' 卸载失败，请查看日志', 'err');
+    if (task && task.status === 'done') toast(app.name + (uiLang === 'en' ? ' uninstalled' : ' 卸载完成'));
+    else if (task && task.status === 'failed') toast(app.name + (uiLang === 'en' ? ' uninstall failed; check log' : ' 卸载失败，请查看日志'), 'err');
   }
 }
 
 async function doLaunch(id) {
   const app = currentApps.find(a => a.id === id);
   if (!app || !app.launch || app.launch.mode !== 'web' || !app.launch.command) {
-    toast('该工具需要在终端中启动', 'err');
+    toast(uiLang === 'en' ? 'This tool must be launched from a terminal' : '该工具需要在终端中启动', 'err');
     return;
   }
-  const release = setBusy(true, '启动 ' + app.name + '…');
+  const release = setBusy(true, (uiLang === 'en' ? 'Starting ' : '启动 ') + app.name + '…');
   try {
     let url = '';
     if (id === 'dsh') {
       if (await dshPortInUse()) {
         url = await dshUrlFromLog();
-        if (!url) throw new Error('3080 已被已有 dsh 服务占用，但没有找到上次的 token URL。请先在终端结束旧的 dsh web，再重试。');
-        logLine('检测到已有 dsh web 服务，复用现有实例。', 'dim');
+        if (!url) throw new Error(uiLang === 'en' ? 'Port 3080 is in use by dsh without a saved token URL. Stop the old dsh web instance in terminal and retry.' : '3080 已被已有 dsh 服务占用，但没有找到上次的 token URL。请先在终端结束旧的 dsh web，再重试。');
+        logLine(uiLang === 'en' ? 'Detected running dsh web service; reusing existing instance.' : '检测到已有 dsh web 服务，复用现有实例。', 'dim');
       } else {
         const logFile = await runDetached(app.launch.command);
         url = await waitForDshUrl(logFile, 15000);
-        if (!url) throw new Error('dsh 服务启动超时，请查看 ' + logFile);
+        if (!url) throw new Error((uiLang === 'en' ? 'dsh startup timed out; check ' : 'dsh 服务启动超时，请查看 ') + logFile);
       }
       await openAndroidUrl(url);
-      toast('dsh Web UI 已打开');
+      toast(uiLang === 'en' ? 'dsh Web UI opened' : 'dsh Web UI 已打开');
     } else {
       await runDetached(app.launch.command);
-      toast((app.launch.label || '启动') + '已请求');
+      toast((app.launch.label || (uiLang === 'en' ? 'Launch' : '启动')) + (uiLang === 'en' ? ' requested' : '已请求'));
     }
   } catch (e) {
-    toast('启动失败，见输出', 'err');
+    toast(uiLang === 'en' ? 'Launch failed; see output' : '启动失败，见输出', 'err');
     logLine(String(e), 'err');
   } finally {
     release();
@@ -3314,13 +3505,13 @@ async function doDshBackendAction(action) {
   dshBackendState = starting ? 'starting' : 'stopping';
   dshBackendUrl = '';
   renderApps(currentApps);
-  logLine((starting ? '启动' : '停止') + ' DSH 后端…', 'dim');
+  logLine(uiLang === 'en' ? ((starting ? 'Starting' : 'Stopping') + ' DSH backend…') : ((starting ? '启动' : '停止') + ' DSH 后端…'), 'dim');
   try {
     if (action === 'stop' || action === 'restart') await stopDshBackend();
     if (action === 'stop') {
       dshBackendState = 'stopped';
       dshBackendUrl = '';
-      logLine('✓ DSH 后端已停止', 'ok');
+      logLine(uiLang === 'en' ? '✓ DSH backend stopped' : '✓ DSH 后端已停止', 'ok');
       toast(uiLang === 'en' ? 'DSH backend stopped' : 'DSH 后端已停止');
       return;
     }
@@ -3337,7 +3528,7 @@ async function doDshBackendAction(action) {
     logLine(String(e), 'err');
     if (action === 'stop' && dshBackendState === 'stopped') {
       toast(uiLang === 'en' ? 'DSH process stopped; cleanup needs attention' : 'DSH 进程已停止，但清理步骤未完成，请查看输出', 'err');
-    } else if (action === 'stop' && String(e).includes('仍在后台执行')) {
+    } else if (action === 'stop' && (e?.dshStopPending || String(e).includes('仍在后台执行'))) {
       toast(uiLang === 'en' ? 'DSH backend is still stopping in the background' : 'DSH 后端仍在后台停止，页面可继续操作');
     } else {
       toast(uiLang === 'en' ? 'DSH backend action failed; see output' : 'DSH 后端操作失败，请查看输出', 'err');
@@ -3352,24 +3543,37 @@ async function copyCommand(id) {
   if (!app || !app.executable) return;
   const command = app.executable;
   try {
-    await navigator.clipboard.writeText(command);
-    toast('已复制「' + command + '」，请在 su 终端中执行');
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      await navigator.clipboard.writeText(command);
+    } else {
+      const ta = document.createElement('textarea');
+      ta.value = command;
+      ta.setAttribute('readonly', '');
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      const copied = document.execCommand('copy');
+      ta.remove();
+      if (!copied) throw new Error('execCommand copy failed');
+    }
+    toast(uiLang === 'en' ? 'Copied "' + command + '"; run it in an su terminal' : '已复制「' + command + '」，请在 su 终端中执行');
   } catch (e) {
-    logLine('复制失败，请手动执行：' + command, 'err');
-    toast('复制失败，命令已写入输出面板', 'err');
+    logLine((uiLang === 'en' ? 'Copy failed; run manually: ' : '复制失败，请手动执行：') + command, 'err');
+    toast(uiLang === 'en' ? 'Copy failed; command written to output panel' : '复制失败，命令已写入输出面板', 'err');
   }
 }
 
 async function doCheck() {
   if (busy > 0) return;
-  if (!supportsCheck) { toast('当前模块版本不支持版本检查，请先更新 AnCLI 模块', 'err'); return; }
+  if (!supportsCheck) { toast(uiLang === 'en' ? 'This module version does not support update checks; update AnCLI first' : '当前模块版本不支持版本检查，请先更新 AnCLI 模块', 'err'); return; }
   manualCheckRequested = true;
-  const release = setBusy(true, '查询官方最新版本…');
+  const release = setBusy(true, uiLang === 'en' ? 'Checking official latest versions…' : '查询官方最新版本…');
   try {
     const task = await runBackground(ANCLI + ' check', '', { timeoutMs: 120000 });
-    if (task.status === 'failed') toast('版本查询失败，请查看日志', 'err');
+    if (task.status === 'failed') toast(uiLang === 'en' ? 'Version check failed; check log' : '版本查询失败，请查看日志', 'err');
   } catch (e) {
-    toast('版本查询失败，请检查网络或代理配置', 'err');
+    toast(uiLang === 'en' ? 'Version check failed; check network or proxy settings' : '版本查询失败，请检查网络或代理配置', 'err');
   } finally {
     await trimTaskLogs();
     release();
@@ -3384,17 +3588,19 @@ function promptRepair() {
   const overlay = document.getElementById('repairOverlay');
   overlay.classList.add('show');
   overlay.setAttribute('aria-hidden', 'false');
+  document.body.style.overflow = 'hidden';
 }
 
 function closeRepairPrompt() {
   const overlay = document.getElementById('repairOverlay');
   overlay.classList.remove('show');
   overlay.setAttribute('aria-hidden', 'true');
+  document.body.style.overflow = '';
 }
 
 async function doRepair() {
   if (busy > 0) return;
-  const release = setBusy(true, '修复环境中…');
+  const release = setBusy(true, uiLang === 'en' ? 'Repairing environment…' : '修复环境中…');
   let task;
   try { task = await runBackground(ANCLI + ' repair'); }
   finally {
@@ -3402,8 +3608,8 @@ async function doRepair() {
     release();
     await loadStatus();
     await loadApps();
-    if (task && task.status === 'done') toast('环境修复完成');
-    else if (task && task.status === 'failed') toast('环境修复失败，请查看日志', 'err');
+    if (task && task.status === 'done') toast(uiLang === 'en' ? 'Environment repair complete' : '环境修复完成');
+    else if (task && task.status === 'failed') toast(uiLang === 'en' ? 'Environment repair failed; check log' : '环境修复失败，请查看日志', 'err');
   }
 }
 
@@ -3456,6 +3662,10 @@ const VAR_HINTS = {
   ANTHROPIC_AUTH_TOKEN: 'Claude 兼容密钥（Kimi / OpenRouter 专用；填此项时 ANTHROPIC_API_KEY 留空）',
   ANTHROPIC_BASE_URL: 'Claude 兼容 API 地址（选择服务商后自动填充）',
   ANTHROPIC_MODEL: 'claude 默认模型名',
+  OPENAI_API_KEY: 'OpenAI / Codex API 密钥',
+  OPENAI_BASE_URL: 'OpenAI 兼容 API 地址（可选，默认使用官方端点）',
+  DEEPSEEK_API_KEY: 'DeepSeek API 密钥',
+  DEEPSEEK_BASE_URL: 'DeepSeek API 地址（可选，默认使用官方端点）',
   HTTP_PROXY: 'HTTP 代理地址（如 http://192.168.1.5:7890）',
   HTTPS_PROXY: 'HTTPS 代理地址',
   ALL_PROXY: '全协议代理地址',
@@ -3503,18 +3713,20 @@ function renderCfgFields(app) {
   const vars = (app.required_env_vars || []).concat(app.optional_env_vars || []);
   const wrap = document.getElementById('cfgFields');
 
+  const configuredKeys = app.configured_keys || [];
   const fieldHtml = v => {
     const required = (app.required_env_vars || []).includes(v);
+    const configured = configuredKeys.includes(v);
     const isModel = MODEL_FIELDS.includes(v);
     const isCompatKey = COMPAT_KEYS.includes(v);
 
     let label = v;
-    let placeholder = VAR_HINTS[v] || '可选的 API 密钥 / 地址 / 配置项';
+    let placeholder = VAR_HINTS[v] || (uiLang === 'en' ? 'Optional API key / URL / setting' : '可选的 API 密钥 / 地址 / 配置项');
     let hint = VAR_HINTS[v] || '';
     if (selectedProvider && isCompatKey) {
-      label = selectedProvider.name + ' API 密钥';
-      placeholder = '申请密钥: ' + selectedProvider.keyUrl;
-      hint = '填入 ' + selectedProvider.name + ' 的 API 密钥';
+      label = selectedProvider.name + (uiLang === 'en' ? ' API Key' : ' API 密钥');
+      placeholder = (uiLang === 'en' ? 'Get key: ' : '申请密钥: ') + selectedProvider.keyUrl;
+      hint = uiLang === 'en' ? 'Enter ' + selectedProvider.name + ' API key' : '填入 ' + selectedProvider.name + ' 的 API 密钥';
     }
 
     let field;
@@ -3523,7 +3735,7 @@ function renderCfgFields(app) {
       const cur = vals[v] || models[0] || '';
       field = '<select data-var="' + esc(v) + '">' +
         models.map(m => '<option' + (m === cur ? ' selected' : '') + '>' + esc(m) + '</option>').join('') +
-        '<option value="__custom__"' + (models.indexOf(cur) < 0 ? ' selected' : '') + '>自定义…</option></select>';
+        '<option value="__custom__"' + (models.indexOf(cur) < 0 ? ' selected' : '') + '>' + (uiLang === 'en' ? 'Custom…' : '自定义…') + '</option></select>';
     } else if (selectedProvider && BASE_FIELDS.includes(v)) {
       field = '<input data-var="' + esc(v) + '" autocomplete="off" spellcheck="false" value="' +
               esc(selectedProvider.anthropicBase || selectedProvider.base) + '">';
@@ -3535,8 +3747,13 @@ function renderCfgFields(app) {
     // A hint that merely repeats the placeholder is noise: the placeholder already
     // shows inside the empty field.
     const hintHtml = (hint && hint !== placeholder) ? '<div class="hint">' + esc(hint) + '</div>' : '';
+    const clearBtn = (!required && configured)
+      ? ' <button type="button" class="btn xs quiet danger" data-clear-var="' + esc(v) + '" style="padding:2px 6px; font-size:11px; margin-left:6px;">' + (uiLang === 'en' ? 'Clear' : '清空') + '</button>'
+      : '';
     return '<div class="field"><label>' + esc(label) +
-           (required ? '<span class="tag">必填</span>' : '') + '</label>' + field + hintHtml + '</div>';
+           (required ? '<span class="tag">' + (uiLang === 'en' ? 'Required' : '必填') + '</span>' : '') +
+           (configured ? '<span class="tag">' + (uiLang === 'en' ? 'Configured' : '已配置') + '</span>' : '') +
+           clearBtn + '</label>' + field + hintHtml + '</div>';
   };
 
   // Proxy plumbing is rarely the reason someone opens this dialog: keep it folded.
@@ -3545,7 +3762,7 @@ function renderCfgFields(app) {
   const advanced = vars.filter(v => ADVANCED.includes(v));
   wrap.innerHTML = primary.map(fieldHtml).join('') +
     (advanced.length
-      ? '<details class="adv"><summary>高级 · 代理设置（' + advanced.length + '）</summary>' +
+      ? '<details class="adv"><summary>' + (uiLang === 'en' ? 'Advanced · Proxy (' : '高级 · 代理设置（') + advanced.length + (uiLang === 'en' ? ')' : '）') + '</summary>' +
         advanced.map(fieldHtml).join('') + '</details>'
       : '');
 
@@ -3553,8 +3770,29 @@ function renderCfgFields(app) {
     sel.addEventListener('change', () => {
       if (sel.value === '__custom__') {
         const v = sel.dataset.var;
-        sel.outerHTML = '<input data-var="' + esc(v) + '" autocomplete="off" spellcheck="false" placeholder="输入模型名，如 deepseek-v4-flash">';
+        sel.outerHTML = '<input data-var="' + esc(v) + '" autocomplete="off" spellcheck="false" placeholder="' + (uiLang === 'en' ? 'Enter model name' : '输入模型名，如 deepseek-v4-flash') + '">';
       }
+    });
+  });
+  wrap.querySelectorAll('[data-clear-var]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const varName = btn.dataset.clearVar;
+      const input = Array.from(wrap.querySelectorAll('input, select')).find(el => el.dataset.var === varName);
+      if (!input) return;
+      const next = input.dataset.cleared !== '1';
+      input.dataset.cleared = next ? '1' : '';
+      if (next) {
+        input.value = '';
+        if ('placeholder' in input) input.placeholder = uiLang === 'en' ? 'Will be cleared on save' : '保存时将清空此项';
+      } else {
+        if ('placeholder' in input) input.placeholder = VAR_HINTS[varName] || '';
+      }
+      btn.textContent = next ? (uiLang === 'en' ? 'Undo clear' : '取消清空') : (uiLang === 'en' ? 'Clear' : '清空');
+    });
+  });
+  wrap.querySelectorAll('input').forEach(inp => {
+    inp.addEventListener('input', () => {
+      if (inp.value.trim()) inp.dataset.cleared = '';
     });
   });
 }
@@ -3563,12 +3801,12 @@ function openConfig(id) {
   const app = currentApps.find(a => a.id === id);
   if (!app) return;
   const vars = (app.required_env_vars || []).concat(app.optional_env_vars || []);
-  if (!vars.length) { toast('该工具没有可配置的环境变量'); return; }
+  if (!vars.length) { toast(uiLang === 'en' ? 'No configurable environment variables for this tool' : '该工具没有可配置的环境变量'); return; }
   const btn = document.getElementById('cfgSave');
   if (btn) btn.disabled = false;
   cfgApp = app;
   selectedProvider = null;
-  document.getElementById('cfgTitle').textContent = '配置 ' + app.name;
+  document.getElementById('cfgTitle').textContent = (uiLang === 'en' ? 'Configure ' : '配置 ') + app.name;
   document.getElementById('cfgFields').innerHTML = '';
   document.getElementById('presetNote').textContent = '';
   buildPresetBar(app);
@@ -3594,19 +3832,20 @@ async function saveConfig() {
   document.querySelectorAll('#cfgFields input, #cfgFields select').forEach(el => {
     const v = el.value.trim();
     if (v && v !== '__custom__') sets.push('--set ' + encodeURIComponent(el.dataset.var) + '=' + encodeURIComponent(v));
+    else if (el.dataset && el.dataset.cleared === '1') sets.push('--set ' + encodeURIComponent(el.dataset.var) + '=');
   });
   const id = cfgApp.id;
   closeConfig();
   if (!sets.length) {
     if (btn) btn.disabled = false;
-    toast('没有填写任何内容，未做修改');
+    toast(uiLang === 'en' ? 'Nothing entered; no changes made' : '没有填写任何内容，未做修改');
     return;
   }
-  const release = setBusy(true, '写入配置…');
+  const release = setBusy(true, uiLang === 'en' ? 'Saving configuration…' : '写入配置…');
   try {
     await ancli('config ' + id + ' ' + sets.join(' '));
-    toast('配置已保存');
-  } catch (e) { toast('配置保存失败，见输出', 'err'); }
+    toast(uiLang === 'en' ? 'Configuration saved' : '配置已保存');
+  } catch (e) { toast(uiLang === 'en' ? 'Failed to save configuration; see output' : '配置保存失败，见输出', 'err'); }
   finally {
     if (btn) btn.disabled = false;
     release();
@@ -3634,7 +3873,8 @@ function switchSettingsTab(tabName) {
   }
   // Merely changing tabs never launches a network command. The full probe is
   // explicit on the Proxy screen so it cannot hold up subsequent UI actions.
-  if (tabName === 'proxy') detectProxyOnSettingsOpen();
+  if (tabName === 'proxy') { detectProxyOnSettingsOpen(); void refreshVpnStatus(); }
+  else if (tabName === 'logs') { void refreshLogHistory(); }
 }
 
 function updateProxyInputVisibility() {
@@ -3661,7 +3901,7 @@ function setSettingsStatus(cfg, runtime) {
     dataChannel.textContent = mounted ? uiText('ready') : uiText('notMounted');
     dataChannel.style.color = mounted ? 'var(--ok)' : 'var(--warn)';
   }
-  if (effectiveCwd) effectiveCwd.textContent = (cfg && cfg.effective_cwd) || '/root';
+  if (effectiveCwd) effectiveCwd.textContent = (cfg && cfg.effective_cwd) || '/root/.ancli-work';
 
   let currentProxy = '';
   const mode = (cfg && cfg.proxy_mode) || 'system';
@@ -3803,6 +4043,102 @@ async function installContainerFromUi(requestedProfile, requestedMirror) {
   }
 }
 
+async function importContainerFromUi(bundlePath) {
+  if (busy > 0) return;
+  const path = String(bundlePath || '').trim();
+  if (!(/^\/sdcard\//.test(path) || /^\/storage\/emulated\/0\//.test(path) || /^\/data\/local\/tmp\//.test(path))) {
+    toast(uiLang === 'en' ? 'Choose a package path under Download or /data/local/tmp.' : '请输入 Download 或 /data/local/tmp 下的离线包路径。', 'err');
+    return;
+  }
+  const release = setBusy(true, uiText('containerImportStarting'));
+  const outputPanel = document.getElementById('taskConsole');
+  if (outputPanel) outputPanel.scrollIntoView({ behavior: 'smooth', block: 'end' });
+  let task;
+  try {
+    task = await runBackground(ANCLI + ' container import --bundle=' + encodeURIComponent(path), uiText('containerImportStarting'), { timeoutMs: 3600000 });
+    if (outputPanel) outputPanel.scrollIntoView({ behavior: 'smooth', block: 'end' });
+    const result = await loadContainerSettings();
+    await loadStatus();
+    await loadApps();
+    const config = result?.config && typeof result.config === 'object' ? result.config : result;
+    if (task && task.status === 'done' && config?.rootfs_ready && config?.rootfs_arch === 'arm64') {
+      toast(uiText('containerImportDone'));
+    } else if (task && task.status === 'failed') {
+      toast(uiText('containerImportFailed'), 'err');
+    }
+  } catch (e) {
+    toast(uiText('containerImportFailed'), 'err');
+  } finally {
+    release();
+  }
+}
+
+async function exportContainerFromUi() {
+  if (busy > 0) return;
+  closeSettings();
+  const release = setBusy(true, uiText('containerExportStarting'));
+  const outputPanel = document.getElementById('taskConsole');
+  if (outputPanel) outputPanel.scrollIntoView({ behavior: 'smooth', block: 'end' });
+  try {
+    const task = await runBackground(ANCLI + ' container export', uiText('containerExportStarting'), { timeoutMs: 3600000 });
+    if (task?.status === 'done') toast(uiText('containerExportDone'));
+    else if (task?.status === 'failed') toast(uiText('containerExportFailed'), 'err');
+    await loadContainerSettings();
+    await loadStatus();
+  } catch (e) {
+    toast(uiText('containerExportFailed'), 'err');
+  } finally {
+    release();
+  }
+}
+
+function openContainerRemove() {
+  if (busy > 0) { toast(uiText('containerRemoveStarting'), 'err'); return; }
+  const input = document.getElementById('containerRemoveConfirm');
+  const btn = document.getElementById('containerRemoveApply');
+  if (input) input.value = '';
+  if (btn) btn.disabled = false;
+  const overlay = document.getElementById('containerRemoveOverlay');
+  overlay.classList.add('show');
+  overlay.setAttribute('aria-hidden', 'false');
+  document.body.style.overflow = 'hidden';
+  if (input) setTimeout(() => input.focus(), 0);
+}
+
+function closeContainerRemove() {
+  const overlay = document.getElementById('containerRemoveOverlay');
+  overlay.classList.remove('show');
+  overlay.setAttribute('aria-hidden', 'true');
+  if (!document.getElementById('setOverlay').classList.contains('show')) document.body.style.overflow = '';
+}
+
+async function removeContainerFromUi() {
+  if (busy > 0) return;
+  const input = document.getElementById('containerRemoveConfirm');
+  const btn = document.getElementById('containerRemoveApply');
+  if (!input || input.value.trim().toUpperCase() !== 'DELETE CONTAINER') {
+    if (btn) btn.disabled = false;
+    toast(uiText('containerRemoveInvalid'), 'err');
+    return;
+  }
+  closeContainerRemove();
+  closeSettings();
+  const release = setBusy(true, uiText('containerRemoveStarting'));
+  try {
+    const task = await runBackground(ANCLI + ' container remove --yes', uiText('containerRemoveStarting'), { timeoutMs: 3600000 });
+    await loadContainerSettings();
+    await loadStatus();
+    await loadApps();
+    if (task?.status === 'done') toast(uiText('containerRemoveDone'));
+    else if (task?.status === 'failed') toast(uiText('containerRemoveFailed'), 'err');
+  } catch (e) {
+    toast(uiText('containerRemoveFailed'), 'err');
+  } finally {
+    if (btn) btn.disabled = false;
+    release();
+  }
+}
+
 async function openSettings() {
   const btn = document.getElementById('setSave');
   if (btn) btn.disabled = false;
@@ -3814,7 +4150,7 @@ async function openSettings() {
   document.getElementById('setLang').value = uiLang;
   document.getElementById('setTheme').value = currentThemeMode();
   updateProxyInputVisibility();
-  setSettingsStatus({ effective_cwd: '/root', proxy_mode: 'system' }, null);
+  setSettingsStatus({ effective_cwd: '/root/.ancli-work', proxy_mode: 'system' }, latestStatus);
   ov.classList.add('show');
   ov.setAttribute('aria-hidden', 'false');
   document.body.style.overflow = 'hidden';
@@ -3840,7 +4176,7 @@ async function refreshSettingsInBackground() {
     document.getElementById('setAgentMemory').value = cfg.agent_memory === 'disabled' ? 'disabled' : 'enabled';
     if (cfg.container_profile) renderContainerProfileOptions(cfg.container_profile);
     if (cfg.update_channel) updateChannelUI(cfg.update_channel);
-    setSettingsStatus(cfg, null);
+    setSettingsStatus(cfg, latestStatus);
   } catch (e) { /* Keep the immediate local defaults if the bridge is busy. */ }
   try { await loadContainerSettings(); } catch (e) { /* Keep fallback */ }
   updateProxyInputVisibility();
@@ -3918,12 +4254,12 @@ async function saveSettings() {
 
   const release = setBusy(true, uiText('savingSettings'));
   try {
-    // 空值 = 恢复内置默认 /root；core 侧会校验绝对路径与目录是否存在
+    // 空值 = 恢复内置默认 /root/.ancli-work；core 侧会校验绝对路径与目录是否存在
     await ancli('config --set default_cwd=' + encodeURIComponent(v) + ' --set lang=' + lang +
       ' --set proxy_mode=' + encodeURIComponent(proxyMode) + ' --set proxy_url=' + encodeURIComponent(proxyValue) +
       ' --set agent_memory=' + encodeURIComponent(agentMemory) + ' --set container_profile=' + encodeURIComponent(containerProfile));
     await ancli('container set --profile=' + containerProfile + ' --network=' + proxyMode + ' --mirror=' + containerMirror +
-      (proxyValue ? ' --proxy-url=' + encodeURIComponent(proxyValue) : ''), true);
+      ' --proxy-url=' + encodeURIComponent(proxyValue), true);
     applyLanguage(lang);
     applyTheme(theme);
     await loadContainerSettings();
@@ -4087,7 +4423,7 @@ document.getElementById('apps').addEventListener('click', e => {
 document.getElementById('btnCheck').onclick = doCheck;
 async function refreshTaskStatus() {
   if (busy > 0) return;
-  const release = setBusy(true, '刷新状态…');
+  const release = setBusy(true, uiLang === 'en' ? 'Refreshing status…' : '刷新状态…');
   try {
     try { await restoreTasks(); }
     catch (e) { toast(uiText('taskUnknown'), 'err'); }
@@ -4103,11 +4439,20 @@ function promptStopTask(id) {
   const task = taskTabs.get(id);
   if (!task || !task.cancellable || !taskUnresolved(task)) return;
   pendingStopTask = id;
-  document.getElementById('stopTaskTitle').textContent = uiLang === 'en' ? 'Force stop installation?' : '强制停止安装？';
-  document.getElementById('stopTaskDescription').textContent = uiLang === 'en' ? 'Stop this task and clean its own temporary container files. Existing container data is preserved; interrupted packages may need repair.' : '将终止当前安装任务，并清理该任务创建的临时容器文件。已有容器和数据会保留；中断的软件包可能需要修复。';
-  const overlay = document.getElementById('stopTaskOverlay'); overlay.classList.add('show'); overlay.setAttribute('aria-hidden','false');
+  document.getElementById('stopTaskTitle').textContent = uiText('stopTaskTitle');
+  document.getElementById('stopTaskDescription').textContent = uiText('stopTaskDesc');
+  const overlay = document.getElementById('stopTaskOverlay');
+  overlay.classList.add('show');
+  overlay.setAttribute('aria-hidden', 'false');
+  document.body.style.overflow = 'hidden';
 }
-function closeStopTask() { pendingStopTask = null; const overlay = document.getElementById('stopTaskOverlay'); overlay.classList.remove('show'); overlay.setAttribute('aria-hidden','true'); }
+function closeStopTask() {
+  pendingStopTask = null;
+  const overlay = document.getElementById('stopTaskOverlay');
+  overlay.classList.remove('show');
+  overlay.setAttribute('aria-hidden', 'true');
+  document.body.style.overflow = '';
+}
 document.getElementById('btnStopTask').onclick = () => promptStopTask(activeTaskId);
 document.getElementById('stopTaskCancel').onclick = closeStopTask;
 document.getElementById('stopTaskConfirm').onclick = async () => {
@@ -4127,8 +4472,8 @@ document.getElementById('stopTaskConfirm').onclick = async () => {
   try {
     const r = await execCmd('/system/bin/sh /data/local/tmp/ancli/task-stop.sh ' + id);
     const message = strip((r.stdout || '') + (r.stderr || '')).trim();
-    if (r.code !== 0) { toast(uiLang === 'en' ? 'Could not safely stop; check log' : '无法安全确认停止，请查看日志', 'err'); logLine(message || '停止命令未能确认任务已结束。', 'err'); }
-    else { toast(uiLang === 'en' ? 'Task stopped' : '安装任务已停止，正在清理'); logLine(message || '停止请求已执行；正在核对任务和临时文件。', 'dim'); }
+    if (r.code !== 0) { toast(uiLang === 'en' ? 'Could not safely stop; check log' : '无法安全确认停止，请查看日志', 'err'); logLine(message || (uiLang === 'en' ? 'Stop command could not confirm the task has ended.' : '停止命令未能确认任务已结束。'), 'err'); }
+    else { toast(uiLang === 'en' ? 'Task stopped' : '安装任务已停止，正在清理'); logLine(message || (uiLang === 'en' ? 'Stop request executed; verifying task and temporary files.' : '停止请求已执行；正在核对任务和临时文件。'), 'dim'); }
     closeStopTask();
     await restoreTasks();
   } catch (e) { toast(uiLang === 'en' ? 'Stop failed' : '停止失败', 'err'); logLine(String(e), 'err'); }
@@ -4183,7 +4528,9 @@ document.querySelectorAll('.settings-tabs .tab-btn').forEach(btn => {
   btn.onclick = () => switchSettingsTab(btn.dataset.tab);
 });
 document.getElementById('setProxyMode').addEventListener('change', updateProxyInputVisibility);
+let lastVpnStatus = null;
 function updateVpnStatus(value) {
+  lastVpnStatus = value;
   const el = document.getElementById('setVpnStatus');
   if (!el) return;
   const labels = uiLang === 'en' ? {connected:'VPN: detected',not_detected:'VPN: not detected in system networks',unknown:'VPN: cannot determine'} : {connected:'VPN：系统检测到已连接',not_detected:'VPN：系统网络中未检测到',unknown:'VPN：无法确定'};
@@ -4195,48 +4542,6 @@ async function refreshVpnStatus() {
     const match = (r.stdout || '').match(/ANCLI_VPN=(connected|not_detected|unknown)/);
     updateVpnStatus(r.code === 0 && match ? match[1] : 'unknown');
   } catch (_) { updateVpnStatus('unknown'); }
-}
-async function measureContainerMirror(initial) {
-  const select = document.getElementById(initial ? 'initContainerMirror' : 'setContainerMirror');
-  const button = document.getElementById(initial ? 'initMirrorSpeed' : 'btnMirrorSpeed');
-  const result = document.getElementById(initial ? 'initMirrorSpeedResult' : 'mirrorSpeedResult');
-  const mode = document.getElementById(initial ? 'initNetworkMode' : 'setProxyMode')?.value || 'system';
-  const proxy = document.getElementById(initial ? 'initProxyUrl' : 'setProxyUrl')?.value.trim() || '';
-  if (!select || !button || !result || !['tuna','ustc','official'].includes(select.value)) return;
-  const limitBytes = 50000000;
-  const metrics = {};
-  const setProgress = bytes => {
-    const safeBytes = Math.max(0, Math.min(limitBytes, Number(bytes) || 0));
-    const pct = safeBytes / limitBytes * 100;
-    result.innerHTML = '<div class="speed-progress"><div class="speed-progress-track"><div class="speed-progress-fill" style="width:' + pct.toFixed(1) + '%"></div></div><span class="speed-progress-label">' + (safeBytes / 1000000).toFixed(1) + ' / 50 MB</span></div><div class="hint" style="margin-top:4px">' + (uiLang === 'en' ? 'Downloading a temporary sample; it will be removed automatically.' : '正在下载临时测速文件，完成后自动删除。') + '</div>';
-  };
-  const originalText = button.textContent;
-  button.disabled = true;
-  button.textContent = uiLang === 'en' ? 'Testing…' : '测速中…';
-  setProgress(0);
-  try {
-    const cmd = ANCLI + ' container speed-test --mirror=' + select.value + ' --network=' + mode + (proxy ? ' --proxy-url=' + encodeURIComponent(proxy) : '');
-    const task = await runBackground(cmd, '', {
-      quiet: true,
-      label: uiLang === 'en' ? 'Mirror speed test' : '容器镜像测速',
-      timeoutMs: 180000,
-      onOutput(chunk) {
-        for (const line of String(chunk || '').split(/\r?\n/)) {
-          let match = line.match(/ANCLI_SPEED_PROGRESS=(\d+)\/(\d+)/);
-          if (match) setProgress(Number(match[1]));
-          match = line.match(/ANCLI_SPEED_(MIRROR|BYTES|SECONDS|BPS)=([^\s]+)/);
-          if (match) metrics[match[1]] = match[2];
-        }
-        return '';
-      }
-    });
-    if (!task || task.status !== 'done' || !metrics.BPS || !metrics.BYTES || !metrics.SECONDS) throw new Error(uiLang === 'en' ? 'Download failed; check network or proxy.' : '测速失败，请检查网络或代理。');
-    result.innerHTML = '<b style="color:var(--ok)">' + (uiLang === 'en' ? 'Download complete' : '测速完成') + '</b><div>' +
-      (uiLang === 'en' ? 'Average: ' : '平均速度：') + (Number(metrics.BPS) / 1000000).toFixed(2) + ' MB/s · ' +
-      (uiLang === 'en' ? 'Sample: ' : '样本：') + (Number(metrics.BYTES) / 1000000).toFixed(2) + ' MB · ' + Number(metrics.SECONDS).toFixed(2) + ' s</div><small>' +
-      (uiLang === 'en' ? 'Temporary file removed.' : '临时测速文件已自动删除。') + '</small>';
-  } catch (e) { result.textContent = String(e.message || e); }
-  finally { button.disabled = false; button.textContent = originalText; }
 }
 const MIRROR_PING_NAMES = () => uiLang === 'en'
   ? { tuna: 'Tsinghua', ustc: 'USTC', official: 'Ubuntu official' }
@@ -4469,6 +4774,22 @@ document.getElementById('setProxyUrl').addEventListener('input', () => {
   }
 });
 document.getElementById('btnFactoryReset').onclick = openReset;
+document.getElementById('btnContainerExport').onclick = () => { void exportContainerFromUi(); };
+document.getElementById('btnContainerImport').onclick = () => {
+  void importContainerFromUi(document.getElementById('settingsImportBundlePath')?.value || '');
+};
+document.getElementById('btnContainerRemove').onclick = openContainerRemove;
+document.getElementById('containerRemoveCancel').onclick = closeContainerRemove;
+document.getElementById('containerRemoveClose').onclick = closeContainerRemove;
+document.getElementById('containerRemoveApply').onclick = () => {
+  if (busy > 0) return;
+  const btn = document.getElementById('containerRemoveApply');
+  if (btn) btn.disabled = true;
+  void removeContainerFromUi();
+};
+document.getElementById('containerRemoveOverlay').addEventListener('click', e => {
+  if (e.target.id === 'containerRemoveOverlay') closeContainerRemove();
+});
 document.getElementById('resetCancel').onclick = closeReset;
 document.getElementById('resetClose').onclick = closeReset;
 document.getElementById('resetApply').onclick = () => {
@@ -4530,13 +4851,9 @@ function updateChannelUI(channel) {
   if (channelChanged) setModuleUpdateIndicator(null);
   const btnStable = document.getElementById('chanStable');
   const btnBeta = document.getElementById('chanBeta');
-  const desc = document.getElementById('channelDesc');
   if (btnStable && btnBeta) {
     btnStable.classList.toggle('active', currentModuleChannel === 'stable');
     btnBeta.classList.toggle('active', currentModuleChannel === 'beta');
-  }
-  if (desc) {
-    desc.textContent = currentModuleChannel === 'beta' ? uiText('channelDescBeta') : uiText('channelDescStable');
   }
 }
 
@@ -4700,16 +5017,21 @@ async function runCheckModuleUpdate() {
       '',
       { timeoutMs: 30000 }
     );
-    if (task.status !== 'done') throw new Error(task.status === 'unknown' ? uiText('taskUnknown') : uiText('aboutCheckFailed'));
-    const raw = (task.output || []).filter(line => line !== '✓ 完成').join('\n');
+    if (task.status === 'unknown') throw new Error(uiText('taskUnknown'));
+    const raw = (task.output || []).filter(line => !/^(?:✓ 完成|✓ Done)$/.test(line) && !/^(?:退出码|Exit code):\s*\d+$/.test(line)).join('\n');
     let data = null;
     try {
       data = JSON.parse(raw.trim());
     } catch (e) {
       const m = raw.match(/\{[\s\S]*\}/);
-      if (m) data = JSON.parse(m[0]);
+      if (m) {
+        try { data = JSON.parse(m[0]); } catch (_) { data = null; }
+      }
     }
-    if (!data) throw new Error('无法解析模块版本响应');
+    if (!data) {
+      if (task.status !== 'done') throw new Error(uiText('aboutCheckFailed'));
+      throw new Error(uiLang === 'en' ? 'Could not parse module version response' : '无法解析模块版本响应');
+    }
 
     resultEl.style.display = 'block';
     if (data.status === 'error') {
@@ -4742,7 +5064,7 @@ async function runCheckModuleUpdate() {
             <div class="module-download-meta"><span id="aboutDownloadMeta">0 B · 0%</span><span>${esc(uiText('aboutDownloadStarting'))}</span></div>
           </div>
           <div class="module-download-message" id="aboutDownloadMessage"></div>
-          <div style="margin-top: 8px; display: flex; align-items: center; gap: 6px;">
+          <div style="margin-top: 8px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
             ${buttonsHtml}
           </div>
         </div>`;
@@ -4825,12 +5147,17 @@ document.getElementById('repairConfirm').onclick = () => {
 document.getElementById('repairOverlay').addEventListener('click', e => {
   if (e.target.id === 'repairOverlay') closeRepairPrompt();
 });
+document.getElementById('stopTaskOverlay').addEventListener('click', e => {
+  if (e.target.id === 'stopTaskOverlay') closeStopTask();
+});
 document.addEventListener('keydown', e => {
   if (e.key !== 'Escape') return;
   if (document.getElementById('welcomeGuideOverlay').classList.contains('show')) closeWelcomeGuide();
+  else if (document.getElementById('stopTaskOverlay').classList.contains('show')) closeStopTask();
   else if (document.getElementById('cfgOverlay').classList.contains('show')) closeConfig();
   else if (document.getElementById('uninstallAppOverlay').classList.contains('show')) closeUninstallAppPrompt();
   else if (document.getElementById('repairOverlay').classList.contains('show')) closeRepairPrompt();
+  else if (document.getElementById('containerRemoveOverlay').classList.contains('show')) closeContainerRemove();
   else if (document.getElementById('resetOverlay').classList.contains('show')) closeReset();
   else if (document.getElementById('uninstallOverlay').classList.contains('show')) closeUninstall();
   else if (document.getElementById('setOverlay').classList.contains('show')) closeSettings();
@@ -4840,7 +5167,7 @@ document.addEventListener('keydown', e => {
 document.getElementById('btnLogClear').onclick = () => {
   logEl().innerHTML = '';
   logLines = 0;
-  document.getElementById('logCount').textContent = '0 行';
+  updateLogCount();
 };
 document.getElementById('btnLogFollow').onclick = e => {
   logFollow = !logFollow;
@@ -4853,16 +5180,22 @@ logEl().addEventListener('scroll', () => {
 });
 document.getElementById('btnLogCopy').onclick = async () => {
   const text = logEl().innerText;
-  if (!text) { toast('输出为空'); return; }
+  if (!text) { toast(uiLang === 'en' ? 'Output is empty' : '输出为空'); return; }
   try {
     if (navigator.clipboard && navigator.clipboard.writeText) await navigator.clipboard.writeText(text);
     else {
       const ta = document.createElement('textarea');
-      ta.value = text; document.body.appendChild(ta); ta.select();
-      document.execCommand('copy'); ta.remove();
+      ta.value = text;
+      ta.setAttribute('readonly', '');
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta); ta.select();
+      const copied = document.execCommand('copy');
+      ta.remove();
+      if (!copied) throw new Error('execCommand copy failed');
     }
-    toast('已复制输出');
-  } catch (e) { toast('复制失败，请长按选择文本', 'err'); }
+    toast(uiLang === 'en' ? 'Output copied' : '已复制输出');
+  } catch (e) { toast(uiLang === 'en' ? 'Copy failed; long-press to select text' : '复制失败，请长按选择文本', 'err'); }
 };
 
 // ---------- 软键盘检测（弹出时关掉模糊，避免卡顿/闪屏） ----------
@@ -4935,6 +5268,7 @@ function closeWelcomeGuide() {
   if (!overlay) return;
   overlay.classList.remove('show');
   overlay.setAttribute('aria-hidden', 'true');
+  document.body.style.overflow = '';
   try { localStorage.setItem('ancli_welcome_guide_v3', 'seen'); } catch (e) { /* storage may be disabled */ }
   try { sessionStorage.setItem('ancli_welcome_guide_v3', 'seen'); } catch (e) { /* storage may be disabled */ }
 }
@@ -4948,7 +5282,10 @@ function maybeShowWelcomeGuide() {
   setWelcomeGuidePage(1);
   overlay.classList.add('show');
   overlay.setAttribute('aria-hidden', 'false');
-  requestAnimationFrame(() => document.getElementById('welcomeGuideDone')?.focus());
+  document.body.style.overflow = 'hidden';
+  if (typeof requestAnimationFrame === 'function') {
+    requestAnimationFrame(() => document.getElementById('welcomeGuideDone')?.focus());
+  }
 }
 document.getElementById('welcomeGuideClose').onclick = closeWelcomeGuide;
 document.getElementById('welcomeGuideDone').onclick = closeWelcomeGuide;

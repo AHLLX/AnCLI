@@ -12,13 +12,31 @@ ok()   { printf "${G}[OK]${NC} %s\n" "$1"; }
 err()  { printf "${R}[X]${NC} %s\n" "$1"; exit 1; }
 info() { printf "${C}>${NC} %s\n" "$1"; }
 
+command -v curl >/dev/null 2>&1 || err "curl is required to install AnCLI"
+
+GH_PROXY_PREFIX=""
+if [ -n "${ANCLI_GH_PROXY:-}" ]; then
+    case "$ANCLI_GH_PROXY" in
+        http://*|https://*) GH_PROXY_PREFIX="${ANCLI_GH_PROXY%/}/" ;;
+        *) err "Invalid ANCLI_GH_PROXY (must start with http:// or https://): $ANCLI_GH_PROXY" ;;
+    esac
+fi
+
 # 1. 从仓库唯一的版本清单 update.json 动态解析最新模块 ZIP URL，
 #    发版时只需维护 update.json 即可同步更新引导脚本。
 UPDATE_JSON_URL="https://raw.githubusercontent.com/AHLLX/AnCLI/main/update.json"
-MODULE_URL=$(curl -fsSL --connect-timeout 15 --max-time 30 "$UPDATE_JSON_URL" 2>/dev/null \
-    | sed -n 's/.*"zipUrl"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n1)
+MODULE_URL=""
+for _prefix in "${GH_PROXY_PREFIX:-__SKIP__}" "" "https://gh-proxy.com/" "https://ghfast.top/" "https://gh.moeyy.cn/"; do
+    [ "$_prefix" = "__SKIP__" ] && continue
+    _json_src="${_prefix}${UPDATE_JSON_URL}"
+    _candidate=$(curl -fsSL --connect-timeout 15 --max-time 30 "$_json_src" 2>/dev/null \
+        | sed -n 's/.*"zipUrl"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n1 || true)
+    case "$_candidate" in
+        https://*|http://*) MODULE_URL="$_candidate"; break ;;
+    esac
+done
 if [ -z "${MODULE_URL:-}" ]; then
-    err "Failed to resolve module URL from $UPDATE_JSON_URL"
+    err "Failed to resolve module URL from $UPDATE_JSON_URL (tried direct and mirror proxies)"
 fi
 TMP_ZIP="/data/local/tmp/ancli-module.zip"
 
@@ -41,16 +59,14 @@ fi
 info "Detected root manager: $ROOT_MGR"
 info "Downloading AnCLI module..."
 
-# 3. 依次尝试 GitHub 直连与多个加速镜像代理下载模块 ZIP
+# 3. 依次尝试自定义代理、GitHub 直连与多个加速镜像代理下载模块 ZIP
 success=0
-for source in \
-    "$MODULE_URL" \
-    "https://gh-proxy.com/${MODULE_URL}" \
-    "https://ghfast.top/${MODULE_URL}" \
-    "https://gh.moeyy.cn/${MODULE_URL}"; do
-    
+for _prefix in "${GH_PROXY_PREFIX:-__SKIP__}" "" "https://gh-proxy.com/" "https://ghfast.top/" "https://gh.moeyy.cn/"; do
+    [ "$_prefix" = "__SKIP__" ] && continue
+    source="${_prefix}${MODULE_URL}"
     ui_source_name=$(echo "$source" | awk -F/ '{print $3}')
     info "Trying download from: $ui_source_name"
+    rm -f "$TMP_ZIP"
     if curl -f -L --connect-timeout 15 --max-time 120 --progress-bar \
         -o "$TMP_ZIP" "$source" 2>/dev/null && [ -s "$TMP_ZIP" ]; then
         success=1
@@ -59,6 +75,7 @@ for source in \
 done
 
 if [ "$success" -ne 1 ]; then
+    rm -f "$TMP_ZIP"
     err "Download failed from all available sources"
 fi
 ok "Module downloaded successfully"

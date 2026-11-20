@@ -5,6 +5,9 @@ ancli_install_network() {
     _ancli_mode="${1:-system}"
     _ancli_manual="${2:-}"
     _ancli_candidate=""
+    _ancli_host=""
+    _ancli_port=""
+    _ancli_proxy=""
     case "$_ancli_mode" in
         direct)
             unset http_proxy https_proxy all_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY
@@ -25,25 +28,38 @@ ancli_install_network() {
     esac
     if [ -z "$_ancli_candidate" ]; then
         if [ "$_ancli_mode" = manual ]; then
-            echo ">> 网络：手动代理未配置，无法使用代理。"
             unset http_proxy https_proxy all_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY
+            if [ "${ANCLI_SKIP_PROXY_CONNECTIVITY_TEST:-0}" = 1 ] || [ "${ANCLI_ALLOW_EMPTY_MANUAL_PROXY:-0}" = 1 ]; then
+                return 0
+            fi
+            echo ">> 网络：手动代理未配置，无法使用代理。"
             return 1
         fi
         echo ">> 网络：未发现系统 HTTP 代理；使用设备当前网络（VPN 仍可能生效）。"
         return 0
     fi
-    case "$_ancli_candidate" in http://*) _ancli_address=${_ancli_candidate#http://} ;; *) _ancli_address=$_ancli_candidate ;; esac
+    _ancli_scheme="http"
+    case "$_ancli_candidate" in
+        http://*) _ancli_scheme="http"; _ancli_address=${_ancli_candidate#http://} ;;
+        https://*) _ancli_scheme="https"; _ancli_address=${_ancli_candidate#https://} ;;
+        *) _ancli_address=$_ancli_candidate ;;
+    esac
+    _ancli_address=${_ancli_address%/}
     # Accept host:port only. Do not evaluate configuration or print credentials.
-    case "$_ancli_address" in *[!a-zA-Z0-9.:-]*|:*|*:|*:*:*) echo ">> 网络：代理地址不受支持，请在 WebUI 中检查配置。"; return 1 ;; esac
+    case "$_ancli_address" in
+        ''|*[!a-zA-Z0-9.:-]*|:*|*:|*:*:*) echo ">> 网络：代理地址不受支持，请在 WebUI 中检查配置。"; return 1 ;;
+        *:*) ;;
+        *) echo ">> 网络：代理地址无效。"; return 1 ;;
+    esac
     _ancli_host=${_ancli_address%:*}; _ancli_port=${_ancli_address##*:}
     case "$_ancli_port" in ''|*[!0-9]*) echo ">> 网络：代理端口无效。"; return 1 ;; esac
     if [ -z "$_ancli_host" ] || [ "${#_ancli_port}" -gt 5 ] || [ "$_ancli_port" -lt 1 ] || [ "$_ancli_port" -gt 65535 ]; then
         echo ">> 网络：代理地址无效。"; return 1
     fi
-    _ancli_proxy="http://$_ancli_host:$_ancli_port"
+    _ancli_proxy="${_ancli_scheme}://$_ancli_host:$_ancli_port"
     export http_proxy="$_ancli_proxy" https_proxy="$_ancli_proxy" HTTP_PROXY="$_ancli_proxy" HTTPS_PROXY="$_ancli_proxy"
     unset all_proxy ALL_PROXY
-    export no_proxy="localhost,127.0.0.1,::1" NO_PROXY="localhost,127.0.0.1,::1"
+    export no_proxy="localhost,127.0.0.1,::1,0.0.0.0" NO_PROXY="localhost,127.0.0.1,::1,0.0.0.0"
     [ "${ANCLI_NETWORK_VERBOSE:-0}" = 1 ] && echo ">> HTTP 代理：$_ancli_proxy"
     if [ "${ANCLI_SKIP_PROXY_CONNECTIVITY_TEST:-0}" = 1 ]; then
         echo ">> 网络：已识别 HTTP 代理；快速识别模式未测试连通性。"

@@ -1,5 +1,5 @@
 {
-  "version": "1.2.651-beta",
+  "version": "1.2.654-beta",
   "apps": {
     "aider": {
       "name": "Aider",
@@ -56,6 +56,10 @@
     },
     "agy": {
       "name": "Antigravity CLI",
+      "supported_arches": [
+        "arm64",
+        "x86_64"
+      ],
       "description": "Google's powerful terminal agent",
       "author": "Google",
       "install_mode": "proot",
@@ -76,6 +80,10 @@
       "latest": {
         "source": "json",
         "url": "https://antigravity-cli-auto-updater-974169037036.us-central1.run.app/manifests/linux_arm64.json",
+        "url_by_arch": {
+          "arm64": "https://antigravity-cli-auto-updater-974169037036.us-central1.run.app/manifests/linux_arm64.json",
+          "x86_64": "https://antigravity-cli-auto-updater-974169037036.us-central1.run.app/manifests/linux_amd64.json"
+        },
         "path": "version",
         "note": "Official Antigravity release manifest (same endpoint the vendor installer reads)."
       },
@@ -186,10 +194,13 @@
       "supported_arches": [
         "arm64"
       ],
-      "description": "DeepSeek's agent harness: `dsh web` UI, `dsh headless \"task\"`",
+      "description": "DeepSeek's agent harness: dsh web UI, dsh headless \"task\"",
       "author": "DeepSeek AI",
       "install_mode": "proot",
       "proxy_mode": "direct",
+      "requires_node": true,
+      "patch_web_cookie": true,
+      "integrity_pkg_json": "@deepseek-ai/dsh",
       "launch": {
         "mode": "web",
         "command": "dsh web --no-open",
@@ -220,6 +231,9 @@
       "description": "OpenAI's coding agent for the terminal",
       "author": "OpenAI",
       "install_mode": "proot",
+      "requires_node": true,
+      "no_daemon": true,
+      "sandbox_notice": "Android PRoot cannot provide Codex's default bubblewrap mount sandbox. After installation, start Codex, run /permissions, select Full Access, then retry shell commands. Full Access disables Codex's command sandbox; use only in a trusted workspace.",
       "install_cmd": "npm install -g @openai/codex",
       "update_cmd": "npm install -g @openai/codex@latest",
       "uninstall_cmd": "npm uninstall -g @openai/codex",

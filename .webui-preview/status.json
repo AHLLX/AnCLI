@@ -1,1 +1,34 @@
-{"ancli_version": "1.2.601", "rootfs_ready": true, "proot_deployed": true, "installed_count": 6, "android_data": true}
+{
+  "ancli_version": "1.2.651-beta",
+  "version_code": 63,
+  "execution_backend": "proot-ubuntu",
+  "rootfs_ready": true,
+  "proot_deployed": true,
+  "host_arch": "arm64",
+  "rootfs_arch": "arm64",
+  "installed_count": 7,
+  "android_data": true,
+  "host_bash_compat": true,
+  "proxy_mode": "system",
+  "proxy_url": "",
+  "detected_proxy": "192.0.2.10:7890",
+  "proxy_connected": true,
+  "agent_memory": "enabled",
+  "container": {
+    "config": {
+      "profile": "standard",
+      "install_mode": "installed",
+      "network_mode": "system",
+      "proxy_url": "",
+      "mirror": "tuna",
+      "profile_name": "标准 Agent 环境",
+      "description": "最小环境加 ZIP 与 unzip 归档工具。",
+      "estimated_size_mb": 0,
+      "host_arch": "arm64",
+      "rootfs_arch": "arm64",
+      "rootfs_ready": true,
+      "proot_deployed": true
+    },
+    "profiles": {}
+  }
+}

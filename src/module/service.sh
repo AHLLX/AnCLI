@@ -9,12 +9,17 @@
 ANCLI_DIR="/data/local/tmp/ancli"
 ROOTFS="${ANCLI_DIR}/rootfs"
 MODULE_DIR="${MODDIR:-/data/adb/modules/ancli}"
+mkdir -p "$ANCLI_DIR" "$ANCLI_DIR/bin" 2>/dev/null || true
 
 # 延迟安装模式也必须保留宿主侧容器控制入口，避免 rootfs 尚未创建时
 # WebUI 把“未安装”误报成“模块损坏”。
 if [ -f "$MODULE_DIR/container-bootstrap.sh" ]; then
     cp -f "$MODULE_DIR/container-bootstrap.sh" "$ANCLI_DIR/container-bootstrap.sh" 2>/dev/null || true
     chmod 755 "$ANCLI_DIR/container-bootstrap.sh" 2>/dev/null || true
+fi
+if [ -f "$MODULE_DIR/container-export.py" ]; then
+    cp -f "$MODULE_DIR/container-export.py" "$ANCLI_DIR/container-export.py" 2>/dev/null || true
+    chmod 755 "$ANCLI_DIR/container-export.py" 2>/dev/null || true
 fi
 if [ -f "$MODULE_DIR/ancli/container-profiles.json" ]; then
     cp -f "$MODULE_DIR/ancli/container-profiles.json" "$ANCLI_DIR/container-profiles.json" 2>/dev/null || true
@@ -89,7 +94,7 @@ fi
 
 # 4. 修复各类 AI Agent 凭证与共享技能目录属主（移交 UID 2000 并收紧为 u+rwX,go-rwx），
 #    防止首次以 root 启动写入的令牌导致后续普通 shell 会话报 Permission denied。
-for _conf in ".config" ".gemini" ".claude" ".local" ".agents" ".dsh" ".grok" ".mimocode"; do
+for _conf in ".config" ".claude" ".codex" ".gemini" ".local" ".agents" ".dsh" ".grok" ".mimocode"; do
     _full="$ROOTFS/root/$_conf"
     if [ -d "$_full" ]; then
         chown -R 2000:2000 "$_full" 2>/dev/null || true
@@ -132,13 +137,18 @@ for INSTANT_BIN in /data/adb/ksu/bin /data/adb/ap/bin; do
         name="${wrapper##*/}"
         # 跳过基础设施文件与宿主机 shim，仅同步应用包装脚本
         case "$name" in
-            proot|ancli-core.py|ancli|ancli_env.sh|registry.json|installed.json|hosts) continue ;;
+            proot|loader|loader-*|ancli-core.py|ancli|ancli_env.sh|registry.json|installed.json|hosts) continue ;;
             git|bash|curl) continue ;;
             .*) continue ;;
         esac
         [ -f "$wrapper" ] || continue
         cp -f "$wrapper" "$INSTANT_BIN/$name" 2>/dev/null || true
+        chmod 755 "$INSTANT_BIN/$name" 2>/dev/null || true
     done
+    if [ -f "$MODULE_DIR/system/bin/ancli" ]; then
+        cp -f "$MODULE_DIR/system/bin/ancli" "$INSTANT_BIN/ancli" 2>/dev/null || true
+        chmod 755 "$INSTANT_BIN/ancli" 2>/dev/null || true
+    fi
     # 清理旧版本遗留的广域 git/curl proot shim（保留 5.1 刚维护的 bash 兼容入口）
     for shim in git curl; do
         if [ -f "$INSTANT_BIN/$shim" ] && head -n 2 "$INSTANT_BIN/$shim" 2>/dev/null | grep -q "AnCLI proot shim"; then
@@ -149,7 +159,7 @@ done
 
 # 7. 清理模块自身 system/bin 下可能残留的旧版宿主机 shim，防止挂载后全局劫持系统命令
 for shim in git bash curl; do
-    mod_shim="${MODDIR:-/data/adb/modules/ancli}/system/bin/$shim"
+    mod_shim="$MODULE_DIR/system/bin/$shim"
     if [ -f "$mod_shim" ] && grep -qE 'AnCLI proot shim|exec /data/adb/(ksu|ap)/bin/' "$mod_shim" 2>/dev/null; then
         rm -f "$mod_shim" 2>/dev/null && echo "AnCLI: removed stale module shim $mod_shim"
     fi
@@ -159,26 +169,31 @@ done
 _bridge_dir="$ANCLI_DIR/.bridge"
 rm -rf "$_bridge_dir"
 mkdir -p "$_bridge_dir/reqs"
+chmod 777 "$_bridge_dir" "$_bridge_dir/reqs" 2>/dev/null || true
 touch "$_bridge_dir/active"
+chmod 644 "$_bridge_dir/active" 2>/dev/null || true
 
 nohup /system/bin/sh -c '
     _b=/data/local/tmp/ancli/.bridge
     echo $$ > "$_b/pid"
+    rm -f "$_b"/reqs/*.run "$_b"/exit_*.tmp 2>/dev/null || true
     while [ -f "$_b/active" ]; do
         for _req in "$_b"/reqs/req_*.sh; do
             [ -f "$_req" ] || continue
+            mv "$_req" "${_req}.run" 2>/dev/null || continue
+            _run="${_req}.run"
             _base="${_req##*/}"
             _id="${_base#req_}"
             _id="${_id%.sh}"
             _out="$_b/out_$_id"
             _err="$_b/err_$_id"
             _exit="$_b/exit_$_id"
-            /system/bin/sh "$_req" > "$_out" 2> "$_err"
-            echo $? > "$_exit.tmp"
-            mv -f "$_exit.tmp" "$_exit"
-            rm -f "$_req"
+            /system/bin/sh "$_run" > "$_out" 2> "$_err"
+            _rc=$?
+            printf "%s\n" "$_rc" > "$_exit.tmp" && mv -f "$_exit.tmp" "$_exit"
+            rm -f "$_run"
         done
         /system/bin/sleep 0.1 2>/dev/null || sleep 1
     done
-    rm -f "$_b/pid"
+    rm -f "$_b/pid" "$_b"/reqs/*.run "$_b"/exit_*.tmp 2>/dev/null || true
 ' </dev/null >/dev/null 2>&1 &
