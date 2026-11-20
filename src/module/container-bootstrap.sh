@@ -1352,6 +1352,17 @@ EOF
     return 0
 )
 
+active_proot_pids() {
+    for _proc_comm in /proc/[0-9]*/comm; do
+        [ -r "$_proc_comm" ] || continue
+        IFS= read -r _proc_name < "$_proc_comm" || continue
+        [ "$_proc_name" = proot ] || continue
+        _proc_pid=${_proc_comm#/proc/}
+        _proc_pid=${_proc_pid%/comm}
+        printf '%s ' "$_proc_pid"
+    done
+}
+
 export_container_bundle() (
     _host_arch=$(detect_host_arch)
     [ "$_host_arch" = arm64 ] || { say "[X] 当前仅支持导出 arm64 容器"; return 1; }
@@ -1360,8 +1371,19 @@ export_container_bundle() (
     [ ! -e "$ROOTFS/.ancli-install-checkpoint" ] || { say "[X] 容器安装尚未完成，请先完成或处理检查点"; return 1; }
     [ -f "$ANCLI_DIR/container-export.py" ] || { say "[X] 导出工具缺失，请更新模块"; return 1; }
     command -v tar >/dev/null 2>&1 || { say "[X] 系统缺少 tar，无法导出"; return 1; }
-    if ps -A -o PID,ARGS 2>/dev/null | awk -v self="$$" 'NR > 1 && $1 != self && ($0 ~ /(^|[ \/])proot([ :]|$)/ || ($0 ~ /container-bootstrap[.]sh/ && $0 ~ / (install|apply|import|export)( |$)/)) { found=1 } END { exit !found }'; then
-        say "[X] 容器仍有 PRoot 进程在运行，请退出 Agent 和终端任务后重试。"
+    _active_pids=$(active_proot_pids)
+    if [ -n "$_active_pids" ]; then
+        say ">> 正在等待容器内的短时管理命令结束..."
+        _wait=0
+        while [ "$_wait" -lt 10 ]; do
+            sleep 1
+            _active_pids=$(active_proot_pids)
+            [ -n "$_active_pids" ] || break
+            _wait=$((_wait + 1))
+        done
+    fi
+    if [ -n "$_active_pids" ]; then
+        say "[X] 容器仍有 PRoot 进程在运行（PID: $_active_pids），请退出 Agent 和终端任务后重试。"
         return 1
     fi
     mkdir -p /sdcard/Download || { say "[X] 无法访问 Download 目录"; return 1; }
@@ -1416,7 +1438,8 @@ remove_current_container() {
     [ ! -L "$ANCLI_DIR" ] && [ ! -L "$ROOTFS" ] || { say "[X] 检测到符号链接，拒绝删除容器目录"; return 1; }
 
     # A live PRoot process may still be reading or writing the container.
-    if ps -A -o PID,ARGS 2>/dev/null | awk -v self="$$" 'NR > 1 && $1 != self && ($0 ~ /(^|[ \/])proot([ :]|$)/ || ($0 ~ /container-bootstrap[.]sh/ && $0 ~ / (install|apply|import|export)( |$)/)) { found=1 } END { exit !found }'; then
+    _active_pids=$(active_proot_pids)
+    if [ -n "$_active_pids" ]; then
         say "[X] 容器仍有 PRoot 进程在运行。请先退出 Agent 和终端任务，再删除容器。"
         return 1
     fi

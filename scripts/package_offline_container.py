@@ -84,7 +84,7 @@ def main() -> None:
         "format": "ancli-container-import",
         "schema_version": 1,
         "source_module_version": args.source_module_version,
-        "required_importer_version": "v1.2.654-beta",
+        "required_importer_version": "v1.2.655-beta",
         "architecture": "arm64",
         "ubuntu_version": facts["ubuntu_version"],
         "profile": args.profile,
@@ -99,7 +99,7 @@ def main() -> None:
         "Contents: Ubuntu 24.04 arm64, full development environment profile.\n"
         "No Agent applications are installed. Global Agent memory is unconfigured.\n"
         "\n"
-        "Copy this ZIP to /sdcard/Download on an Android device with AnCLI v1.2.654-beta or newer.\n"
+        "Copy this ZIP to /sdcard/Download on an Android device with AnCLI v1.2.655-beta or newer.\n"
         "In AnCLI WebUI, use Offline container import and enter the ZIP path.\n"
         "The import is arm64-only and requires an empty/uninstalled container.\n"
     )

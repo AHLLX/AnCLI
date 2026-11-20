@@ -34,7 +34,7 @@ def main() -> int:
         "format": "ancli-container-import",
         "schema_version": 1,
         "source_module_version": args.module_version,
-        "required_importer_version": "v1.2.654-beta",
+        "required_importer_version": "v1.2.655-beta",
         "architecture": args.architecture,
         "ubuntu_version": "24.04",
         "profile": args.profile,
@@ -49,7 +49,7 @@ def main() -> int:
         "This archive contains the complete current rootfs, including installed packages, "
         "Agent applications, user configuration, and secrets stored inside the container.\n"
         f"Global Agent memory setting: {args.agent_memory}.\n\n"
-        "Keep this backup private. Import it on an arm64 device with AnCLI v1.2.654-beta or newer.\n"
+        "Keep this backup private. Import it on an arm64 device with AnCLI v1.2.655-beta or newer.\n"
         "Copy the ZIP into Android Download, then import it from AnCLI Settings > Reset > Container transfer.\n"
         "Import requires an uninstalled/empty container and replaces its complete rootfs.\n"
     )

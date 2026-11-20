@@ -1,3 +1,9 @@
+## v1.2.655-beta (2026-11-20)
+
+- Detect live container PRoot processes from `/proc` names instead of matching the manager command text; wait briefly for transient status commands before export and report a real running-process blocker.
+- Move container export/import into a dedicated Settings > Container page, separate from destructive reset and removal actions.
+- Add a quick download for the Ubuntu 24.04 arm64 full development environment bundle and attach the same offline import package to each beta module release.
+
 ## v1.2.654-beta (2026-11-20)
 
 - Align release version metadata and `ancli --version` fallback with `versionCode=66`.

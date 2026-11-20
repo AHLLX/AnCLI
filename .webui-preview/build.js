@@ -178,6 +178,7 @@ const targets = [
   { file: 'preview-settings.html', scenario: 'default', theme: 'light', dialog: null, settings: true },
   { file: 'preview-memory.html', scenario: 'default', theme: 'light', dialog: null, settings: false, memory: true },
   { file: 'preview-about.html', scenario: 'default', theme: 'light', dialog: null, settings: true, memory: false, tab: 'about' },
+  { file: 'preview-container.html', scenario: 'default', theme: 'light', dialog: null, settings: true, memory: false, tab: 'container' },
   { file: 'preview-reset.html', scenario: 'default', theme: 'light', dialog: null, settings: true, memory: false, tab: 'reset' },
 ];
 

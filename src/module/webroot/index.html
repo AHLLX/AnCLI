@@ -483,23 +483,28 @@ button, select { touch-action: manipulation; -webkit-tap-highlight-color: transp
 .settings-tabs {
   display: flex;
   background: var(--surface-2);
-  padding: 3px;
+  padding: 2px;
   border-radius: var(--r-md);
   margin-bottom: 12px;
-  gap: 3px;
+  gap: 1px;
   flex-shrink: 0;
   width: 100%;
+  min-width: 0;
   box-sizing: border-box;
+  overflow-x: auto;
+  scrollbar-width: none;
 }
+.settings-tabs::-webkit-scrollbar { display: none; }
 .settings-tabs .tab-btn {
   flex: 1 1 0;
   min-width: 0;
   border: 0;
   background: transparent;
   color: var(--muted);
-  font: 12px/1.4 inherit;
+  font-family: inherit;
+  font-size: 11px;
   font-weight: 600;
-  padding: 6px 2px;
+  padding: 6px 0;
   border-radius: var(--r-sm);
   cursor: pointer;
   transition: color .15s ease, background-color .15s ease, box-shadow .15s ease;
@@ -515,6 +520,10 @@ button, select { touch-action: manipulation; -webkit-tap-highlight-color: transp
   background: var(--surface);
   color: var(--text);
   box-shadow: 0 1px 2px rgba(0,0,0,0.06);
+}
+.container-transfer-section {
+  padding: 10px; margin-bottom: 10px; border: 1px solid var(--border);
+  border-radius: var(--r); background: var(--surface);
 }
 
 /* 保持弹窗高度自适应，设置弹性滑动视口，适配各类手机屏幕 */
@@ -532,16 +541,16 @@ button, select { touch-action: manipulation; -webkit-tap-highlight-color: transp
 }
 .settings-slider {
   display: flex;
-  width: 500%;
-  max-width: 500%;
+  width: 600%;
+  max-width: 600%;
   height: 100%;
   transition: transform 0.16s cubic-bezier(0.22, 1, 0.36, 1);
   will-change: transform;
 }
 .settings-panel {
-  flex: 0 0 20%;
-  width: 20%;
-  max-width: 20%;
+  flex: 0 0 16.666667%;
+  width: 16.666667%;
+  max-width: 16.666667%;
   min-width: 0;
   height: 100%;
   overflow-y: auto;
@@ -1086,6 +1095,7 @@ body.ime-open .settings-viewport { min-height: 0; }
         <button type="button" class="tab-btn active" data-tab="general" role="tab" id="tabGeneral" data-i18n="tabGeneral">常规</button>
         <button type="button" class="tab-btn" data-tab="proxy" role="tab" id="tabProxy" data-i18n="tabProxy">代理</button>
         <button type="button" class="tab-btn" data-tab="logs" role="tab" id="tabLogs" data-i18n="tabLogs">日志</button>
+        <button type="button" class="tab-btn" data-tab="container" role="tab" id="tabContainer" data-i18n="tabContainer">容器</button>
         <button type="button" class="tab-btn" data-tab="reset" role="tab" id="tabReset" data-i18n="tabReset">重置</button>
         <button type="button" class="tab-btn" data-tab="about" role="tab" id="tabAbout" data-i18n="tabAbout">关于</button>
       </div>
@@ -1238,9 +1248,18 @@ body.ime-open .settings-viewport { min-height: 0; }
             </section>
           </div>
 
-          <!-- 面板 4：重置与卸载 -->
-          <div class="settings-panel" id="panel-reset">
-            <section class="settings-danger" style="margin-bottom: 10px;">
+          <!-- 面板 4：容器备份与离线导入 -->
+          <div class="settings-panel" id="panel-container">
+            <section class="container-transfer-section">
+              <div class="setting-card-head">
+                <span class="setting-icon" aria-hidden="true">⇩</span>
+                <div><b data-i18n="offlineBundleTitle">完整开发环境离线包</b><small data-i18n="offlineBundleSubtitle">Ubuntu 24.04 · arm64 · 完整开发环境</small></div>
+              </div>
+              <p data-i18n="offlineBundleHint">约 429 MiB。包含完整开发环境工具，不含 Agent 应用，未配置全局记忆。下载后可在下方导入。</p>
+              <a class="btn xs primary" id="offlineBundleDownload" href="https://github.com/AHLLX/AnCLI/releases/download/container-bundle-v1.2.651/AnCLI-Ubuntu-24.04-ARM64-Full-Development-Environment-v1.2.651-Offline-Import.zip" target="_blank" rel="noopener noreferrer" data-i18n="offlineBundleDownload">快速下载完整环境包</a>
+            </section>
+
+            <section class="container-transfer-section">
               <div class="setting-card-head">
                 <span class="setting-icon" aria-hidden="true">⇅</span>
                 <div><b data-i18n="containerTransferTitle">容器导出与导入</b><small data-i18n="containerTransferSubtitle">备份完整 Ubuntu 容器，或从备份恢复</small></div>
@@ -1254,7 +1273,10 @@ body.ime-open .settings-viewport { min-height: 0; }
               <button class="btn xs danger" id="btnContainerImport" data-i18n="containerImportAction">从备份导入容器</button>
               <div class="settings-task" data-task-slot="container-transfer"></div>
             </section>
+          </div>
 
+          <!-- 面板 5：重置与卸载 -->
+          <div class="settings-panel" id="panel-reset">
             <section class="settings-danger" style="margin-bottom: 10px;">
               <div class="setting-card-head">
                 <span class="setting-icon" aria-hidden="true" style="color: var(--danger); background: var(--surface);">⌫</span>
@@ -2673,7 +2695,7 @@ const UI_TEXT = {
   zh: { check: '检查更新', refresh: '刷新', repair: '修复环境', settings: '设置', tools: '工具', output: '输出', proxy: '代理',
     copyAll: '复制全部', clear: '清空输出', follow: '自动滚动到底部', notChecked: '尚未检查', install: '安装', update: '更新', checkUpdate: '更新检查',
     config: '配置', uninstall: '卸载', openWeb: '打开 Web UI', copyCommand: '复制命令', running: '运行中', done: '完成', failed: '失败', cancel: '取消', save: '保存', close: '关闭', footer: 'AnCLI · Android CLI 环境管理器',
-    tabGeneral: '常规', tabProxy: '代理', tabLogs: '日志', tabReset: '重置', tabAbout: '关于',
+    tabGeneral: '常规', tabProxy: '代理', tabLogs: '日志', tabContainer: '容器', tabReset: '重置', tabAbout: '关于',
     aboutDesc: '统一的 Android 命令行与 AI Agent 环境管理器',
     aboutRepoTitle: 'GitHub 项目主页',
     aboutCheckTitle: '检查新版本',
@@ -2763,6 +2785,7 @@ const UI_TEXT = {
     historyCleared: '历史日志已清理', historyNothingToClear: '没有可清理的历史日志', logHistoryLoading: '正在读取日志历史…',
     factoryReset: '完全初始化环境', factoryResetTitle: '恢复模块自带的干净 Agent 环境',
     containerTransferTitle: '容器导出与导入', containerTransferSubtitle: '备份完整 Ubuntu 容器，或从备份恢复',
+    offlineBundleTitle: '完整开发环境离线包', offlineBundleSubtitle: 'Ubuntu 24.04 · arm64 · 完整开发环境', offlineBundleHint: '约 429 MiB。包含完整开发环境工具，不含 Agent 应用，未配置全局记忆。下载后可在下方导入。', offlineBundleDownload: '快速下载完整环境包',
     containerTransferHint: '导出会将当前容器（包括已安装软件、Agent、容器内配置与密钥）打包到 Download。导入会替换当前容器，请先删除现有容器。',
     containerExportAction: '导出当前容器到 Download', containerImportLabel: 'Download 中的容器备份路径', containerImportAction: '从备份导入容器',
     containerRemoveTitle: '删除当前容器', containerRemoveSubtitle: '只删除 Ubuntu rootfs，保留 AnCLI 模块',
@@ -2779,7 +2802,7 @@ const UI_TEXT = {
   en: { check: 'Check updates', refresh: 'Refresh', repair: 'Repair', settings: 'Settings', tools: 'Tools', output: 'Output', proxy: 'Proxy',
     copyAll: 'Copy all', clear: 'Clear output', follow: 'Follow output', notChecked: 'Not checked', install: 'Install', update: 'Update', checkUpdate: 'Check update',
     config: 'Configure', uninstall: 'Uninstall', openWeb: 'Open Web UI', copyCommand: 'Copy command', running: 'Running', done: 'Done', failed: 'Failed', cancel: 'Cancel', save: 'Save', close: 'Close', footer: 'AnCLI · Android CLI environment manager',
-    tabGeneral: 'General', tabProxy: 'Proxy', tabLogs: 'Logs', tabReset: 'Reset', tabAbout: 'About',
+    tabGeneral: 'General', tabProxy: 'Proxy', tabLogs: 'Logs', tabContainer: 'Container', tabReset: 'Reset', tabAbout: 'About',
     aboutDesc: 'Unified CLI and AI Agent environment manager for Android',
     aboutRepoTitle: 'GitHub Repository',
     aboutCheckTitle: 'Check for Updates',
@@ -2869,6 +2892,7 @@ const UI_TEXT = {
     historyCleared: 'Task history cleared', historyNothingToClear: 'No completed logs to clear', logHistoryLoading: 'Reading log history…',
     factoryReset: 'Factory reset environment', factoryResetTitle: 'Restore the clean Agent environment from the module',
     containerTransferTitle: 'Container export and import', containerTransferSubtitle: 'Back up the full Ubuntu container or restore a backup',
+    offlineBundleTitle: 'Full development environment bundle', offlineBundleSubtitle: 'Ubuntu 24.04 · arm64 · Full development environment', offlineBundleHint: 'About 429 MiB. Includes full development tools, with no Agent apps or configured global memory. Download it, then import below.', offlineBundleDownload: 'Quick download full environment',
     containerTransferHint: 'Export saves the current container, including installed packages, Agents, container settings and secrets, to Download. Import replaces the current container; remove it first.',
     containerExportAction: 'Export current container to Download', containerImportLabel: 'Container backup path in Download', containerImportAction: 'Import container backup',
     containerRemoveTitle: 'Delete current container', containerRemoveSubtitle: 'Remove Ubuntu rootfs only; keep the AnCLI module',
@@ -3859,7 +3883,7 @@ function currentThemeMode() {
   try { return localStorage.getItem('ancli_theme') || 'auto'; } catch (e) { return 'auto'; }
 }
 
-const SETTINGS_TAB_ORDER = ['general', 'proxy', 'logs', 'reset', 'about'];
+const SETTINGS_TAB_ORDER = ['general', 'proxy', 'logs', 'container', 'reset', 'about'];
 
 function switchSettingsTab(tabName) {
   const index = SETTINGS_TAB_ORDER.indexOf(tabName);
@@ -3869,7 +3893,7 @@ function switchSettingsTab(tabName) {
   });
   const slider = document.getElementById('settingsSlider');
   if (slider) {
-    slider.style.transform = 'translateX(-' + (index * 20) + '%)';
+    slider.style.transform = 'translateX(-' + (index * (100 / SETTINGS_TAB_ORDER.length)) + '%)';
   }
   // Merely changing tabs never launches a network command. The full probe is
   // explicit on the Proxy screen so it cannot hold up subsequent UI actions.
