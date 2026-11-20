@@ -47,10 +47,8 @@ build_arch() {
     local stage="$WORK_DIR/build-$arch"
     mkdir -p "$stage/talloc" "$stage/proot"
     cp -a "$PROOT_SRC/src/." "$stage/proot/"
-    sed -i 's/.*CHECK_PYTHON_EXTENSION.*//g' "$stage/proot/GNUmakefile"
-    sed -i 's/.*HAS_SWIG.*//g' "$stage/proot/GNUmakefile"
-    sed -i 's/.*HAS_PYTHON_CONFIG.*//g' "$stage/proot/GNUmakefile"
-    sed -i '/extension\/python/d; /proot_wrap/d' "$stage/proot/GNUmakefile"
+    sed -i 's/^HAS_SWIG :=.*/HAS_SWIG :=/' "$stage/proot/GNUmakefile"
+    sed -i 's/^HAS_PYTHON_CONFIG :=.*/HAS_PYTHON_CONFIG :=/' "$stage/proot/GNUmakefile"
     sed -i 's/#define HAS_LOADER_32BIT true/\/* #undef HAS_LOADER_32BIT *\//g' "$stage/proot/arch.h"
 
     cat > "$stage/talloc/config.h" <<'EOF'
