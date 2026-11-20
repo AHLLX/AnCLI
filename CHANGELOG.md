@@ -1,3 +1,7 @@
+## v1.2.663-beta (2026-11-20)
+
+- Allow a fresh container install to replace an exactly empty `rootfs/root` placeholder left after container removal; continue preserving any rootfs containing user data.
+
 ## v1.2.662-beta (2026-11-20)
 
 - Hide the unconfigured global-memory value from offline import logs while keeping the post-import choice available.

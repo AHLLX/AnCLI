@@ -1,16 +1,24 @@
 #!/system/bin/sh
 # Sourced by installers; only directories created and marked by this invocation
 # may ever be recursively removed. Existing rootfs trees are never removed.
-# Earlier host wrappers created this empty work directory while only querying
-# container status. Remove exactly that empty placeholder, never user files.
+# Host wrappers may have created an empty work directory while the container
+# was being inspected. Remove only the known empty placeholder shapes, never
+# user files.
 ancli_discard_empty_placeholder() {
     [ -d "$ROOTFS" ] && [ ! -L "$ROOTFS" ] || return 1
     [ "$(ls -A "$ROOTFS" 2>/dev/null)" = "root" ] || return 1
     [ -d "$ROOTFS/root" ] && [ ! -L "$ROOTFS/root" ] || return 1
-    [ "$(ls -A "$ROOTFS/root" 2>/dev/null)" = ".ancli-work" ] || return 1
-    [ -d "$ROOTFS/root/.ancli-work" ] && [ ! -L "$ROOTFS/root/.ancli-work" ] || return 1
-    [ -z "$(ls -A "$ROOTFS/root/.ancli-work" 2>/dev/null)" ] || return 1
-    rmdir "$ROOTFS/root/.ancli-work" && rmdir "$ROOTFS/root" && rmdir "$ROOTFS"
+    _ancli_placeholder_contents=$(ls -A "$ROOTFS/root" 2>/dev/null) || return 1
+    case "$_ancli_placeholder_contents" in
+        "") ;;
+        .ancli-work)
+            [ -d "$ROOTFS/root/.ancli-work" ] && [ ! -L "$ROOTFS/root/.ancli-work" ] || return 1
+            [ -z "$(ls -A "$ROOTFS/root/.ancli-work" 2>/dev/null)" ] || return 1
+            rmdir "$ROOTFS/root/.ancli-work" || return 1
+            ;;
+        *) return 1 ;;
+    esac
+    rmdir "$ROOTFS/root" && rmdir "$ROOTFS"
 }
 
 ancli_begin_rootfs() {

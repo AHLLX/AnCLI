@@ -6,9 +6,9 @@ Welcome, fellow AI Assistant. If you are reading this, you have been tasked with
 AnCLI is a unified, systemless environment manager and plugin-based installer designed to bring full Linux command-line tools (like Node.js, Go, or Python-based AI agents) to rooted Android devices.
 Because Android uses the Bionic C library, native Linux binaries often crash. AnCLI solves this by using `proot` to run a pure Ubuntu `glibc` base system transparently on Android.
 
-## 当前交接（2026-11-20，v1.2.662-beta）
+## 当前交接（2026-11-20，v1.2.663-beta）
 
-- 当前源码/模块包为 `v1.2.662-beta`、`versionCode=74`；旧版 KernelSU WebUI 文件桥接缺失时，离线导入可按文件名在 Download 中定位并核对大小，导入时仍校验容器清单、哈希与架构；解压前的 tar 路径校验会忽略相对符号链接目标注释，只校验归档成员路径；离线导入日志不显示全局记忆状态，记忆选择卡片保持等宽；模块更新 ZIP 校验成功后自动调用 KernelSU `ksud module install`，错误日志明确区分下载和刷入失败，并提示重启生效。平板导出的 Ubuntu 24.04 arm64 容器源自 `v1.2.651-beta`，规格为完整开发环境，未安装 Agent 应用且全局记忆未配置。该离线包在独立 bundle Release 保存，并作为额外资产随每个模块 Release 发布。PRoot 启动 PATH 包含 KSU/APatch 即时命令目录，使 Agent 的 `bash -c` 可解析兼容入口并使用 `ancli android shell` 桥接。应用按钮默认执行官方版本检查，发现更新后才显示“更新”，本地完整性探测失败时显示“修复”。容器安装失败会保留安全标记的检查点，下次安装可续装并显示目标规格已安装/待补齐软件包。
+- 当前源码/模块包为 `v1.2.663-beta`、`versionCode=75`；空容器残留仅包含 `rootfs/root` 时，下一次安装可安全清理并开始新事务；任何含其他文件的 rootfs 仍保留并提示人工处理。离线导入按 ZIP 内容识别 Ubuntu 24.04 arm64 完整开发环境，不依赖包名或版本号；导入时校验容器清单、哈希与架构。解压前的 tar 路径校验会忽略相对符号链接目标注释，只校验归档成员路径；离线导入日志不显示全局记忆状态，记忆选择卡片保持等宽；模块更新 ZIP 校验成功后自动调用 KernelSU `ksud module install`，错误日志明确区分下载和刷入失败，并提示重启生效。平板导出的完整包规格为完整开发环境，未安装 Agent 应用且全局记忆未配置。该离线包在独立 bundle Release 保存，并作为额外资产随每个模块 Release 发布。PRoot 启动 PATH 包含 KSU/APatch 即时命令目录，使 Agent 的 `bash -c` 可解析兼容入口并使用 `ancli android shell` 桥接。应用按钮默认执行官方版本检查，发现更新后才显示“更新”，本地完整性探测失败时显示“修复”。
 - 保持单一 `proot-ubuntu` 后端。容器内提供原生 `/usr/local/bin/ancli`，宿主 bash 兼容入口仍使用 `$MODPATH/system/bin/bash`（Path A）和 `/data/adb/ksu/bin/bash`、`/data/adb/ap/bin/bash`（Path B）。
 - 容器 wrapper 的 PATH 为 `/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/root/.local/bin:/data/adb/ksu/bin:/data/adb/ap/bin:/system/bin`；`/system/bin` 只能作为 Android 安全只读工具的回退路径。
 - PRoot 容器命令不能启用 Linux User Namespace 或 Seccomp sandbox；Android 内核下会产生 `EINVAL`。不要引入嵌套 PRoot。

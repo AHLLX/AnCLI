@@ -94,6 +94,15 @@ def test_empty_wrapper_placeholder_does_not_block_new_install(tmp_path):
     assert (rootfs / 'data').read_text().strip() == 'ok'
 
 
+def test_empty_root_directory_left_after_container_removal_does_not_block_install(tmp_path):
+    base = tmp_path / 'ancli'; rootfs = base / 'rootfs'
+    (rootfs / 'root').mkdir(parents=True)
+    env = dict(os.environ, ANCLI_DIR=posix(base), ROOTFS=posix(rootfs), HELPER=posix(ROOT / 'src/module/install-transaction.sh'))
+    r = run_bash('. "$HELPER"; ancli_begin_rootfs || exit 1; echo ok > "$ROOTFS/data"; ancli_commit_rootfs', env)
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert (rootfs / 'data').read_text().strip() == 'ok'
+
+
 def test_placeholder_with_user_data_is_preserved(tmp_path):
     base = tmp_path / 'ancli'; rootfs = base / 'rootfs'
     (rootfs / 'root/.ancli-work').mkdir(parents=True)
