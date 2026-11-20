@@ -6,10 +6,10 @@ Welcome, fellow AI Assistant. If you are reading this, you have been tasked with
 AnCLI is a unified, systemless environment manager and plugin-based installer designed to bring full Linux command-line tools (like Node.js, Go, or Python-based AI agents) to rooted Android devices.
 Because Android uses the Bionic C library, native Linux binaries often crash. AnCLI solves this by using `proot` to run a pure Ubuntu `glibc` base system transparently on Android.
 
-## 当前交接（2026-11-20，v1.2.666）
+## 当前交接（2026-11-20，v1.2.667）
 
-- 当前源码/正式版模块包为 `v1.2.666`、`versionCode=77`，`update.json` 已同步指向 `v1.2.666`。模块更新检查与 ZIP 下载由 Android 宿主执行，Ubuntu rootfs 删除后仍可检查和更新；下载包校验 ZIP 结构、根目录 module.prop、版本和 versionCode。
-- 四个规格的 Ubuntu 24.04 arm64 离线容器包（`minimal`、`standard`、`developer`、`full`，均无模板记忆且未预装 Agent）已统一并入 `v1.2.666` Release，不再保留单独的离线包 Release。
+- 当前源码/正式版模块包为 `v1.2.667`、`versionCode=78`，`update.json` 已同步指向 `v1.2.667`。模块更新检查与 ZIP 下载由 Android 宿主执行，Ubuntu rootfs 删除后仍可检查和更新；下载包校验 ZIP 结构、根目录 module.prop、版本和 versionCode。
+- 四个规格的 Ubuntu 24.04 arm64 离线容器包（`minimal`、`standard`、`developer`、`full`，均无模板记忆且未预装 Agent）已统一并入 `v1.2.667` Release，不再保留单独的离线包 Release。
 - `dsh-web-control.sh` 启动 `dsh web` 时将进程迁出管理器应用 cgroup 至根 cgroup（避免切到 Chrome 后被 Android 后台冻结器 `do_freezer_trap` 挂起），并保留宿主代理与 `NO_PROXY=localhost,127.0.0.1,::1,0.0.0.0`；`ancli-core.py` 的 `patch_dsh_web_oauth_popup()` 与 `patch_dsh_web_cookie()` 同步在安装/更新/修复时生效。
 - WebUI 支持按应用卡片独立锁定与不同应用并发安装/更新/卸载，后端通过 `_mutate_installed()`（`fcntl.flock`）保护 `installed.json` 并发写入；已清理残留无用 CSS/JS。
 - 新增 `ancli shell [命令...]`（宿主机入口与容器内入口均支持，无参数进入 `/bin/bash -l`），并已同步至 `src/runtime-context/AGENTS.md`；`generate_proot_wrapper` 两个后台 watcher 子 shell 均已 `</dev/null` 并捕获 `TERM INT HUP` 静默退出，消除退出卡顿与 `Terminated` 刷屏。
@@ -19,7 +19,7 @@ Because Android uses the Bionic C library, native Linux binaries often crash. An
 - WebUI 长任务必须通过 `nohup` 脱离 KernelSU WebUI exec 会话，并由后台 shell 写入 `.log` 和 `.exit`。
 - 应用目录当前包含 `codex-cli`，使用官方 npm 包 `@openai/codex`，并随模块打包 OpenAI 图标；图标损坏或缺失时必须回退到字母徽章。
 - Codex 启动目录：从 `/` 或不可映射目录启动时使用配置的 `default_cwd`，留空时有效目录是 `/root/.ancli-work`；从可映射目录启动则保留原 cwd。
-- 本地交付包位于仓库根目录：`ancli-77-v1.2.666.zip` 为可刷模块，四个离线容器包位于根目录供统一发布。
+- 本地交付包位于仓库根目录：`ancli-78-v1.2.667.zip` 为可刷模块，四个离线容器包位于根目录供统一发布。
 
 ## 默认实施流程（每次改动都按这个顺序）
 

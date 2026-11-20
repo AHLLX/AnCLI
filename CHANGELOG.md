@@ -1,4 +1,4 @@
-## v1.2.666 (2026-11-20)
+## v1.2.667 (2026-11-20)
 
 - Fix `dsh web` freezing in Android's background app cgroup by detaching `dsh-web-control.sh` to the root cgroup, preserving host proxy settings with `NO_PROXY`, and patching the `about:blank` OAuth popup for Android Chrome.
 - Allow concurrent per-app installs/updates/uninstalls in the WebUI with independent card button locks and `fcntl.flock` protection on `installed.json`.
