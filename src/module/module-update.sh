@@ -6,6 +6,18 @@ MODULE_DIR=/data/adb/modules/ancli
 ANCLI_DIR=/data/local/tmp/ancli
 UPDATE_DIR="$ANCLI_DIR/module-updates"
 
+# KernelSU WebUI commands run in a restricted manager namespace where the
+# mounted module tree may be unreadable even though the runtime files under
+# /data/local/tmp/ancli are executable.  Keep a host-readable module.prop copy
+# and use the module tree only as a compatibility fallback for older installs.
+MODULE_PROP_FILE=""
+for _module_prop in "$ANCLI_DIR/module.prop" "$MODULE_DIR/module.prop" /data/adb/modules_update/ancli/module.prop /data/adb/modules/ancli/module.prop; do
+    if [ -r "$_module_prop" ]; then
+        MODULE_PROP_FILE="$_module_prop"
+        break
+    fi
+done
+
 json_error() {
     printf '{"status":"error","error":"%s"}\n' "$1"
 }
@@ -23,8 +35,8 @@ numeric_value() {
 check_update() {
     _channel=stable
     [ "$1" = beta ] && _channel=beta
-    _current_version=$(sed -n 's/^version=//p' "$MODULE_DIR/module.prop" 2>/dev/null | head -n 1 | tr -d '\r')
-    _current_code=$(sed -n 's/^versionCode=//p' "$MODULE_DIR/module.prop" 2>/dev/null | head -n 1 | tr -cd '0-9')
+    _current_version=$(sed -n 's/^version=//p' "$MODULE_PROP_FILE" 2>/dev/null | head -n 1 | tr -d '\r')
+    _current_code=$(sed -n 's/^versionCode=//p' "$MODULE_PROP_FILE" 2>/dev/null | head -n 1 | tr -cd '0-9')
     [ -n "$_current_version" ] && [ -n "$_current_code" ] || { json_error '无法读取当前模块版本'; return 0; }
 
     if [ "$_channel" = stable ]; then

@@ -8,8 +8,9 @@ const script=html.match(/<script>([\s\S]*?)<\/script>/)[1];
 const resolver=script.slice(script.indexOf('async function resolveAncli()'),script.indexOf('let currentApps'));
 const cancellable=script.slice(script.indexOf('function taskCancellable('),script.indexOf('function taskReadOnly('));
 test('first load probes executable host path instead of relying on PATH',async()=>{
-  const ctx=vm.createContext({ANCLI:'ancli',execCmd:async cmd=>{assert.match(cmd,/container status --json/);return {code:0,stdout:'/data/adb/ksu/bin/ancli\n'};}});
-  vm.runInContext(resolver,ctx); assert.equal(await ctx.resolveAncli(),'/data/adb/ksu/bin/ancli');
+  assert.match(script,/let ANCLI = '\/data\/local\/tmp\/ancli\/bin\/ancli';/);
+  const ctx=vm.createContext({ANCLI:'/data/local/tmp/ancli/bin/ancli',execCmd:async cmd=>{assert.match(cmd,/container status --json/);return {code:0,stdout:'/data/local/tmp/ancli/bin/ancli\n'};}});
+  vm.runInContext(resolver,ctx); assert.equal(await ctx.resolveAncli(),'/data/local/tmp/ancli/bin/ancli');
 });
 test('only container install and app install/update are cancellable',()=>{
   const ctx=vm.createContext({});vm.runInContext(cancellable,ctx);
@@ -31,6 +32,7 @@ test('successful module ZIP download automatically starts KernelSU installation'
     data:{zip_url:'https://github.com/AHLLX/AnCLI/releases/download/v1.2.656-beta/ancli-68-v1.2.656-beta.zip'},
     currentModuleChannel:'beta', ANCLI:'ancli',
     setModuleCheckControls:()=>{}, setBusy:()=>()=>{}, uiText:key=>key,
+    shQuote:value=>"'"+String(value).replace(/'/g,"'\\''")+"'",
     updateModuleDownloadProgress:()=>{}, consumeModuleDownloadOutput:()=>{},
     runBackground:async()=>({status:'done',moduleDownloadPath:'/sdcard/Download/ancli-68-v1.2.656-beta.zip'}),
     installDownloadedModule:async path=>{installPath=path;},

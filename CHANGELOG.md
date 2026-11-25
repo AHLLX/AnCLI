@@ -1,3 +1,10 @@
+## v1.2.668
+
+### 修复 KernelSU WebUI 首次加载与模块更新检查
+
+- 将模块版本元数据同步到 WebUI 可读取的宿主目录，避免 KernelSU 受限命名空间把版本读取失败误报为网络问题。
+- WebUI 默认使用宿主绝对 `ancli` 入口，容器未安装或 systemless PATH 尚未生效时仍可加载状态、应用列表、配置和模块更新检查。
+
 ## v1.2.667 (2026-11-20)
 
 - Fix `dsh web` freezing in Android's background app cgroup by detaching `dsh-web-control.sh` to the root cgroup, preserving host proxy settings with `NO_PROXY`, and patching the `about:blank` OAuth popup for Android Chrome.

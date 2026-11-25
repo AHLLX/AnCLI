@@ -1546,7 +1546,11 @@ const BRIDGE_NAMES = ['ksu', 'ksu_webui', 'ap_webui', 'ksuwebui'];
 let bridge = null;
 let bridgeName = null;
 let bridgeLogged = false;
-let ANCLI = 'ancli';
+// The KernelSU WebUI shell may not inherit /system/bin's systemless PATH and
+// may be unable to traverse /data/adb/modules.  customize.sh/service.sh keep
+// this host entrypoint in /data/local/tmp/ancli, which is readable in that
+// namespace and remains valid with or without an Ubuntu rootfs.
+let ANCLI = '/data/local/tmp/ancli/bin/ancli';
 
 async function checkPendingActivation() {
   const notice = document.getElementById('pendingActivationNotice');
@@ -5505,8 +5509,8 @@ if (window.matchMedia) {
   // 首屏只等待两个轻量 JSON 请求，两个请求各自完成后立即更新对应区域。
   const firstLoad = resolveAncli().then(() => Promise.allSettled([loadStatus(), loadApps()]));
 
-  // 2026-11-16：默认 PATH 已由模块 wrapper 提供 ancli；不再在首屏额外
-  // 探测绝对路径，避免一条无关 shell 命令阻塞设置和更新按钮。
+  // The absolute host entrypoint is already selected above; the resolver only
+  // verifies it and can replace it when a mounted module path is available.
 
   // 日志维护、任务恢复与官方版本查询延迟到首屏稳定后静默运行。
   void firstLoad.finally(() => {

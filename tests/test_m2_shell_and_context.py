@@ -437,6 +437,7 @@ def test_m2_shell_invariants_service_ancli_env_dsh_network_uninstall(tmp_path):
     assert "loader|loader-*" in service_txt
     assert 'chmod 755 "$MODULE_DIR/system/bin/$name"' in service_txt
     assert 'cp -f "$MODULE_DIR/system/bin/ancli" "$ANCLI_DIR/bin/ancli"' in service_txt
+    assert 'cp -f "$MODULE_DIR/module.prop" "$ANCLI_DIR/module.prop"' in service_txt
     assert '".codex"' in service_txt
     assert 'chmod 777 "$_bridge_dir" "$_bridge_dir/reqs"' in service_txt
     assert 'mv "$_req" "${_req}.run"' in service_txt

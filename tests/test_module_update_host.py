@@ -42,6 +42,31 @@ def test_host_module_update_check_works_without_rootfs(tmp_path):
     assert data['zip_url'].endswith('/ancli-76-v1.2.664-beta.zip')
 
 
+def test_host_module_update_prefers_readable_temp_metadata(tmp_path):
+    module_dir = tmp_path / 'module'; module_dir.mkdir()
+    ancli_dir = tmp_path / 'ancli-data'; ancli_dir.mkdir()
+    (ancli_dir / 'module.prop').write_text('id=ancli\nversion=v1.2.667\nversionCode=78\n')
+    payload = tmp_path / 'release.json'
+    payload.write_text(json.dumps({
+        'version': 'v1.2.668',
+        'versionCode': 79,
+        'zipUrl': 'https://github.com/AHLLX/AnCLI/releases/download/v1.2.668/ancli-79-v1.2.668.zip',
+    }), encoding='utf-8')
+    helper = (ROOT / 'src/module/module-update.sh').read_text(encoding='utf-8')
+    helper = helper.replace('MODULE_DIR=/data/adb/modules/ancli', f'MODULE_DIR={posix(module_dir)}', 1)
+    helper = helper.replace('ANCLI_DIR=/data/local/tmp/ancli', f'ANCLI_DIR={posix(ancli_dir)}', 1)
+    helper = helper.replace(
+        "_payload=$(curl -fsSL -A AnCLI --connect-timeout 15 --max-time 25 'https://raw.githubusercontent.com/AHLLX/AnCLI/main/update.json' 2>/dev/null)",
+        '_payload=$(cat "$ANCLI_TEST_PAYLOAD")', 1)
+    helper_path = tmp_path / 'module-update.sh'; helper_path.write_text(helper, encoding='utf-8')
+    result = run_bash('sh "$SCRIPT" check stable', dict(os.environ, ANCLI_TEST_PAYLOAD=posix(payload), SCRIPT=posix(helper_path)))
+    assert result.returncode == 0, result.stderr
+    data = json.loads(result.stdout)
+    assert data['current_version'] == 'v1.2.667'
+    assert data['current_version_code'] == 78
+    assert data['has_update'] is True
+
+
 def test_host_wrapper_routes_module_update_without_rootfs():
     wrapper = (ROOT / 'src/module/system/bin/ancli').read_text(encoding='utf-8')
     no_rootfs = wrapper.index('if [ ! -f /data/local/tmp/ancli/rootfs/bin/bash ]')

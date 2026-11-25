@@ -128,6 +128,10 @@ if [ -f "$MODULE_DIR/system/bin/ancli" ]; then
     cp -f "$MODULE_DIR/system/bin/ancli" "$ANCLI_DIR/bin/ancli" 2>/dev/null || true
     chmod 755 "$ANCLI_DIR/bin/ancli" 2>/dev/null || true
 fi
+if [ -f "$MODULE_DIR/module.prop" ]; then
+    cp -f "$MODULE_DIR/module.prop" "$ANCLI_DIR/module.prop" 2>/dev/null || true
+    chmod 644 "$ANCLI_DIR/module.prop" 2>/dev/null || true
+fi
 for wrapper in "$ANCLI_DIR/bin/"*; do
     name="${wrapper##*/}"
     case "$name" in

@@ -760,6 +760,11 @@ cp -f "$MODPATH/ancli/registry.json" "$ANCLI_DIR/registry.json" 2>/dev/null || t
 #    $MODPATH/system/bin/ancli 将在设备重启后由系统无系统挂载至 /system/bin/ancli。
 cp -f "$MODPATH/system/bin/ancli" "$BIN_DIR/ancli" 2>/dev/null || true
 chmod 755 "$BIN_DIR/ancli" 2>/dev/null || true
+# The WebUI manager namespace can hide /data/adb/modules.  Keep the current
+# module metadata beside the host entrypoint so update checks do not depend on
+# module-tree readability.
+cp -f "$MODPATH/module.prop" "$ANCLI_DIR/module.prop" 2>/dev/null || installer_abort '无法部署模块版本信息' 'Could not deploy module version metadata'
+chmod 644 "$ANCLI_DIR/module.prop" 2>/dev/null || true
 ui_print "$(installer_text ">> 提示：模块与新装工具的全局 /system/bin 入口将在重启后生效。" ">> Note: Global /system/bin entrypoints take effect after reboot.")"
 
 
