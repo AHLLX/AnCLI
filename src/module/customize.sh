@@ -284,18 +284,84 @@ if [ ! -f "$ROOTFS/bin/bash" ]; then
     while :; do
     _return_to_mode=false
     _container_mode="deferred"
-    if [ -x /system/bin/getevent ]; then
-        ui_print "$(installer_text '选择容器安装方式：音量上=现在安装；音量下=稍后在 WebUI 安装。' 'Container setup: Volume Up = install now; Volume Down = configure in WebUI later.')"
-        ui_print "$(installer_text '20 秒无按键或按键不可用时，将保留配置并稍后安装。' 'No input for 20 seconds: keep configuration and defer installation.')"
-        ui_print "$(installer_text '刷入时默认使用国内镜像；选择 WebUI 安装可选择下载站点并测速。' 'Flashing defaults to a China mirror; WebUI lets you choose and test download mirrors.')"
-        if read_container_key; then
-            case "$_key_result" in *KEY_VOLUMEUP*) _container_mode="installed" ;; esac
-        else
-            ui_print "$(installer_text '>> 未检测到音量按键，稍后在 WebUI 安装容器。' '>> No volume key detected; defer container setup to WebUI.')"
+    _mode_index=1
+    while :; do
+        _mode_clear_index=0
+        _mode_back_index=3
+        if [ "$_config_exists" = true ]; then
+            _mode_clear_index=3
+            _mode_back_index=4
         fi
-    else
-        ui_print "$(installer_text '>> 无法读取音量按键，稍后在 WebUI 安装容器。' '>> Volume keys unavailable; defer container setup to WebUI.')"
-    fi
+        ui_print ""
+        ui_print "--------------------------------"
+        ui_print "$(installer_text '选择容器安装方式' 'Choose container setup mode')"
+        ui_print "$(installer_text '1. 现在安装容器' '1. Install the container now')"
+        ui_print "$(installer_text '2. 稍后在 WebUI 安装' '2. Install later in WebUI')"
+        if [ "$_config_exists" = true ]; then
+            ui_print "$(installer_text '3. 清除容器与已有配置' '3. Clear the container and saved configuration')"
+        fi
+        ui_print "${_mode_back_index}. $(installer_text '返回上一步（保留数据并停止刷入）' 'Back (keep data and stop flashing)')"
+        ui_print "$(installer_text '音量上：切换  |  音量下：确认' 'Volume Up: next  |  Volume Down: select')"
+        ui_print "$(installer_text '20 秒无操作：保留配置并稍后安装' 'No input for 20 seconds: keep configuration and defer installation.')"
+        ui_print "--------------------------------"
+        case "$_mode_index" in
+            1) _mode_label=$(installer_text '现在安装容器' 'Install now') ;;
+            2) _mode_label=$(installer_text '稍后在 WebUI 安装' 'Install later in WebUI') ;;
+            3)
+                if [ "$_config_exists" = true ]; then _mode_label=$(installer_text '清除容器与已有配置' 'Clear container and saved configuration'); else _mode_label=$(installer_text '返回上一步（保留数据并停止刷入）' 'Back (keep data and stop flashing)'); fi
+                ;;
+            4) _mode_label=$(installer_text '返回上一步（保留数据并停止刷入）' 'Back (keep data and stop flashing)') ;;
+            *) _mode_index=1; _mode_label=$(installer_text '现在安装容器' 'Install now') ;;
+        esac
+        ui_print "$(installer_text '> 已选' '> Selected') [$_mode_index/$_mode_back_index] $_mode_label"
+        if [ ! -x /system/bin/getevent ] || ! read_container_key; then
+            ui_print "$(installer_text '>> 未检测到选择，保留配置并稍后在 WebUI 安装。' '>> No selection; keeping configuration and deferring to WebUI.')"
+            _container_mode="deferred"
+            break
+        fi
+        case "$_key_result" in
+            *KEY_VOLUMEUP*)
+                _mode_index=$((_mode_index + 1))
+                [ "$_mode_index" -gt "$_mode_back_index" ] && _mode_index=1
+                ;;
+            *KEY_VOLUMEDOWN*)
+                if [ "$_mode_index" -eq 1 ]; then
+                    _container_mode="installed"
+                    ui_print "$(installer_text '>> 已选择：现在安装容器。' '>> Selected: install the container now.')"
+                    break
+                elif [ "$_mode_index" -eq 2 ]; then
+                    _container_mode="deferred"
+                    ui_print "$(installer_text '>> 已选择：稍后在 WebUI 安装。' '>> Selected: install later in WebUI.')"
+                    break
+                elif [ "$_config_exists" = true ] && [ "$_mode_index" -eq "$_mode_clear_index" ]; then
+                    ui_print "$(installer_text '清除将删除容器、已安装工具、配置和密钥。' 'Clearing deletes the container, installed tools, configuration, and keys.')"
+                    ui_print "$(installer_text '再次按音量下确认清除；音量上取消。' 'Press Volume Down again to confirm clearing; Volume Up cancels.')"
+                    if read_container_key; then
+                        case "$_key_result" in
+                            *KEY_VOLUMEDOWN*)
+                                ancli_clean_for_reinstall || installer_abort '清理未完成，安装已停止；请检查上方原因。' 'Cleanup did not finish; installation stopped. See the reason above.'
+                                _config_exists=false
+                                _container_profile="standard"
+                                _mode_index=1
+                                ui_print "$(installer_text '>> 已清除容器和配置，请重新选择安装方式。' '>> Container and configuration cleared; choose a setup mode again.')"
+                                continue
+                                ;;
+                            *) ui_print "$(installer_text '>> 已取消清除，保留现有配置。' '>> Clearing cancelled; existing configuration was kept.')" ;;
+                        esac
+                    else
+                        ui_print "$(installer_text '>> 未确认清除，保留现有配置。' '>> Clearing was not confirmed; existing configuration was kept.')"
+                    fi
+                elif [ "$_mode_index" -eq "$_mode_back_index" ]; then
+                    installer_abort '已返回上一步，保留现有配置并停止刷入。' 'Returned to the previous step; existing configuration was kept and flashing stopped.'
+                fi
+                ;;
+            *)
+                ui_print "$(installer_text '>> 未选择，保留配置并稍后在 WebUI 安装。' '>> No selection; keeping configuration and deferring to WebUI.')"
+                _container_mode="deferred"
+                break
+                ;;
+        esac
+    done
     if [ "$_container_mode" = "installed" ]; then
         case "$_container_profile" in
             minimal) _profile_index=1 ;;
@@ -320,7 +386,7 @@ if [ ! -f "$ROOTFS/bin/bash" ]; then
             ui_print "--------------------------------"
             _profile_line=$((_profile_line + 1))
         done
-        ui_print "$(installer_text '5 返回上一级：重新选择安装方式' '5 Back: return to container setup mode')"
+        ui_print "$(installer_text '5 返回上一级：重新选择安装方式' '5 Back: return to the container setup mode')"
         ui_print "$(installer_text '音量上：切换  |  音量下：确认安装' 'Volume Up: next  |  Volume Down: select')"
         ui_print "$(installer_text '20 秒未操作则延后安装' 'No input for 20 seconds: defer installation')"
         ui_print "--------------------------------"

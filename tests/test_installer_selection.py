@@ -73,7 +73,7 @@ def test_existing_deferred_config_offers_choice_and_keeps_values_without_keys(tm
 def test_ignores_unrelated_events_and_persists_confirmed_choice(tmp_path):
     initial = {'profile': 'standard', 'install_mode': 'deferred', 'network_mode': 'manual', 'proxy_url': 'http://example.test:8080', 'estimated_size_mb': 900}
     output, config = run_selection(tmp_path, initial, [
-        '/dev/input/event0: EV_SYN SYN_REPORT 00000000\n/dev/input/event0: EV_KEY KEY_VOLUMEUP DOWN\n',
+        '/dev/input/event0: EV_SYN SYN_REPORT 00000000\n/dev/input/event0: EV_KEY KEY_VOLUMEDOWN DOWN\n',
         '/dev/input/event0: EV_KEY KEY_VOLUMEUP DOWN\n',
         '/dev/input/event0: EV_KEY KEY_VOLUMEDOWN DOWN\n',
     ])
@@ -142,16 +142,22 @@ def test_timeout_does_not_resume_old_container(tmp_path):
     assert '未检测到选择' in output and config == initial
 
 
-def test_fifth_option_returns_to_install_mode_and_can_defer(tmp_path):
+def test_clear_option_removes_saved_container_configuration(tmp_path):
     initial = {'profile': 'standard', 'install_mode': 'deferred', 'network_mode': 'system'}
-    output, config = run_selection(tmp_path, initial, [UP, UP, UP, UP, DOWN, DOWN])
-    assert '> 已选 [5/5] 返回上一级' in output
-    assert '返回容器安装方式选择' in output
-    assert output.count('选择容器安装方式') == 2
+    output, config = run_selection(tmp_path, initial, [UP, UP, DOWN, DOWN, UP, DOWN])
+    assert '清除将删除容器' in output
+    assert '已清除容器和配置' in output
+    assert config['profile'] == 'standard' and config['install_mode'] == 'deferred'
+
+def test_mode_back_keeps_configuration_and_stops_flashing(tmp_path):
+    initial = {'profile': 'standard', 'install_mode': 'deferred', 'network_mode': 'system'}
+    output, config = run_selection(tmp_path, initial, [UP, UP, UP, DOWN], expect_failure=True)
+    assert '返回上一步' in output
     assert config == initial
 
-def test_return_can_reenter_and_confirm_profile(tmp_path):
+def test_profile_back_returns_to_setup_mode(tmp_path):
     initial = {'profile': 'standard', 'install_mode': 'deferred', 'network_mode': 'system', 'estimated_size_mb': 0}
-    output, config = run_selection(tmp_path, initial, [UP, UP, UP, UP, DOWN, UP, DOWN])
+    output, config = run_selection(tmp_path, initial, [DOWN, UP, UP, UP, DOWN, UP, DOWN])
+    assert '> 已选 [5/5] 返回上一级' in output
     assert '返回容器安装方式选择' in output
-    assert config['profile'] == 'standard' and config['install_mode'] == 'installed'
+    assert config == initial
