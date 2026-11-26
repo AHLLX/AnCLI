@@ -6,9 +6,10 @@ Welcome, fellow AI Assistant. If you are reading this, you have been tasked with
 AnCLI is a unified, systemless environment manager and plugin-based installer designed to bring full Linux command-line tools (like Node.js, Go, or Python-based AI agents) to rooted Android devices.
 Because Android uses the Bionic C library, native Linux binaries often crash. AnCLI solves this by using `proot` to run a pure Ubuntu `glibc` base system transparently on Android.
 
-## 当前交接（2026-11-26，v1.2.670）
+## 当前交接（2026-11-26，v1.2.671）
 
-- 当前源码/正式版模块包为 `v1.2.670`、`versionCode=81`，`update.json` 已同步指向 `v1.2.670`。模块更新检查与 ZIP 下载由 Android 宿主执行，Ubuntu rootfs 删除后仍可检查和更新；下载包校验 ZIP 结构、根目录 module.prop、版本和 versionCode。
+- 当前源码/正式版模块包为 `v1.2.671`、`versionCode=82`，`update.json` 已同步指向 `v1.2.671`。模块更新检查与 ZIP 下载由 Android 宿主执行，Ubuntu rootfs 删除后仍可检查和更新；下载包校验 ZIP 结构、根目录 module.prop、版本和 versionCode。
+- 已修复 `install-network.sh` 与 `container-bootstrap.sh` 的代理网络检测：流式 `awk` 判定 `ANCLI_VPN` 避免 `ARG_MAX` 溢出；`network-test` 先初始化代理变量再通过 HTTPS `curl`（经 `$_ancli_proxy` 或直连）并发探测 Google/Cloudflare/Baidu/QQ，解决 HTTP 代理和 Fake-IP TUN 下 ICMP `ping` 恒失败的误判；WebUI `closeWelcomeGuide()` 在关闭首次使用指南后会接续显示未配置的 Agent 全局记忆弹窗。
 - 已恢复 `ancli` 与已安装工具包装器的双路径动态注入：安装、更新、`ancli repair`、刷入（`customize.sh`）与开机（`service.sh`）会先删除旧文件再同步写入 `/data/local/tmp/ancli/bin/`、`$MODPATH/system/bin/` 以及存在的 `/data/adb/ksu/bin/` 与 `/data/adb/ap/bin/`；始终不写 `/system/bin`，也保持禁用宿主假 `/system/bin/bash` 覆盖。
 - `agy` 已切至 `manifest_archive` 安装与更新机制，由 Python 标准库强制 HTTP/1.1 下载、重试退避、`.part` `Range` 断点续传并校验 SHA-512 与 `tar.gz` 成员后原子安装，同时严格遵守 `proxy_mode`（`direct` 不切换未知代理）与 `NO_PROXY`。
 - 保持单一 `proot-ubuntu` 后端。容器内提供原生 `/usr/local/bin/ancli`，宿主机入口通过 `$MODPATH/system/bin/`、`/data/adb/{ksu,ap}/bin/` 与 `/data/local/tmp/ancli/bin/` 提供；`bin/proot` 由 GitHub Actions CI（`scripts/build_proot_ci.sh`）从上游 `proot v5.4.0` 源码编译打入，仓库不存放预编译二进制。

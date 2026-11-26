@@ -4916,7 +4916,7 @@ function renderProxyProbeResult(raw, mode, exitCode) {
   updateProxyIpBadges(proxyUrl, mode);
   lastProxyMarkup = '<div class="proxy-probe-card"><div class="proxy-probe-verdict ' + verdictTone + '">' + esc(uiLang === 'en' ? 'Result: ' : '判断结果：') + esc(verdict) + '</div><div class="proxy-probe-grid">' +
     items.map(([label, value, state]) => '<div class="proxy-probe-item ' + (state === 'ok' ? 'ok' : (state === 'fail' ? 'fail' : (state === 'warn' ? 'warn' : ''))) + '"><span class="proxy-probe-led"></span><span><b>' + esc(label) + '</b> · ' + esc(value) + '</span></div>').join('') +
-    '</div><div class="hint" style="margin-top:8px">' + esc(uiLang === 'en' ? 'Ping failures may be caused by ICMP filtering. Reachability alone cannot identify a transparent proxy.' : 'Ping 失败可能是 ICMP 被屏蔽；仅凭连通性不能识别透明代理。') + '</div></div>';
+    '</div><div class="hint" style="margin-top:8px">' + esc(uiLang === 'en' ? 'Sites are tested over HTTPS via the active proxy or network (the direct probe bypasses any proxy).' : '站点通过当前有效代理或网络发起 HTTPS 探测（HTTPS 直连探测绕过代理）；仅凭连通性不能识别透明代理。') + '</div></div>';
   return lastProxyMarkup;
 }
 document.getElementById('btnProxyProbe').onclick = () => runProxyNetworkProbe(
@@ -5446,6 +5446,9 @@ function closeWelcomeGuide() {
   document.body.style.overflow = '';
   try { localStorage.setItem('ancli_welcome_guide_v3', 'seen'); } catch (e) { /* storage may be disabled */ }
   try { sessionStorage.setItem('ancli_welcome_guide_v3', 'seen'); } catch (e) { /* storage may be disabled */ }
+  if (latestStatus && latestStatus.rootfs_ready && latestStatus.agent_memory === 'unconfigured' && !document.querySelector('.overlay.show')) {
+    openMemoryPrompt();
+  }
 }
 function maybeShowWelcomeGuide() {
   let seen = false;
@@ -5459,13 +5462,18 @@ function maybeShowWelcomeGuide() {
   overlay.setAttribute('aria-hidden', 'false');
   document.body.style.overflow = 'hidden';
   if (typeof requestAnimationFrame === 'function') {
-    requestAnimationFrame(() => document.getElementById('welcomeGuideDone')?.focus());
+    requestAnimationFrame(() => document.getElementById('welcomeGuideNext')?.focus());
   }
 }
 document.getElementById('welcomeGuideClose').onclick = closeWelcomeGuide;
 document.getElementById('welcomeGuideDone').onclick = closeWelcomeGuide;
 document.getElementById('welcomeGuidePrev').onclick = () => setWelcomeGuidePage(1);
-document.getElementById('welcomeGuideNext').onclick = () => setWelcomeGuidePage(2);
+document.getElementById('welcomeGuideNext').onclick = () => {
+  setWelcomeGuidePage(2);
+  if (typeof requestAnimationFrame === 'function') {
+    requestAnimationFrame(() => document.getElementById('welcomeGuideDone')?.focus());
+  }
+};
 document.getElementById('welcomeGuideOverlay').addEventListener('click', e => {
   if (e.target.id === 'welcomeGuideOverlay') closeWelcomeGuide();
 });

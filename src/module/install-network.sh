@@ -78,18 +78,45 @@ ancli_install_network() {
     return 0
 }
 
-# Inspect connected NetworkAgentInfo records, not VPN providers, requests or
-# NOT_VPN capabilities. Absence does not prove that app traffic bypasses VPN.
+# Inspect connected NetworkAgentInfo records without copying full dumpsys output into
+# argv (Android dumpsys connectivity often exceeds ARG_MAX /bin/printf limits).
 ancli_detect_vpn() {
-    _vpn_dump=$(dumpsys connectivity 2>/dev/null) || { echo 'ANCLI_VPN=unknown'; return 0; }
-    [ -n "$_vpn_dump" ] || { echo 'ANCLI_VPN=unknown'; return 0; }
-    if printf '%s\n' "$_vpn_dump" | grep -E 'NetworkAgentInfo.*(ni\{VPN CONNECTED|Transports: (VPN([|[:space:]]|$)|[A-Z_]+\|VPN([|[:space:]]|$)))' >/dev/null; then
-        echo 'ANCLI_VPN=connected'
-    elif printf '%s\n' "$_vpn_dump" | grep 'NetworkAgentInfo' >/dev/null; then
-        echo 'ANCLI_VPN=not_detected'
-    else
-        echo 'ANCLI_VPN=unknown'
+    _vpn_state=$(dumpsys connectivity 2>/dev/null | awk '
+        /NetworkAgentInfo/ {
+            found = 1
+            if ($0 ~ /ni\{VPN CONNECTED/ || $0 ~ /Transports: (VPN([| \t]|$)|[A-Z_]+\|VPN([| \t]|$))/) {
+                vpn = 1
+            }
+        }
+        END {
+            if (vpn) print "connected"
+            else if (found) print "not_detected"
+            else print "unknown"
+        }
+    ') || _vpn_state="unknown"
+    [ -n "$_vpn_state" ] || _vpn_state="unknown"
+    printf 'ANCLI_VPN=%s\n' "$_vpn_state"
+}
+
+_ancli_run_curl_head() {
+    _arc_url="$1"
+    if command -v curl >/dev/null 2>&1; then
+        if [ -n "${_ancli_proxy:-}" ]; then
+            curl -fsSIL -A "Mozilla/5.0" --max-redirs 2 --proxy "$_ancli_proxy" --connect-timeout 4 --max-time 6 "$_arc_url" >/dev/null 2>&1
+        else
+            curl -fsSIL -A "Mozilla/5.0" --max-redirs 2 --noproxy '*' --connect-timeout 4 --max-time 6 "$_arc_url" >/dev/null 2>&1
+        fi
+        return $?
     fi
+    if [ -n "${ANCLI_DIR:-}" ] && [ -x "$ANCLI_DIR/bin/proot" ] && [ -f "$ANCLI_DIR/rootfs/usr/bin/curl" ]; then
+        if [ -n "${_ancli_proxy:-}" ]; then
+            "$ANCLI_DIR/bin/proot" -r "$ANCLI_DIR/rootfs" -b /dev -b /proc -b /sys /usr/bin/env PATH=/usr/bin:/bin /usr/bin/curl -fsSIL -A "Mozilla/5.0" --max-redirs 2 --proxy "$_ancli_proxy" --connect-timeout 4 --max-time 6 "$_arc_url" >/dev/null 2>&1
+        else
+            "$ANCLI_DIR/bin/proot" -r "$ANCLI_DIR/rootfs" -b /dev -b /proc -b /sys /usr/bin/env PATH=/usr/bin:/bin /usr/bin/curl -fsSIL -A "Mozilla/5.0" --max-redirs 2 --noproxy '*' --connect-timeout 4 --max-time 6 "$_arc_url" >/dev/null 2>&1
+        fi
+        return $?
+    fi
+    return 127
 }
 
 # A successful HTTPS request verifies reachability for this execution context,
@@ -98,29 +125,37 @@ ancli_probe_route() {
     _route_target="${ANCLI_ROUTE_TEST_URL:-https://mirrors.tuna.tsinghua.edu.cn/}"
     if command -v curl >/dev/null 2>&1; then
         if curl -fsSI --noproxy '*' --connect-timeout 3 --max-time 5 "$_route_target" >/dev/null 2>&1; then echo 'ANCLI_ROUTE=reachable'; else echo 'ANCLI_ROUTE=failed'; fi
-    elif [ -x "$ANCLI_DIR/bin/proot" ] && [ -f "$ANCLI_DIR/rootfs/usr/bin/curl" ]; then
+    elif [ -n "${ANCLI_DIR:-}" ] && [ -x "$ANCLI_DIR/bin/proot" ] && [ -f "$ANCLI_DIR/rootfs/usr/bin/curl" ]; then
         if "$ANCLI_DIR/bin/proot" -r "$ANCLI_DIR/rootfs" -b /dev -b /proc -b /sys /usr/bin/env PATH=/usr/bin:/bin /usr/bin/curl -fsSI --noproxy '*' --connect-timeout 3 --max-time 5 "$_route_target" >/dev/null 2>&1; then echo 'ANCLI_ROUTE=reachable'; else echo 'ANCLI_ROUTE=failed'; fi
     else
         echo 'ANCLI_ROUTE=unknown'
     fi
 }
 
-# Probe in parallel with a strict deadline; ICMP reachability cannot establish
-# proxy identity and blocked echo requests do not establish disconnection.
+# Probe target sites concurrently over HTTPS via the active proxy (or direct/VPN
+# when no HTTP proxy is configured), because HTTP proxies and Fake-IP TUNs do
+# not forward ICMP echo requests (`ping`).
 ancli_probe_ping_sites() (
-    if ! command -v ping >/dev/null 2>&1 || ! command -v timeout >/dev/null 2>&1; then
+    _has_curl=0
+    if command -v curl >/dev/null 2>&1 || { [ -n "${ANCLI_DIR:-}" ] && [ -x "$ANCLI_DIR/bin/proot" ] && [ -f "$ANCLI_DIR/rootfs/usr/bin/curl" ]; }; then
+        _has_curl=1
+    elif ! command -v ping >/dev/null 2>&1 || ! command -v timeout >/dev/null 2>&1; then
         echo 'ANCLI_PING=unavailable'
         return 0
     fi
-    _ping_dir=$(mktemp -d "$ANCLI_DIR/.netprobe.XXXXXX") || { echo 'ANCLI_PING=unavailable'; return 0; }
+    _ping_dir=$(mktemp -d "${ANCLI_DIR:-/tmp}/.netprobe.XXXXXX") || { echo 'ANCLI_PING=unavailable'; return 0; }
     trap 'rm -f "$_ping_dir/baidu" "$_ping_dir/qq" "$_ping_dir/google" "$_ping_dir/cloudflare"; rmdir "$_ping_dir" 2>/dev/null || true' EXIT HUP INT TERM
     _ping_site() {
-        if timeout 4 ping -c 1 -W 2 "$2" >/dev/null 2>&1; then echo ok > "$_ping_dir/$1"; else echo failed > "$_ping_dir/$1"; fi
+        if [ "$_has_curl" = 1 ]; then
+            if _ancli_run_curl_head "$3"; then echo ok > "$_ping_dir/$1"; else echo failed > "$_ping_dir/$1"; fi
+        else
+            if timeout 4 ping -c 1 -W 2 "$2" >/dev/null 2>&1; then echo ok > "$_ping_dir/$1"; else echo failed > "$_ping_dir/$1"; fi
+        fi
     }
-    _ping_site baidu www.baidu.com &
-    _ping_site qq www.qq.com &
-    _ping_site google www.google.com &
-    _ping_site cloudflare www.cloudflare.com &
+    _ping_site baidu www.baidu.com https://www.baidu.com/ &
+    _ping_site qq www.qq.com https://www.qq.com/ &
+    _ping_site google www.google.com https://www.google.com/generate_204 &
+    _ping_site cloudflare www.cloudflare.com https://cp.cloudflare.com/ &
     wait
     for _ping_name in baidu qq google cloudflare; do
         _ping_value=$(cat "$_ping_dir/$_ping_name" 2>/dev/null || echo unknown)

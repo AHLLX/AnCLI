@@ -62,3 +62,8 @@ test('KernelSU install stages the verified ZIP outside shared storage and keeps 
   assert.match(command,/ksud module install '\/data\/local\/tmp\/ancli-update-/);
   assert.equal(message.textContent,'aboutInstallDone');
 });
+test('first-run welcome guide chains into unconfigured agent memory prompt cleanly',()=>{
+  assert.match(script,/function closeWelcomeGuide\(\)[\s\S]*?openMemoryPrompt\(\);/);
+  assert.match(script,/maybeShowWelcomeGuide[\s\S]*?welcomeGuideNext'\)\?\.focus\(\)/);
+  assert.doesNotMatch(script,/Ping 失败可能是 ICMP 被屏蔽/);
+});

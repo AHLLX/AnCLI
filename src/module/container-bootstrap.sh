@@ -1622,10 +1622,11 @@ case "$action" in
         unset http_proxy https_proxy all_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY
         . "$ANCLI_DIR/install-network.sh"
         export ANCLI_NETWORK_VERBOSE=1 ANCLI_PROXY_TEST_TIMEOUT=5
+        _test_rc=0
         ancli_detect_vpn
+        ancli_install_network "$_test_mode" "$_test_proxy" || _test_rc=$?
         ancli_probe_ping_sites
         ancli_probe_route
-        ancli_install_network "$_test_mode" "$_test_proxy" || exit $?
         if [ "$_test_mode" = system ]; then
             if [ -n "${_ancli_candidate:-}" ] && [ -n "${_ancli_host:-}" ] && [ -n "${_ancli_port:-}" ]; then
                 printf '%s %s %s\n' "$_ancli_host" "$_ancli_port" "$(date +%s)" > "$ANCLI_DIR/.proxy_cache" &&
@@ -1634,6 +1635,7 @@ case "$action" in
                 rm -f "$ANCLI_DIR/.proxy_cache" "$ANCLI_DIR/.proxy_cache_last"
             fi
         fi
+        [ "$_test_rc" -eq 0 ] || exit "$_test_rc"
         ;;
     install|apply)
         shift

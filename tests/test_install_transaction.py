@@ -140,3 +140,36 @@ def test_vpn_probe_distinguishes_connected_from_not_vpn_and_denied(tmp_path):
     for snapshot, expected in samples:
         r=run_bash(command,dict(env,VPN_SNAPSHOT=snapshot))
         assert r.returncode==0 and r.stdout.strip()=='ANCLI_VPN='+expected, r.stdout + r.stderr
+
+    # Large dumpsys output (>250 KB) must stream cleanly without overflowing ARG_MAX on printf.
+    big_file = tmp_path / "dumpsys_big.txt"
+    big_file.write_text(("x" * 200 + "\n") * 1200 + "  NetworkAgentInfo{ ni{VPN CONNECTED} }\n", encoding="utf-8")
+    r_big = run_bash(
+        f'. "$HELPER"; dumpsys() {{ cat "{posix(big_file)}"; }}; ancli_detect_vpn',
+        env,
+    )
+    assert r_big.returncode == 0 and r_big.stdout.strip() == 'ANCLI_VPN=connected', r_big.stdout + r_big.stderr
+
+
+def test_network_probe_uses_https_via_active_proxy_and_bootstrap_order(tmp_path):
+    helper = posix(ROOT / 'src/module/install-network.sh')
+    calls_log = tmp_path / 'curl_calls.log'
+    env = dict(os.environ, HELPER=helper, ANCLI_DIR=posix(tmp_path))
+    script = (
+        f'. "$HELPER"; '
+        f'curl() {{ printf "%s\\n" "$*" >> "{posix(calls_log)}"; return 0; }}; '
+        f'export -f curl; '
+        f'_ancli_proxy="http://127.0.0.1:10808"; ancli_probe_ping_sites'
+    )
+    r = run_bash(script, env)
+    assert r.returncode == 0, r.stdout + r.stderr
+    for key in ('ANCLI_PING_baidu=ok', 'ANCLI_PING_qq=ok', 'ANCLI_PING_google=ok', 'ANCLI_PING_cloudflare=ok'):
+        assert key in r.stdout
+    logged = calls_log.read_text(encoding='utf-8')
+    assert '--proxy http://127.0.0.1:10808' in logged
+    assert 'https://www.google.com/generate_204' in logged
+    assert 'https://cp.cloudflare.com/' in logged
+
+    bootstrap = (ROOT / 'src/module/container-bootstrap.sh').read_text(encoding='utf-8')
+    net_block = bootstrap[bootstrap.index('network-test)'):bootstrap.index('install|apply)')]
+    assert net_block.index('ancli_install_network') < net_block.index('ancli_probe_ping_sites')

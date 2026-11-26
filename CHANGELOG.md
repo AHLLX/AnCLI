@@ -1,3 +1,11 @@
+## v1.2.671
+
+### 修复网络代理 HTTPS 连通探测、VPN 检测与 WebUI 首启弹窗衔接
+
+- 修复 `install-network.sh` 中 `ancli_detect_vpn()` 因传递完整 `dumpsys connectivity` 文本给 `/bin/printf` 触发 `Argument list too long` 而固定返回 `ANCLI_VPN=unknown` 的问题，改为流式 `awk` 检测。
+- 将 `network-test` 的目标站（含 `google.com`、`cloudflare.com`、`baidu.com`、`qq.com`）连通探测由 ICMP `ping` 升级为经当前有效代理（或直连/VPN）的 HTTPS `curl` 探测，并调整 `container-bootstrap.sh` 先解析代理再探测站点，解决 HTTP 代理与 Fake-IP TUN 环境下 `google.com` 恒判不可达的问题。
+- 修复 WebUI 首次进入时若同时存在未配置的全局记忆状态，`closeWelcomeGuide()` 后不会接续弹出 Agent 全局记忆选择窗，以及首屏聚焦隐藏按钮的问题。
+
 ## v1.2.670
 
 ### 修复 AGY 宿主动态入口暴露并增强大文件下载可靠性
