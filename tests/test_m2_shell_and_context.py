@@ -15,13 +15,14 @@ def _load_core():
 
 
 def test_bash_host_compat_no_loop_on_marked_host_and_forwards_real_guest_bash(tmp_path):
-    # Per KernelSU security policy, AnCLI must not ship or overlay a fake /system/bin/bash.
+    # AnCLI must never ship or overlay a fake /system/bin/bash, while dual-injecting ancli/tool wrappers into KSU/AP instant bins.
     assert not (ROOT / "src/bash-host-compat").exists()
     customize_txt = (ROOT / "src/module/customize.sh").read_text(encoding="utf-8")
     service_txt = (ROOT / "src/module/service.sh").read_text(encoding="utf-8")
     assert 'cp -f "$MODPATH/ancli/bash-host-compat"' not in customize_txt
     assert 'cp -f "$MODULE_DIR/ancli/bash-host-compat"' not in service_txt
-    assert 'cp -f "$MODPATH/system/bin/ancli" "$INSTANT_BIN/ancli"' not in customize_txt
+    assert 'cp -f "$MODPATH/system/bin/ancli" "$INSTANT_BIN/ancli"' in customize_txt
+    assert 'cp -f "$MODULE_DIR/system/bin/ancli" "$INSTANT_BIN/ancli"' in service_txt
     return
 
     mock_bin_bash = tmp_path / "bin_bash"
@@ -453,6 +454,42 @@ def test_m2_shell_invariants_service_ancli_env_dsh_network_uninstall(tmp_path):
     assert 'PWD="$PROOT_CWD"' in ancli_txt
     assert '-w "$PROOT_CWD"' in ancli_txt
     assert '_ancli_default_cwd=${_ancli_default_cwd%/}' in ancli_txt
+
+    # Execute service.sh steps 5.1 & 6 against temp directories to prove wrappers stay synced across module + KSU/AP bins
+    s_ancli = tmp_path / "svc_ancli"
+    s_mod = tmp_path / "svc_mod"
+    s_ksu = tmp_path / "svc_ksu"
+    s_ap = tmp_path / "svc_ap"
+    for d in (s_ancli / "bin", s_mod / "system" / "bin", s_ksu, s_ap):
+        d.mkdir(parents=True)
+    (s_mod / "module.prop").write_text("id=ancli\nversion=v1.2.670\n", encoding="utf-8")
+    (s_mod / "system" / "bin" / "ancli").write_text("#!/bin/sh\necho ancli-new\n", encoding="utf-8")
+    (s_ancli / "bin" / "agy").write_text("#!/bin/sh\n# /data/local/tmp/ancli/rootfs\n", encoding="utf-8")
+    (s_ksu / "bash").write_text("#!/system/bin/sh\n# AnCLI proot shim\n", encoding="utf-8")
+    (s_ksu / "git").write_text("#!/system/bin/sh\n# AnCLI proot shim\n", encoding="utf-8")
+    (s_ksu / "custom").write_text("#!/bin/sh\nkeep\n", encoding="utf-8")
+    (s_ap / "agy").write_text("stale", encoding="utf-8")
+
+    s_start = service_txt.index("# 5.1 ")
+    s_end = service_txt.index("# 7. ")
+    snippet = (
+        service_txt[s_start:s_end]
+        .replace('"$ANCLI_DIR"', f'"{posix(s_ancli)}"')
+        .replace("$ANCLI_DIR", posix(s_ancli))
+        .replace("$MODULE_DIR", posix(s_mod))
+        .replace("/data/adb/ksu/bin", posix(s_ksu))
+        .replace("/data/adb/ap/bin", posix(s_ap))
+    )
+    r_svc = run_bash(snippet, dict(os.environ))
+    assert r_svc.returncode == 0, r_svc.stdout + r_svc.stderr
+    assert (s_ancli / "bin" / "ancli").exists()
+    assert (s_ksu / "ancli").exists() and (s_ap / "ancli").exists()
+    assert (s_mod / "system" / "bin" / "agy").exists()
+    assert (s_ksu / "agy").exists() and "rootfs" in (s_ksu / "agy").read_text(encoding="utf-8")
+    assert (s_ap / "agy").exists() and "rootfs" in (s_ap / "agy").read_text(encoding="utf-8")
+    assert not (s_ksu / "bash").exists()
+    assert not (s_ksu / "git").exists()
+    assert (s_ksu / "custom").exists()
     assert 'if [ "${1:-}" = "shell" ]; then' in ancli_txt
     assert '/bin/bash -l' in ancli_txt
 

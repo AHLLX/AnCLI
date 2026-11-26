@@ -1,3 +1,10 @@
+## v1.2.670
+
+### 修复 AGY 宿主动态入口暴露并增强大文件下载可靠性
+
+- 恢复 `_write_wrapper_to_paths()`、安装/更新/修复路径、`customize.sh` 与 `service.sh` 的双路径动态注入（写前先删，写入 `/data/adb/ksu/bin` 与 `/data/adb/ap/bin`，不写 `/system/bin` 且不恢复假 `/system/bin/bash`），解决 `agy` 与已安装工具在 root Shell 无法直接执行及重启被清理的问题。
+- 为 `agy` 新增仅基于 Python 标准库的 `manifest_archive` 安装与更新器：使用 `urllib.request`/`http.client` 强制 HTTP/1.1 规避代理 HTTP/2 stream `INTERNAL_ERROR`，支持有限重试与指数退避、`.part` 临时文件 `Range` 断点续传、SHA-512 与 `tar.gz` 结构校验后原子替换安装，并严格遵守 `proxy_mode`（`direct` 绝不切换代理）与 `NO_PROXY`。
+
 ## v1.2.669
 
 ### 改进刷入安装向导导航

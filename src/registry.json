@@ -1,5 +1,5 @@
 {
-  "version": "1.2.669",
+  "version": "1.2.670",
   "apps": {
     "aider": {
       "name": "Aider",
@@ -63,11 +63,20 @@
       "description": "Google's powerful terminal agent",
       "author": "Google",
       "install_mode": "proot",
-      "install_method": "pipe_script",
+      "install_method": "manifest_archive",
+      "update_method": "manifest_archive",
+      "manifest_url": "https://antigravity-cli-auto-updater-974169037036.us-central1.run.app/manifests/linux_arm64.json",
+      "manifest_url_by_arch": {
+        "arm64": "https://antigravity-cli-auto-updater-974169037036.us-central1.run.app/manifests/linux_arm64.json",
+        "x86_64": "https://antigravity-cli-auto-updater-974169037036.us-central1.run.app/manifests/linux_amd64.json"
+      },
+      "archive_member": "antigravity",
+      "install_target": "/usr/local/bin/agy",
+      "post_install_cmd": "agy install --dir /usr/local/bin",
       "installer_url": "https://antigravity.google/cli/install.sh",
       "installer_args": "--dir /usr/local/bin",
       "installer_script_env": {},
-      "install_cmd": "curl -sL https://antigravity.google/cli/install.sh | bash -s -- --dir /usr/local/bin",
+      "install_cmd": "curl --http1.1 -sL https://antigravity.google/cli/install.sh | bash -s -- --dir /usr/local/bin",
       "update_cmd": "agy update",
       "uninstall_cmd": "rm -f /usr/local/bin/agy /root/.local/bin/agy",
       "executable": "agy",

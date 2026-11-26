@@ -22,13 +22,21 @@ import subprocess
 import shutil
 import urllib.request
 import urllib.parse
+import urllib.error
+import http.client
 import re
 import ssl
 import contextlib
 import datetime
+import tarfile
 import zipfile
 import hashlib
 import platform
+
+# Capture stdlib urlopen at import time so per-request ProxyHandler openers stay
+# active in production while test fixtures monkeypatching urllib.request.urlopen
+# still intercept every HTTP request deterministically.
+_STDLIB_URLOPEN = urllib.request.urlopen
 
 # 2026-11-13: TLS 降级回退仅限定在单次请求作用域内，严禁修改全局 ssl 上下文，
 # 以防止容器内 CA 证书库不完整时意外削弱全进程 TLS 校验安全性。
@@ -42,8 +50,8 @@ MOD_DIR = "/data/adb/modules/ancli"
 KSU_BIN = "/data/adb/ksu/bin"
 AP_BIN  = "/data/adb/ap/bin"
 
-VERSION = "1.2.669"
-VERSION_CODE = 80
+VERSION = "1.2.670"
+VERSION_CODE = 81
 
 # 2026-11-13: 应用目录随模块固化打包；官方版本检查直接读取各应用自身的 `latest` 字段，
 # 不再从网络拉取第二份 AnCLI 注册表。
@@ -724,16 +732,450 @@ def _t(key, *args):
 # 内置应用目录、上游版本探测与安装状态持久化 (Catalog, Version Checks & State)
 # ---------------------------------------------------------------------------
 
-def _urlopen_response(url, headers, timeout):
-    """Open a streaming response with the narrow TLS fallback used by HTTP helpers."""
-    req = urllib.request.Request(url, headers=headers)
+def _host_matches_no_proxy(host):
+    """Return True when *host* matches an entry in `no_proxy` / `NO_PROXY`."""
+    host = (host or "").strip().strip("[]").lower()
+    if not host:
+        return False
+    raw = os.environ.get("no_proxy") or os.environ.get("NO_PROXY") or ""
+    for item in raw.split(","):
+        token = item.strip().lower()
+        if not token:
+            continue
+        if token == "*":
+            return True
+        if token.startswith("[") and "]" in token:
+            token = token[1:token.index("]")]
+        elif token.count(":") == 1:
+            token = token.split(":", 1)[0]
+        if host == token:
+            return True
+        if token.startswith("."):
+            if host.endswith(token) or host == token[1:]:
+                return True
+        elif host.endswith("." + token):
+            return True
+    return False
+
+
+def _normalize_proxy_scheme(raw):
+    """Ensure proxy string includes a URL scheme when given as host:port."""
+    val = (raw or "").strip()
+    if not val:
+        return ""
+    if not re.match(r"^[a-zA-Z][a-zA-Z0-9+.-]*://", val):
+        return f"http://{val}"
+    return val
+
+
+def _resolve_http_proxy(url):
+    """Resolve effective proxy for *url* without silently overriding `direct` mode.
+
+    Returns ``(proxy_mode, proxy_url_or_None, description)``.
+    """
+    cfg = load_config()
+    mode = (cfg.get("proxy_mode") or "system").strip().lower()
+    if mode not in ("direct", "manual", "system"):
+        mode = "system"
+
+    parsed = urllib.parse.urlparse(url)
+    host = parsed.hostname or ""
+
+    if mode == "direct":
+        # Direct mode must never consult system/env caches or inject a proxy.
+        return "direct", None, "direct"
+
+    if mode == "manual":
+        raw_manual = _normalize_proxy_scheme(cfg.get("proxy_url") or "")
+        if not raw_manual:
+            return "manual", None, "manual (unconfigured -> direct)"
+        if _host_matches_no_proxy(host):
+            return "manual", None, "manual -> direct (NO_PROXY)"
+        return "manual", raw_manual, f"manual ({raw_manual})"
+
+    # mode == "system"
+    if _host_matches_no_proxy(host):
+        return "system", None, "system -> direct (NO_PROXY)"
+
+    detected = _get_detected_proxy()
+    if detected:
+        proxy_url = _normalize_proxy_scheme(detected)
+        return "system", proxy_url, f"system ({proxy_url})"
+
+    scheme = (parsed.scheme or "https").lower()
+    env_keys = (
+        ("https_proxy", "HTTPS_PROXY", "http_proxy", "HTTP_PROXY", "all_proxy", "ALL_PROXY")
+        if scheme == "https"
+        else ("http_proxy", "HTTP_PROXY", "all_proxy", "ALL_PROXY")
+    )
+    for key in env_keys:
+        val = _normalize_proxy_scheme(os.environ.get(key) or "")
+        if val:
+            return "system", val, f"system ({val})"
+
+    return "system", None, "system (direct)"
+
+
+def _open_request_with_proxy(req, timeout=30):
+    """Open *req* via stdlib HTTP/1.1 honoring AnCLI proxy_mode and NO_PROXY."""
+    _mode, proxy_url, _desc = _resolve_http_proxy(req.full_url)
+    if proxy_url and proxy_url.lower().startswith(("socks4://", "socks5://", "socks5h://")):
+        raise urllib.error.URLError(
+            f"Python stdlib HTTP client cannot route via SOCKS proxy '{proxy_url}'; "
+            "use an http:// proxy port instead"
+        )
+
+    # Preserve test hermeticity when urllib.request.urlopen is monkeypatched.
+    if urllib.request.urlopen is not _STDLIB_URLOPEN:
+        try:
+            return urllib.request.urlopen(req, timeout=timeout)
+        except urllib.error.HTTPError:
+            raise
+        except (ssl.SSLError, urllib.error.URLError) as e:
+            if not _is_cert_verification_error(e):
+                raise
+            print(f"\033[93m[!] TLS certificate verification failed ({e}); retrying this request without verification.\033[0m", flush=True)
+            return urllib.request.urlopen(req, timeout=timeout, context=ssl._create_unverified_context())
+
+    proxy_map = {"http": proxy_url, "https": proxy_url} if proxy_url else {}
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler(proxy_map))
     try:
-        return urllib.request.urlopen(req, timeout=timeout)
+        return opener.open(req, timeout=timeout)
+    except urllib.error.HTTPError:
+        raise
     except (ssl.SSLError, urllib.error.URLError) as e:
         if not _is_cert_verification_error(e):
             raise
-        print(f"\033[93m[!] TLS certificate verification failed ({e}); retrying this request without verification.\033[0m")
-        return urllib.request.urlopen(req, timeout=timeout, context=ssl._create_unverified_context())
+        print(f"\033[93m[!] TLS certificate verification failed ({e}); retrying this request without verification.\033[0m", flush=True)
+        unverified_opener = urllib.request.build_opener(
+            urllib.request.ProxyHandler(proxy_map),
+            urllib.request.HTTPSHandler(context=ssl._create_unverified_context()),
+        )
+        return unverified_opener.open(req, timeout=timeout)
+
+
+def _urlopen_response(url, headers, timeout):
+    """Open a streaming HTTP/1.1 response with proxy_mode awareness and narrow TLS fallback."""
+    req = urllib.request.Request(url, headers=dict(headers or {}))
+    return _open_request_with_proxy(req, timeout=timeout)
+
+
+def _verify_downloaded_archive(path, expected_size=None, expected_sha512=None,
+                               validate_tar_gz=False, required_tar_member=None):
+    """Validate downloaded file size, optional SHA-512, and optional tar.gz structure."""
+    if not os.path.isfile(path):
+        return False, "downloaded file is missing"
+    actual_size = os.path.getsize(path)
+    if actual_size <= 0:
+        return False, "downloaded file is empty (0 bytes)"
+    if expected_size is not None and actual_size != expected_size:
+        return False, f"size mismatch: got {actual_size} bytes, expected {expected_size} bytes"
+
+    if expected_sha512:
+        digest = hashlib.sha512()
+        with open(path, "rb") as fh:
+            while True:
+                buf = fh.read(1024 * 1024)
+                if not buf:
+                    break
+                digest.update(buf)
+        got = digest.hexdigest().lower()
+        want = expected_sha512.strip().lower()
+        if got != want:
+            return False, f"SHA-512 mismatch (got {got[:16]}..., expected {want[:16]}...)"
+
+    if validate_tar_gz:
+        try:
+            with tarfile.open(path, "r:gz") as tf:
+                members = tf.getmembers()
+                if not members:
+                    return False, "archive is empty"
+                matched_member = False
+                for member in members:
+                    norm = member.name.lstrip("./")
+                    parts = [p for p in norm.replace("\\", "/").split("/") if p]
+                    if member.name.startswith("/") or ".." in parts:
+                        return False, f"unsafe archive member path: {member.name}"
+                    if required_tar_member and member.isfile() and (
+                        norm == required_tar_member or os.path.basename(norm) == required_tar_member
+                    ):
+                        matched_member = True
+                if required_tar_member and not matched_member:
+                    return False, f"required member '{required_tar_member}' not found in archive"
+        except (tarfile.TarError, EOFError, OSError, ValueError) as exc:
+            return False, f"invalid tar.gz archive: {exc}"
+
+    return True, ""
+
+
+def _remove_file_quiet(path):
+    """Best-effort delete of *path* without raising."""
+    try:
+        if os.path.lexists(path):
+            os.remove(path)
+    except OSError:
+        pass
+
+
+def _download_file_resumable(url, dest_path, expected_size=None, expected_sha512=None,
+                             max_retries=4, timeout=30, backoff_base=2, chunk_size=65536,
+                             headers=None, validate_tar_gz=False, required_tar_member=None):
+    """Download *url* to *dest_path* over stdlib HTTP/1.1 with retries and HTTP Range resume.
+
+    Uses ``<dest_path>.part`` and ``<dest_path>.part.meta.json`` while transferring,
+    atomically renames on verified completion, preserves ``.part`` on network drops
+    for future resume, and removes corrupt ``.part`` files if integrity verification fails.
+    """
+    parent = os.path.dirname(dest_path) or "."
+    os.makedirs(parent, exist_ok=True)
+    part_path = f"{dest_path}.part"
+    meta_path = f"{dest_path}.part.meta.json"
+
+    def _load_meta():
+        try:
+            with open(meta_path, "r", encoding="utf-8") as fh:
+                data = json.load(fh)
+            return data if isinstance(data, dict) else {}
+        except (OSError, ValueError, TypeError):
+            return {}
+
+    def _save_meta(data):
+        try:
+            with open(meta_path, "w", encoding="utf-8") as fh:
+                json.dump(data, fh)
+        except OSError:
+            pass
+
+    if os.path.exists(part_path):
+        meta = _load_meta()
+        stale_reason = None
+        if meta and meta.get("url") and meta.get("url") != url:
+            stale_reason = "source URL changed"
+        elif meta and expected_sha512 and meta.get("expected_sha512") and (
+            str(meta.get("expected_sha512")).lower() != expected_sha512.strip().lower()
+        ):
+            stale_reason = "expected SHA-512 changed"
+        if stale_reason:
+            print(f"\033[93m[i] Discarding stale partial file ({stale_reason}): {part_path}\033[0m", flush=True)
+            _remove_file_quiet(part_path)
+            _remove_file_quiet(meta_path)
+
+    _mode, _purl, proxy_desc = _resolve_http_proxy(url)
+    print(f"\033[96m[i] Download URL: {url}\033[0m", flush=True)
+    print(f"\033[96m[i] Proxy mode: {proxy_desc} | Protocol: HTTP/1.1 (stdlib)\033[0m", flush=True)
+
+    max_attempts = max(1, int(max_retries) + 1)
+    last_error = "unknown download error"
+
+    for attempt in range(1, max_attempts + 1):
+        meta = _load_meta()
+        resume_from = os.path.getsize(part_path) if os.path.exists(part_path) else 0
+        known_total = expected_size or (meta.get("total_bytes") if isinstance(meta.get("total_bytes"), int) else None)
+        resumed_attempt = resume_from > 0
+
+        if expected_size and resume_from == expected_size and resume_from > 0:
+            ok, verify_err = _verify_downloaded_archive(
+                part_path, expected_size=expected_size, expected_sha512=expected_sha512,
+                validate_tar_gz=validate_tar_gz, required_tar_member=required_tar_member,
+            )
+            if ok:
+                os.replace(part_path, dest_path)
+                _remove_file_quiet(meta_path)
+                print(f"\033[92m[OK] Verified existing partial download ({resume_from} bytes) -> {dest_path}\033[0m", flush=True)
+                return True, ""
+            print(f"\033[93m[!] Existing partial file failed verification ({verify_err}); resetting partial file.\033[0m", flush=True)
+            _remove_file_quiet(part_path)
+            _remove_file_quiet(meta_path)
+            resume_from = 0
+            resumed_attempt = False
+
+        req_headers = {"User-Agent": "AnCLI", **dict(headers or {})}
+        if resume_from > 0:
+            req_headers["Range"] = f"bytes={resume_from}-"
+            print(
+                f"\033[96m[i] Attempt {attempt}/{max_attempts}: resuming from {resume_from} bytes"
+                f"{f' of {known_total}' if known_total else ''}...\033[0m",
+                flush=True,
+            )
+        else:
+            print(
+                f"\033[96m[i] Attempt {attempt}/{max_attempts}: starting download"
+                f"{f' ({known_total} bytes)' if known_total else ''}...\033[0m",
+                flush=True,
+            )
+
+        downloaded = resume_from
+        server_total = expected_size
+        open_mode = "wb"
+
+        try:
+            req = urllib.request.Request(url, headers=req_headers)
+            with _open_request_with_proxy(req, timeout=timeout) as response:
+                status = getattr(response, "status", None)
+                if status is None and hasattr(response, "getcode"):
+                    status = response.getcode()
+                status = status or 200
+                resp_etag = (response.headers.get("ETag") or "").strip() if response.headers else ""
+                prev_etag = (meta.get("etag") or "").strip()
+
+                if status == 206 and resume_from > 0:
+                    cr = (response.headers.get("Content-Range") or "") if response.headers else ""
+                    m_cr = re.match(r"^bytes\s+(\d+)-(\d+)/(\d+|\*)$", cr.strip(), re.I)
+                    if not m_cr or int(m_cr.group(1)) != resume_from:
+                        raise ValueError(f"unexpected Content-Range '{cr}' for resume offset {resume_from}")
+                    if prev_etag and resp_etag and prev_etag != resp_etag:
+                        print("\033[93m[!] Upstream ETag changed during resume; restarting from 0 bytes.\033[0m", flush=True)
+                        _remove_file_quiet(part_path)
+                        _remove_file_quiet(meta_path)
+                        raise ValueError("upstream ETag changed across resume")
+                    if m_cr.group(3).isdigit():
+                        server_total = int(m_cr.group(3))
+                    open_mode = "ab"
+                    downloaded = resume_from
+                else:
+                    if resume_from > 0:
+                        print("\033[93m[i] Server returned HTTP 200 (no Range resume); restarting from 0 bytes.\033[0m", flush=True)
+                    cl = (response.headers.get("Content-Length") or "") if response.headers else ""
+                    if str(cl).isdigit():
+                        server_total = int(cl)
+                    open_mode = "wb"
+                    downloaded = 0
+                    resumed_attempt = False
+
+                _save_meta({
+                    "url": url,
+                    "expected_sha512": expected_sha512 or "",
+                    "etag": resp_etag or prev_etag,
+                    "total_bytes": server_total,
+                })
+
+                last_log_ts = time.monotonic()
+                last_pct_bucket = -1
+                with open(part_path, open_mode) as out_fh:
+                    while True:
+                        chunk = response.read(chunk_size)
+                        if not chunk:
+                            break
+                        out_fh.write(chunk)
+                        out_fh.flush()
+                        downloaded += len(chunk)
+                        now = time.monotonic()
+                        if server_total:
+                            pct = min(100, int(downloaded * 100 / server_total))
+                            bucket = pct // 10
+                            if bucket > last_pct_bucket or (now - last_log_ts >= 3.0) or downloaded >= server_total:
+                                print(f"[i] Progress: {downloaded}/{server_total} bytes ({pct}%)", flush=True)
+                                last_pct_bucket = bucket
+                                last_log_ts = now
+                        elif now - last_log_ts >= 3.0:
+                            print(f"[i] Downloaded {downloaded} bytes...", flush=True)
+                            last_log_ts = now
+
+            if server_total and downloaded < server_total:
+                raise http.client.IncompleteRead(b"", server_total - downloaded)
+
+            ok, verify_err = _verify_downloaded_archive(
+                part_path,
+                expected_size=expected_size or server_total,
+                expected_sha512=expected_sha512,
+                validate_tar_gz=validate_tar_gz,
+                required_tar_member=required_tar_member,
+            )
+            if not ok:
+                # Corrupt bytes must not stay resumable; discard .part and either retry once or fail cleanly.
+                _remove_file_quiet(part_path)
+                _remove_file_quiet(meta_path)
+                last_error = f"verification failed: {verify_err}"
+                print(f"\033[93m[!] Attempt {attempt}/{max_attempts} {last_error}; discarded corrupt temp file.\033[0m", flush=True)
+                if attempt < max_attempts and resumed_attempt:
+                    wait_s = min(30, backoff_base ** (attempt - 1))
+                    print(f"\033[96m[i] Retrying fresh download in {wait_s}s...\033[0m", flush=True)
+                    time.sleep(wait_s)
+                    continue
+                print(
+                    f"\033[91m[X] Download failed. URL: {url} | Proxy mode: {proxy_desc} | "
+                    f"Retries: {attempt - 1} | Reason: {last_error} | Resumable temp file retained: no\033[0m",
+                    flush=True,
+                )
+                return False, last_error
+
+            if os.path.lexists(dest_path):
+                _remove_file_quiet(dest_path)
+            os.replace(part_path, dest_path)
+            _remove_file_quiet(meta_path)
+            final_size = os.path.getsize(dest_path)
+            print(
+                f"\033[92m[OK] Download complete and verified: {dest_path} ({final_size} bytes)\033[0m",
+                flush=True,
+            )
+            return True, ""
+
+        except urllib.error.HTTPError as e:
+            cr_err = (e.headers.get("Content-Range") or "") if getattr(e, "headers", None) else ""
+            try:
+                e.close()
+            except Exception:
+                pass
+            if e.code == 416 and resume_from > 0:
+                m_416 = re.match(r"^bytes\s+\*/(\d+)$", cr_err.strip(), re.I)
+                remote_total = int(m_416.group(1)) if m_416 else None
+                if remote_total == resume_from and (expected_size is None or expected_size == remote_total):
+                    ok, verify_err = _verify_downloaded_archive(
+                        part_path,
+                        expected_size=expected_size or remote_total,
+                        expected_sha512=expected_sha512,
+                        validate_tar_gz=validate_tar_gz,
+                        required_tar_member=required_tar_member,
+                    )
+                    if ok:
+                        if os.path.lexists(dest_path):
+                            _remove_file_quiet(dest_path)
+                        os.replace(part_path, dest_path)
+                        _remove_file_quiet(meta_path)
+                        print(f"\033[92m[OK] Resumed file matched server size ({resume_from} bytes) and passed verification.\033[0m", flush=True)
+                        return True, ""
+                print("\033[93m[!] HTTP 416 range mismatch; removing invalid partial file and restarting.\033[0m", flush=True)
+                _remove_file_quiet(part_path)
+                _remove_file_quiet(meta_path)
+                last_error = f"HTTP 416 Range Not Satisfiable ({cr_err})"
+            elif e.code in (400, 401, 403, 404, 410, 451):
+                last_error = f"HTTP {e.code} {getattr(e, 'reason', '')}".strip()
+                kept_size = os.path.getsize(part_path) if os.path.exists(part_path) else 0
+                kept_note = f"yes ({part_path}, {kept_size} bytes)" if kept_size > 0 else "no"
+                print(
+                    f"\033[91m[X] Download failed. URL: {url} | Proxy mode: {proxy_desc} | "
+                    f"Downloaded: {kept_size} bytes | Retries: {attempt - 1} | "
+                    f"Reason: {last_error} | Resumable temp file retained: {kept_note}\033[0m",
+                    flush=True,
+                )
+                return False, last_error
+            else:
+                last_error = f"HTTP {e.code} {getattr(e, 'reason', '')}".strip()
+
+        except (urllib.error.URLError, http.client.HTTPException, TimeoutError,
+                OSError, ssl.SSLError, ValueError) as e:
+            last_error = str(e) or type(e).__name__
+
+        cur_part_size = os.path.getsize(part_path) if os.path.exists(part_path) else downloaded
+        print(
+            f"\033[93m[!] Attempt {attempt}/{max_attempts} failed at {cur_part_size} bytes: {last_error}\033[0m",
+            flush=True,
+        )
+        if attempt < max_attempts:
+            wait_s = min(30, backoff_base ** (attempt - 1))
+            print(f"\033[96m[i] Retrying in {wait_s}s (partial bytes preserved for resume)...\033[0m", flush=True)
+            time.sleep(wait_s)
+
+    final_part_size = os.path.getsize(part_path) if os.path.exists(part_path) else 0
+    kept_note = f"yes ({part_path}, {final_part_size} bytes)" if final_part_size > 0 else "no"
+    print(
+        f"\033[91m[X] Download failed after {max_attempts} attempts. URL: {url} | "
+        f"Proxy mode: {proxy_desc} | Downloaded: {final_part_size} bytes | "
+        f"Retries: {max_attempts - 1} | Reason: {last_error} | "
+        f"Resumable temp file retained: {kept_note}\033[0m",
+        flush=True,
+    )
+    return False, last_error
 
 
 def _urlopen_verified(url, headers, timeout):
@@ -1281,34 +1723,60 @@ exit $_ancli_rc
     _write_wrapper_to_paths(executable, wrapper)
 
 def _write_wrapper_to_paths(executable, wrapper):
-    """Write a wrapper script to the systemless module path and all instant-access paths."""
-    # Also write to ANCLI_DIR/bin for direct 'sh /data/local/tmp/ancli/bin/<cmd>' invocation
-    # (bypasses noexec restrictions on /data/local/tmp without requiring a reboot).
-    ancli_bin_path = f"{ANCLI_DIR}/bin/{executable}"
-    try:
-        if os.path.exists(ancli_bin_path):
-            os.remove(ancli_bin_path)
-        with open(ancli_bin_path, "w", encoding="utf-8") as f:
-            f.write(wrapper)
-        os.chmod(ancli_bin_path, 0o755)
-        print(f"\033[92m[OK] Written: {ancli_bin_path}\033[0m")
-    except Exception as e:
-        print(f"\033[93m[!] Warning: Could not write to {ancli_bin_path}: {e}\033[0m")
+    """Write a wrapper script to ANCLI_DIR/bin, module system/bin, and instant KSU/AP paths."""
+    def _atomic_write_exec(target_path, copy_fallback_src=None):
+        os.makedirs(os.path.dirname(target_path), exist_ok=True)
+        try:
+            if os.path.lexists(target_path):
+                os.remove(target_path)
+            with open(target_path, "w", encoding="utf-8", newline="\n") as fh:
+                fh.write(wrapper)
+            os.chmod(target_path, 0o755)
+            return True, None
+        except OSError as exc:
+            if copy_fallback_src and os.path.isfile(copy_fallback_src):
+                rc = os.system(
+                    f"rm -f {shlex.quote(target_path)} >/dev/null 2>&1 && "
+                    f"cp -f {shlex.quote(copy_fallback_src)} {shlex.quote(target_path)} >/dev/null 2>&1 && "
+                    f"chmod 755 {shlex.quote(target_path)} >/dev/null 2>&1"
+                )
+                if rc == 0 and os.path.isfile(target_path):
+                    return True, None
+            return False, exc
 
-    # 1. Systemless module path (takes effect after reboot via Magisk/KSU overlay)
-    sys_bin  = f"{MOD_DIR}/system/bin"
-    sys_path = f"{sys_bin}/{executable}"
-    try:
-        os.makedirs(sys_bin, exist_ok=True)
-        if os.path.exists(sys_path):
-            os.remove(sys_path)
-        with open(sys_path, "w", encoding="utf-8") as f:
-            f.write(wrapper)
-        os.chmod(sys_path, 0o755)
+    # Direct host entrypoint in ANCLI_DIR/bin (always preserved for explicit invocation).
+    ancli_bin_path = f"{ANCLI_DIR}/bin/{executable}"
+    ok, err = _atomic_write_exec(ancli_bin_path)
+    if ok:
+        print(f"\033[92m[OK] Written: {ancli_bin_path}\033[0m")
+    else:
+        print(f"\033[93m[!] Warning: Could not write to {ancli_bin_path}: {err}\033[0m")
+
+    # 1. Systemless module path (takes effect after reboot if metamodule mounts system/bin).
+    sys_path = f"{MOD_DIR}/system/bin/{executable}"
+    ok, err = _atomic_write_exec(sys_path, copy_fallback_src=ancli_bin_path)
+    if ok:
         print(f"\033[92m[OK] Systemless wrapper written: {sys_path}\033[0m")
+    else:
+        print(f"\033[93m[!] Warning: Could not write systemless wrapper to {sys_path}: {err}\033[0m")
+
+    # 2. Instant-access dynamic paths (KernelSU / APatch; immediate availability without reboot).
+    instant_written = []
+    for inst_dir in (KSU_BIN, AP_BIN):
+        if not os.path.isdir(inst_dir):
+            continue
+        inst_path = f"{inst_dir}/{executable}"
+        ok, err = _atomic_write_exec(inst_path, copy_fallback_src=ancli_bin_path)
+        if ok:
+            instant_written.append(inst_path)
+            print(f"\033[92m[OK] Instant wrapper written: {inst_path}\033[0m")
+        else:
+            print(f"\033[93m[!] Warning: Could not write instant wrapper to {inst_path}: {err}\033[0m")
+
+    if instant_written:
+        print(f"\033[96m[i] '{executable}' is immediately runnable via {', '.join(instant_written)} (or '{ancli_bin_path}').\033[0m")
+    else:
         print(f"\033[96m[i] Restart device to expose '/system/bin/{executable}' globally (or use 'ancli shell' / 'sh {ancli_bin_path}' immediately).\033[0m")
-    except Exception as e:
-        print(f"\033[93m[!] Warning: Could not write systemless wrapper to {sys_path}: {e}\033[0m")
 
 def remove_wrapper(executable):
     """删除双注入路径中的工具包装脚本，并同步清理对应的 secrets 密钥文件。"""
@@ -1336,9 +1804,9 @@ def remove_wrapper(executable):
 def _deploy_agy_host_bash_compat(verbose=True):
     """Remove any legacy AnCLI fake `/system/bin/bash` override.
 
-    KernelSU security policy forbids overlaying `/system/bin/bash` or writing
-    files into `/data/adb/ksu/bin`. Real GNU bash remains available inside the
-    Ubuntu PRoot container (`/bin/bash` and `ancli shell`)."""
+    AnCLI never overlays `/system/bin/bash` with a fake host shim; real GNU bash
+    remains available inside the Ubuntu PRoot container (`/bin/bash` and
+    `ancli shell`)."""
     for legacy_dir in (f"{MOD_DIR}/system/bin", KSU_BIN, AP_BIN):
         target = f"{legacy_dir}/bash"
         if not os.path.lexists(target):
@@ -2492,6 +2960,19 @@ def repair_env(registry):
             except OSError:
                 staged_ancli = ancli_src
             try:
+                ancli_bin_dst = os.path.join(ANCLI_DIR, "bin", "ancli")
+                if os.path.isdir(os.path.dirname(ancli_bin_dst)):
+                    try:
+                        if os.path.lexists(ancli_bin_dst):
+                            os.remove(ancli_bin_dst)
+                        shutil.copy2(ancli_src, ancli_bin_dst)
+                        os.chmod(ancli_bin_dst, 0o755)
+                    except OSError:
+                        os.system(
+                            f"rm -f {shlex.quote(ancli_bin_dst)} >/dev/null 2>&1 && "
+                            f"cp -f {shlex.quote(staged_ancli)} {shlex.quote(ancli_bin_dst)} "
+                            f">/dev/null 2>&1 && chmod 755 {shlex.quote(ancli_bin_dst)} >/dev/null 2>&1"
+                        )
                 for inst_b in (KSU_BIN, AP_BIN):
                     if not os.path.isdir(inst_b):
                         continue
@@ -2948,16 +3429,9 @@ def _install_pipe_script(app_id, app, registry=None):
     try:
         print(f"\033[96m[*] Downloading {app['name']} installer via Python (bypasses pipe escaping)...\033[0m")
 
-        # Propagate proxy if set in process environment
-        proxy_url = (os.environ.get('http_proxy') or os.environ.get('https_proxy')
-                     or os.environ.get('HTTP_PROXY') or os.environ.get('HTTPS_PROXY'))
-        if proxy_url:
-            handler = urllib.request.ProxyHandler({'http': proxy_url, 'https': proxy_url})
-            opener  = urllib.request.build_opener(handler)
-            urllib.request.install_opener(opener)
-
         # TLS: verify certs first; fall back to unverified only on cert errors
-        # (the container CA store may be incomplete).
+        # (the container CA store may be incomplete). Proxy selection is per-request
+        # inside _urlopen_verified without mutating global opener state.
         content = _urlopen_verified(installer_url, {'User-Agent': 'Mozilla/5.0'}, timeout=30)
         os.makedirs("/tmp", exist_ok=True)
         with open(script_path, "wb") as f:
@@ -2984,6 +3458,152 @@ def _install_pipe_script(app_id, app, registry=None):
                 os.remove(script_path)
         except Exception:
             pass
+
+
+def _resolve_manifest_url_for_app(app):
+    """Pick the architecture-specific manifest JSON URL for *app*."""
+    arch = _detect_arch()
+    by_arch = app.get("manifest_url_by_arch")
+    if isinstance(by_arch, dict) and by_arch.get(arch):
+        return str(by_arch[arch]).strip()
+    if app.get("manifest_url"):
+        return str(app["manifest_url"]).strip()
+    latest = app.get("latest")
+    if isinstance(latest, dict):
+        l_by_arch = latest.get("url_by_arch")
+        if isinstance(l_by_arch, dict) and l_by_arch.get(arch):
+            return str(l_by_arch[arch]).strip()
+        if latest.get("url"):
+            return str(latest["url"]).strip()
+    return ""
+
+
+def _extract_tar_gz_member(archive_path, member_name, dest_bin):
+    """Safely extract *member_name* from tar.gz archive and atomically install to *dest_bin*."""
+    dest_dir = os.path.dirname(dest_bin)
+    os.makedirs(dest_dir, exist_ok=True)
+    tmp_bin = os.path.join(dest_dir, f".{os.path.basename(dest_bin)}.tmp.{os.getpid()}")
+    with tarfile.open(archive_path, "r:gz") as tf:
+        target_member = None
+        for member in tf.getmembers():
+            if not member.isfile():
+                continue
+            norm = member.name.lstrip("./")
+            parts = [p for p in norm.replace("\\", "/").split("/") if p]
+            if member.name.startswith("/") or ".." in parts:
+                continue
+            if norm == member_name or os.path.basename(norm) == member_name:
+                target_member = member
+                break
+        if target_member is None:
+            raise FileNotFoundError(f"archive member '{member_name}' not found")
+        src_fh = tf.extractfile(target_member)
+        if src_fh is None:
+            raise OSError(f"cannot read archive member '{member_name}'")
+        try:
+            with open(tmp_bin, "wb") as out_fh:
+                shutil.copyfileobj(src_fh, out_fh)
+        finally:
+            src_fh.close()
+    os.chmod(tmp_bin, 0o755)
+    try:
+        os.replace(tmp_bin, dest_bin)
+    except OSError:
+        _remove_file_quiet(dest_bin)
+        os.replace(tmp_bin, dest_bin)
+
+
+def _install_manifest_archive(app_id, app, registry=None, is_update=False):
+    """Install or update a release tarball via Python stdlib HTTP/1.1, Range resume, and SHA-512 verification."""
+    name = app.get("name", app_id)
+    manifest_url = _resolve_manifest_url_for_app(app)
+    if not manifest_url:
+        print(f"\033[91m[X] No release manifest URL configured for {app_id} (arch={_detect_arch()}).\033[0m", flush=True)
+        return False
+
+    _mode, _purl, proxy_desc = _resolve_http_proxy(manifest_url)
+    print(f"\033[96m[*] Resolving {name} release manifest...\033[0m", flush=True)
+    print(f"\033[96m[i] Manifest URL: {manifest_url} | Proxy mode: {proxy_desc}\033[0m", flush=True)
+
+    manifest = None
+    manifest_err = None
+    for attempt in range(1, 4):
+        try:
+            raw = _urlopen_verified(manifest_url, {"User-Agent": "AnCLI"}, timeout=20)
+            manifest = json.loads(raw.decode("utf-8", errors="replace"))
+            if not isinstance(manifest, dict):
+                raise ValueError("manifest JSON must be an object")
+            break
+        except Exception as exc:
+            manifest_err = str(exc) or type(exc).__name__
+            print(f"\033[93m[!] Manifest attempt {attempt}/3 failed: {manifest_err}\033[0m", flush=True)
+            if attempt < 3:
+                time.sleep(attempt)
+
+    if manifest is None:
+        print(f"\033[91m[X] Failed to fetch release manifest ({manifest_url}): {manifest_err}\033[0m", flush=True)
+        return False
+
+    pkg_url = str(manifest.get("url") or "").strip()
+    pkg_ver = str(manifest.get("version") or "unknown").strip()
+    pkg_sha512 = str(manifest.get("sha512") or "").strip()
+    raw_size = manifest.get("size")
+    try:
+        expected_size = int(raw_size) if raw_size is not None and int(raw_size) > 0 else None
+    except (TypeError, ValueError):
+        expected_size = None
+
+    if not pkg_url.startswith("https://"):
+        print(f"\033[91m[X] Invalid or non-HTTPS package URL in manifest: {pkg_url!r}\033[0m", flush=True)
+        return False
+    if pkg_sha512 and not re.fullmatch(r"[0-9a-fA-F]{128}", pkg_sha512):
+        print(f"\033[91m[X] Invalid SHA-512 checksum format in manifest.\033[0m", flush=True)
+        return False
+
+    print(f"\033[96m[i] Resolved {name} v{pkg_ver} for {_detect_arch()}\033[0m", flush=True)
+    staging_dir = os.path.join(ROOTFS, "root", ".cache", "ancli", "downloads", app_id)
+    raw_name = os.path.basename(urllib.parse.unquote(urllib.parse.urlparse(pkg_url).path))
+    safe_name = raw_name if re.fullmatch(r"[A-Za-z0-9._-]+", raw_name or "") else f"{app_id}.tar.gz"
+    archive_path = os.path.join(staging_dir, safe_name)
+    member_name = str(app.get("archive_member") or app.get("executable") or app_id).strip()
+
+    ok, err = _download_file_resumable(
+        pkg_url,
+        archive_path,
+        expected_size=expected_size,
+        expected_sha512=pkg_sha512 or None,
+        validate_tar_gz=True,
+        required_tar_member=member_name,
+    )
+    if not ok:
+        return False
+
+    install_target = str(app.get("install_target") or f"/usr/local/bin/{app.get('executable', app_id)}").strip()
+    target_parts = [p for p in install_target.replace("\\", "/").split("/") if p]
+    if not install_target.startswith("/") or ".." in target_parts:
+        print(f"\033[91m[X] Unsafe install_target path: {install_target!r}\033[0m", flush=True)
+        return False
+
+    dest_bin = os.path.join(ROOTFS, *target_parts)
+    try:
+        _extract_tar_gz_member(archive_path, member_name, dest_bin)
+        _remove_file_quiet(archive_path)
+        print(f"\033[92m[OK] Installed {member_name} -> {install_target} ({os.path.getsize(dest_bin)} bytes, mode 0755)\033[0m", flush=True)
+    except Exception as exc:
+        print(f"\033[91m[X] Failed extracting archive '{archive_path}': {exc}\033[0m", flush=True)
+        return False
+
+    post_cmd = str(app.get("post_install_cmd") or "").strip()
+    if post_cmd and not is_update:
+        try:
+            if not run_cmd(post_cmd):
+                print(f"\033[93m[i] Optional post-install hook '{post_cmd}' returned non-zero; binary ready at {install_target}.\033[0m", flush=True)
+        except OSError as exc:
+            print(f"\033[93m[i] Optional post-install hook skipped ({exc}); binary ready at {install_target}.\033[0m", flush=True)
+
+    if is_update:
+        return True
+    return _install_proot_common(app_id, app, registry)
 
 
 def _ensure_apt_sandbox():
@@ -3048,6 +3668,8 @@ def _install_proot(app_id, app, registry=None):
 
     # Dispatch based on install_method defined in registry
     install_method = app.get('install_method', 'cmd')
+    if install_method == 'manifest_archive':
+        return _install_manifest_archive(app_id, app, registry, is_update=False)
     if install_method == 'pipe_script':
         return _install_pipe_script(app_id, app, registry)
 
@@ -3071,6 +3693,9 @@ def uninstall_app(app_id, registry):
     ok = run_cmd(cmd)
 
     remove_wrapper(app.get('executable', app_id))
+    dl_cache_dir = os.path.join(ROOTFS, "root", ".cache", "ancli", "downloads", app_id)
+    if os.path.isdir(dl_cache_dir):
+        shutil.rmtree(dl_cache_dir, ignore_errors=True)
     _mutate_installed(lambda db: db.pop(app_id, None))
     setup_runtime_context(verbose=False, refresh=True)
     # Forget the removed app's upstream version so it is not shown as installed.
@@ -3307,7 +3932,13 @@ def update_app(app_id, registry):
     name = app.get('name', app_id)
     print(f"\033[93m[*] Updating {name}...\033[0m")
 
-    if not run_cmd(cmd):
+    if app.get('update_method') == 'manifest_archive':
+        if not _install_manifest_archive(app_id, app, registry, is_update=True):
+            print(f"\033[91m[X] Update failed for {name} — manifest archive update did not succeed.\033[0m")
+            print("\033[93m[!] The installed version is unchanged. Check your network/proxy, "
+                  "then retry or inspect the log above.\033[0m")
+            return False
+    elif not run_cmd(cmd):
         print(f"\033[91m[X] Update failed for {name} — '{cmd}' did not succeed.\033[0m")
         print("\033[93m[!] The installed version is unchanged. Check your network/proxy, "
               "then retry or inspect the log above.\033[0m")

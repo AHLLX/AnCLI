@@ -113,7 +113,7 @@ if [ ! -f "$ANCLI_DIR/hosts" ]; then
 fi
 chmod 644 "$ANCLI_DIR/hosts" 2>/dev/null || true
 
-# 5.1 清理旧版本遗留的假 bash 覆盖与 KSU/AP 动态 bin 注入，不再写 /data/adb/ksu/bin
+# 5.1 清理旧版本遗留的假 bash 覆盖（不再覆盖宿主 /system/bin/bash，但保留 KSU/AP 动态 bin 中的工具包装器）
 for _legacy_bin in "$MODULE_DIR/system/bin" /data/adb/ksu/bin /data/adb/ap/bin; do
     [ -d "$_legacy_bin" ] || continue
     if [ -f "$_legacy_bin/bash" ] && head -n 8 "$_legacy_bin/bash" 2>/dev/null | grep -q 'AnCLI AGY host bash compatibility\|AnCLI proot shim'; then
@@ -121,12 +121,18 @@ for _legacy_bin in "$MODULE_DIR/system/bin" /data/adb/ksu/bin /data/adb/ap/bin; 
     fi
 done
 
-# 6. 每次开机同步主入口至 $ANCLI_DIR/bin/ancli，并将 $ANCLI_DIR/bin/ 下的工具包装器同步至模块 system/bin
-#    （由 KernelSU/Magisk systemless mount 提供给 /system/bin，不再写入 /data/adb/ksu/bin）
+# 6. 每次开机同步主入口与工具包装器至 $ANCLI_DIR/bin、模块 system/bin 及 /data/adb/{ksu,ap}/bin
 mkdir -p "$MODULE_DIR/system/bin" 2>/dev/null || true
 if [ -f "$MODULE_DIR/system/bin/ancli" ]; then
+    rm -f "$ANCLI_DIR/bin/ancli" 2>/dev/null || true
     cp -f "$MODULE_DIR/system/bin/ancli" "$ANCLI_DIR/bin/ancli" 2>/dev/null || true
     chmod 755 "$ANCLI_DIR/bin/ancli" 2>/dev/null || true
+    for INSTANT_BIN in /data/adb/ksu/bin /data/adb/ap/bin; do
+        [ -d "$INSTANT_BIN" ] || continue
+        rm -f "$INSTANT_BIN/ancli" 2>/dev/null || true
+        cp -f "$MODULE_DIR/system/bin/ancli" "$INSTANT_BIN/ancli" 2>/dev/null || true
+        chmod 755 "$INSTANT_BIN/ancli" 2>/dev/null || true
+    done
 fi
 if [ -f "$MODULE_DIR/module.prop" ]; then
     cp -f "$MODULE_DIR/module.prop" "$ANCLI_DIR/module.prop" 2>/dev/null || true
@@ -140,14 +146,18 @@ for wrapper in "$ANCLI_DIR/bin/"*; do
         .*) continue ;;
     esac
     [ -f "$wrapper" ] || continue
+    rm -f "$MODULE_DIR/system/bin/$name" 2>/dev/null || true
     cp -f "$wrapper" "$MODULE_DIR/system/bin/$name" 2>/dev/null || true
     chmod 755 "$MODULE_DIR/system/bin/$name" 2>/dev/null || true
+    for INSTANT_BIN in /data/adb/ksu/bin /data/adb/ap/bin; do
+        [ -d "$INSTANT_BIN" ] || continue
+        rm -f "$INSTANT_BIN/$name" 2>/dev/null || true
+        cp -f "$wrapper" "$INSTANT_BIN/$name" 2>/dev/null || true
+        chmod 755 "$INSTANT_BIN/$name" 2>/dev/null || true
+    done
 done
 for INSTANT_BIN in /data/adb/ksu/bin /data/adb/ap/bin; do
     [ -d "$INSTANT_BIN" ] || continue
-    grep -rl "$ANCLI_DIR" "$INSTANT_BIN" 2>/dev/null | while IFS= read -r _old_injected; do
-        rm -f "$_old_injected" 2>/dev/null || true
-    done
     for shim in git curl; do
         if [ -f "$INSTANT_BIN/$shim" ] && head -n 2 "$INSTANT_BIN/$shim" 2>/dev/null | grep -q "AnCLI proot shim"; then
             rm -f "$INSTANT_BIN/$shim" 2>/dev/null || true

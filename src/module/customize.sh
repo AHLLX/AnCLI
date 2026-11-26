@@ -790,10 +790,17 @@ cp -f "$MODPATH/ancli/ancli-core.py" "$BIN_DIR/ancli-core.py"
 cp -f "$MODPATH/ancli/ancli_env.sh" "$BIN_DIR/ancli_env.sh"
 chmod 755 "$BIN_DIR/ancli-core.py" "$BIN_DIR/ancli_env.sh"
 
-# 不再向 $MODPATH/system/bin/bash 或 /data/adb/{ksu,ap}/bin 写入假 bash 或包装脚本；
-# `ancli` 及已安装工具通过 $MODPATH/system/bin/ 在重启后由管理器 systemless 挂载生效，
-# 也可在容器内或通过 /data/local/tmp/ancli/bin/ 直接调用。
+# 严禁覆盖宿主 /system/bin/bash（以及历史遗留的 git/curl/bash 宿主 shim）；
+# 仅通过双注入将 ancli 与已安装工具包装器写入 $MODPATH/system/bin/、$BIN_DIR/ 与 /data/adb/{ksu,ap}/bin/。
 rm -f "$MODPATH/system/bin/bash" "$ANCLI_DIR/bash-host-compat" 2>/dev/null || true
+for _legacy_bin in /data/adb/ksu/bin /data/adb/ap/bin; do
+    [ -d "$_legacy_bin" ] || continue
+    for _legacy_shim in git bash curl; do
+        if [ -f "$_legacy_bin/$_legacy_shim" ] && head -n 8 "$_legacy_bin/$_legacy_shim" 2>/dev/null | grep -q 'AnCLI AGY host bash compatibility\|AnCLI proot shim'; then
+            rm -f "$_legacy_bin/$_legacy_shim" 2>/dev/null || true
+        fi
+    done
+done
 
 # 部署容器内部直达 `ancli` 入口，支持在 PRoot 容器内直接调用 ancli 命令
 if [ -d "$ROOTFS/usr/local/bin" ]; then
@@ -822,16 +829,41 @@ cp -f "$MODPATH/ancli/registry.json" "$BIN_DIR/registry.json" 2>/dev/null || tru
 cp -f "$MODPATH/ancli/registry.json" "$ANCLI_DIR/registry.json" 2>/dev/null || true
 
 
-# 6. 复制主入口到 $BIN_DIR/ancli，供 WebUI 与免重启直接调用；
-#    $MODPATH/system/bin/ancli 将在设备重启后由系统无系统挂载至 /system/bin/ancli。
+# 6. 双注入主入口与已有工具包装器到 $BIN_DIR、$MODPATH/system/bin 及 /data/adb/{ksu,ap}/bin，
+#    使 `ancli` 与已装工具免重启即时生效，同时保留重启后的 systemless 模块挂载路径。
+rm -f "$BIN_DIR/ancli" 2>/dev/null || true
 cp -f "$MODPATH/system/bin/ancli" "$BIN_DIR/ancli" 2>/dev/null || true
 chmod 755 "$BIN_DIR/ancli" 2>/dev/null || true
+for INSTANT_BIN in /data/adb/ksu/bin /data/adb/ap/bin; do
+    [ -d "$INSTANT_BIN" ] || continue
+    rm -f "$INSTANT_BIN/ancli" 2>/dev/null || true
+    cp -f "$MODPATH/system/bin/ancli" "$INSTANT_BIN/ancli" 2>/dev/null || true
+    chmod 755 "$INSTANT_BIN/ancli" 2>/dev/null || true
+done
+for wrapper in "$BIN_DIR/"*; do
+    name="${wrapper##*/}"
+    case "$name" in
+        proot|loader|loader-*|ancli-core.py|ancli|ancli_env.sh|registry.json|installed.json|hosts) continue ;;
+        git|bash|curl) continue ;;
+        .*) continue ;;
+    esac
+    [ -f "$wrapper" ] || continue
+    rm -f "$MODPATH/system/bin/$name" 2>/dev/null || true
+    cp -f "$wrapper" "$MODPATH/system/bin/$name" 2>/dev/null || true
+    chmod 755 "$MODPATH/system/bin/$name" 2>/dev/null || true
+    for INSTANT_BIN in /data/adb/ksu/bin /data/adb/ap/bin; do
+        [ -d "$INSTANT_BIN" ] || continue
+        rm -f "$INSTANT_BIN/$name" 2>/dev/null || true
+        cp -f "$wrapper" "$INSTANT_BIN/$name" 2>/dev/null || true
+        chmod 755 "$INSTANT_BIN/$name" 2>/dev/null || true
+    done
+done
 # The WebUI manager namespace can hide /data/adb/modules.  Keep the current
 # module metadata beside the host entrypoint so update checks do not depend on
 # module-tree readability.
 cp -f "$MODPATH/module.prop" "$ANCLI_DIR/module.prop" 2>/dev/null || installer_abort '无法部署模块版本信息' 'Could not deploy module version metadata'
 chmod 644 "$ANCLI_DIR/module.prop" 2>/dev/null || true
-ui_print "$(installer_text ">> 提示：模块与新装工具的全局 /system/bin 入口将在重启后生效。" ">> Note: Global /system/bin entrypoints take effect after reboot.")"
+ui_print "$(installer_text ">> 提示：已双注入宿主入口至 /data/adb/{ksu,ap}/bin 与 \$MODPATH/system/bin（支持即时调用与重启挂载）。" ">> Note: Host entrypoints dual-injected to /data/adb/{ksu,ap}/bin and \$MODPATH/system/bin.")"
 
 
 # Request hot install only through the official KernelSU capability flag.

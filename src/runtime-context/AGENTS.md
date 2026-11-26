@@ -31,7 +31,7 @@ Codex 的全局规则入口是 `/root/.codex/AGENTS.md`；AGY 的全局规则入
 - **容器内 ancli 入口**：容器已内置 `/usr/local/bin/ancli`（并在 `/usr/bin/ancli`、`/bin/ancli` 提供软链接），可直接在容器内无前缀调用 `ancli status --json`、`ancli doctor`、`ancli agent-init --finalize`、`ancli shell [命令...]`；宿主机侧执行 `ancli shell` 可直接进入容器 Ubuntu 24.04 交互式登录 Bash（`/bin/bash -l`），带参数时则在容器内执行对应命令后退出。
 - **容器内 PATH 注入与优先级**：应用 wrapper 与容器 `/etc/environment` 设定为 `PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/root/.local/bin:/data/adb/ksu/bin:/data/adb/ap/bin:/system/bin`（`ancli_env.sh` 还会附加 `:/system/xbin`）。Ubuntu GNU 工具与 `/root/.local/bin` 优先；Root 动态工具目录次之；`/system/bin` 仅作兜底。若当前设备的 `/apex`、`/linkerconfig` 与 SELinux 策略兼容，容器内可能可直接调用 `getprop` 等 Android 原生只读检测命令；实际可用性须先复核，不可用时请改用 `ancli android probe --json` 或 `ancli android shell` 宿主桥接。
 - **PRoot 命令执行规范与沙箱约束**：Android 内核限制下，PRoot 基于 ptrace 用户态虚拟化，不支持 Linux User Namespace / Seccomp 沙箱隔离层（调用此类沙箱如 `clone(CLONE_NEWUSER...)` 会直接报错 `invalid argument`）。在容器内执行工具命令时，禁止启用沙箱（Sandbox）模式，须使用直通/非沙箱模式。
-- **宿主机入口与容器内 bash**：AnCLI 遵循 KernelSU 模块规范，**不覆盖**宿主 `/system/bin/bash`，也**不向** `/data/adb/ksu/bin` 或 `/data/adb/ap/bin` 写入文件。`ancli` 与已安装工具包装器写入 `$MODPATH/system/bin/`（重启后通过 systemless 挂载生效于 `/system/bin/`）与 `/data/local/tmp/ancli/bin/`；新装工具未重启前可直接通过 `ancli shell` 在容器内使用，容器内提供真正的 Ubuntu GNU `/bin/bash` 与 `/usr/local/bin/bash`。
+- **宿主机入口与容器内 bash**：AnCLI **绝不覆盖**宿主 `/system/bin/bash`，但会通过双注入将 `ancli` 与已安装工具包装器写入 `$MODPATH/system/bin/`（systemless 模块路径）、`/data/adb/ksu/bin` 或 `/data/adb/ap/bin`（KernelSU/APatch 免重启即时路径）以及 `/data/local/tmp/ancli/bin/`（直接绝对路径入口）；若动态入口缺失，可执行 `ancli repair` 重新生成，容器内同时提供真正的 Ubuntu GNU `/bin/bash` 与 `/usr/local/bin/bash`。
 
 ## 设备观察（版本和路径可能变化）
 

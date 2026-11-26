@@ -128,7 +128,8 @@ except Exception as e:
 # Static launcher: carries the same default-cwd logic as the generated wrappers.
 launcher = f"{STAGE}/ancli-launcher.new"
 if os.path.exists(launcher):
-    for dst in (f"{MOD}/system/bin/ancli",
+    for dst in (f"{ANCLI}/bin/ancli",
+                f"{MOD}/system/bin/ancli",
                 "/data/adb/ksu/bin/ancli",
                 "/data/adb/ap/bin/ancli"):
         try:

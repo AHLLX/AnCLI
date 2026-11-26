@@ -6,14 +6,12 @@ Welcome, fellow AI Assistant. If you are reading this, you have been tasked with
 AnCLI is a unified, systemless environment manager and plugin-based installer designed to bring full Linux command-line tools (like Node.js, Go, or Python-based AI agents) to rooted Android devices.
 Because Android uses the Bionic C library, native Linux binaries often crash. AnCLI solves this by using `proot` to run a pure Ubuntu `glibc` base system transparently on Android.
 
-## 当前交接（2026-11-20，v1.2.667）
+## 当前交接（2026-11-26，v1.2.670）
 
-- 当前源码/正式版模块包为 `v1.2.667`、`versionCode=78`，`update.json` 已同步指向 `v1.2.667`。模块更新检查与 ZIP 下载由 Android 宿主执行，Ubuntu rootfs 删除后仍可检查和更新；下载包校验 ZIP 结构、根目录 module.prop、版本和 versionCode。
-- 四个规格的 Ubuntu 24.04 arm64 离线容器包（`minimal`、`standard`、`developer`、`full`，均无模板记忆且未预装 Agent）已统一并入 `v1.2.667` Release，不再保留单独的离线包 Release。
-- `dsh-web-control.sh` 启动 `dsh web` 时将进程迁出管理器应用 cgroup 至根 cgroup（避免切到 Chrome 后被 Android 后台冻结器 `do_freezer_trap` 挂起），并保留宿主代理与 `NO_PROXY=localhost,127.0.0.1,::1,0.0.0.0`；`ancli-core.py` 的 `patch_dsh_web_oauth_popup()` 与 `patch_dsh_web_cookie()` 同步在安装/更新/修复时生效。
-- WebUI 支持按应用卡片独立锁定与不同应用并发安装/更新/卸载，后端通过 `_mutate_installed()`（`fcntl.flock`）保护 `installed.json` 并发写入；已清理残留无用 CSS/JS。
-- 新增 `ancli shell [命令...]`（宿主机入口与容器内入口均支持，无参数进入 `/bin/bash -l`），并已同步至 `src/runtime-context/AGENTS.md`；`generate_proot_wrapper` 两个后台 watcher 子 shell 均已 `</dev/null` 并捕获 `TERM INT HUP` 静默退出，消除退出卡顿与 `Terminated` 刷屏。
-- 保持单一 `proot-ubuntu` 后端。容器内提供原生 `/usr/local/bin/ancli`，宿主机入口通过 `$MODPATH/system/bin/`（systemless 挂载，重启后生效于 `/system/bin/`）与 `/data/local/tmp/ancli/bin/` 提供；不覆盖 `/system/bin/bash`，不向 `/data/adb/ksu/bin` 或 `/data/adb/ap/bin` 写文件。`bin/proot` 由 GitHub Actions CI（`scripts/build_proot_ci.sh`）从上游 `proot v5.4.0` 源码编译打入，仓库不存放预编译二进制。
+- 当前源码/正式版模块包为 `v1.2.670`、`versionCode=81`，`update.json` 已同步指向 `v1.2.670`。模块更新检查与 ZIP 下载由 Android 宿主执行，Ubuntu rootfs 删除后仍可检查和更新；下载包校验 ZIP 结构、根目录 module.prop、版本和 versionCode。
+- 已恢复 `ancli` 与已安装工具包装器的双路径动态注入：安装、更新、`ancli repair`、刷入（`customize.sh`）与开机（`service.sh`）会先删除旧文件再同步写入 `/data/local/tmp/ancli/bin/`、`$MODPATH/system/bin/` 以及存在的 `/data/adb/ksu/bin/` 与 `/data/adb/ap/bin/`；始终不写 `/system/bin`，也保持禁用宿主假 `/system/bin/bash` 覆盖。
+- `agy` 已切至 `manifest_archive` 安装与更新机制，由 Python 标准库强制 HTTP/1.1 下载、重试退避、`.part` `Range` 断点续传并校验 SHA-512 与 `tar.gz` 成员后原子安装，同时严格遵守 `proxy_mode`（`direct` 不切换未知代理）与 `NO_PROXY`。
+- 保持单一 `proot-ubuntu` 后端。容器内提供原生 `/usr/local/bin/ancli`，宿主机入口通过 `$MODPATH/system/bin/`、`/data/adb/{ksu,ap}/bin/` 与 `/data/local/tmp/ancli/bin/` 提供；`bin/proot` 由 GitHub Actions CI（`scripts/build_proot_ci.sh`）从上游 `proot v5.4.0` 源码编译打入，仓库不存放预编译二进制。
 - 容器 wrapper 的 PATH 为 `/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/root/.local/bin:/data/adb/ksu/bin:/data/adb/ap/bin:/system/bin`；`/system/bin` 只能作为 Android 安全只读工具的回退路径。
 - PRoot 容器命令不能启用 Linux User Namespace 或 Seccomp sandbox；Android 内核下会产生 `EINVAL`。不要引入嵌套 PRoot。
 - WebUI 长任务必须通过 `nohup` 脱离 KernelSU WebUI exec 会话，并由后台 shell 写入 `.log` 和 `.exit`。

@@ -2792,3 +2792,418 @@ class TestMilestoneM1Fixes:
         cleared = core.load_installed()["codex-cli"]
         assert cleared["configured_env"] == []
         assert "env" not in cleared
+
+
+# ---------------------------------------------------------------------------
+# Dual-injection host entrypoints & AGY resumable manifest downloader
+# ---------------------------------------------------------------------------
+
+class TestDualInjectionHostExposure:
+    def _setup_paths(self, tmp_path, monkeypatch):
+        ancli_dir = tmp_path / "ancli"
+        rootfs = tmp_path / "rootfs"
+        mod_dir = tmp_path / "mod"
+        ksu_bin = tmp_path / "ksu" / "bin"
+        ap_bin = tmp_path / "ap" / "bin"
+        secrets = tmp_path / "secrets"
+        for d in (ancli_dir / "bin", rootfs / "usr" / "local" / "bin", rootfs / "root",
+                  mod_dir / "system" / "bin", ksu_bin, ap_bin, secrets):
+            d.mkdir(parents=True)
+        (mod_dir / "system" / "bin" / "ancli").write_text("#!/system/bin/sh\necho ancli\n", encoding="utf-8")
+        monkeypatch.setattr(core, "ANCLI_DIR", str(ancli_dir))
+        monkeypatch.setattr(core, "ROOTFS", str(rootfs))
+        monkeypatch.setattr(core, "MOD_DIR", str(mod_dir))
+        monkeypatch.setattr(core, "KSU_BIN", str(ksu_bin))
+        monkeypatch.setattr(core, "AP_BIN", str(ap_bin))
+        monkeypatch.setattr(core, "SECRETS_DIR", str(secrets))
+        monkeypatch.setattr(core, "INSTALLED_FILE", str(ancli_dir / "installed.json"))
+        monkeypatch.setattr(core, "CONFIG_FILE", str(rootfs / "root" / ".ancli-config.json"))
+        monkeypatch.setattr(core, "CONTAINER_CONFIG_FILE", str(ancli_dir / "container-config.json"))
+        monkeypatch.setattr(core, "CONTAINER_PROFILES_FILE", str(ancli_dir / "container-profiles.json"))
+        return ancli_dir, rootfs, mod_dir, ksu_bin, ap_bin
+
+    def test_write_wrapper_replaces_existing_and_injects_ksu_and_ap(self, tmp_path, monkeypatch, capsys):
+        ancli_dir, _rootfs, mod_dir, ksu_bin, ap_bin = self._setup_paths(tmp_path, monkeypatch)
+        stale_targets = [
+            ancli_dir / "bin" / "agy",
+            mod_dir / "system" / "bin" / "agy",
+            ksu_bin / "agy",
+            ap_bin / "agy",
+        ]
+        for p in stale_targets:
+            p.write_text("old-stale-owner", encoding="utf-8")
+            os.chmod(p, 0o444)
+
+        removed = []
+        orig_remove = core.os.remove
+
+        def tracking_remove(path):
+            removed.append(os.path.normpath(str(path)))
+            if os.name == "nt" and os.path.exists(path):
+                os.chmod(path, 0o644)
+            return orig_remove(path)
+
+        monkeypatch.setattr(core.os, "remove", tracking_remove)
+        core.generate_proot_wrapper("agy", {}, [])
+        out = capsys.readouterr().out
+
+        for p in stale_targets:
+            assert p.exists(), p
+            assert os.path.normpath(str(p)) in removed
+            content = p.read_text(encoding="utf-8")
+            assert "/usr/bin/env ANCLI_IN_CONTAINER=1" in content
+            assert "agy" in content
+        assert "Instant wrapper written" in out
+        assert "immediately runnable" in out
+
+    def test_repair_env_restores_missing_ksu_and_ap_wrappers_and_ancli(self, tmp_path, monkeypatch, capsys):
+        ancli_dir, rootfs, mod_dir, ksu_bin, ap_bin = self._setup_paths(tmp_path, monkeypatch)
+        (rootfs / "usr" / "local" / "bin" / "agy").write_text("#!/bin/sh\necho 1.5.18\n", encoding="utf-8")
+        core.save_installed({"agy": {"name": "Antigravity CLI", "executable": "agy", "installed_version": "1.5.17"}})
+        # Replicate real-device state where module & tmp wrappers exist while ksu/ap wrappers are absent.
+        (ancli_dir / "bin" / "agy").write_text("stale", encoding="utf-8")
+        (mod_dir / "system" / "bin" / "agy").write_text("stale", encoding="utf-8")
+        assert not (ksu_bin / "agy").exists()
+        assert not (ap_bin / "agy").exists()
+        assert not (ksu_bin / "ancli").exists()
+
+        monkeypatch.setattr(core, "_deploy_xdg_open", lambda: None)
+        monkeypatch.setattr(core, "_deploy_guest_ancli", lambda verbose=True: True)
+        monkeypatch.setattr(core, "patch_dsh_web_cookie", lambda verbose=True: [])
+        monkeypatch.setattr(core, "patch_dsh_web_oauth_popup", lambda verbose=True: [])
+        monkeypatch.setattr(core, "_fix_config_permissions", lambda: None)
+        monkeypatch.setattr(core, "setup_skill_dirs", lambda verbose=False: {})
+        monkeypatch.setattr(core, "setup_runtime_context", lambda verbose=False, refresh=True: {})
+        monkeypatch.setattr(core, "ensure_android_data", lambda verbose=False: True)
+        monkeypatch.setattr(core, "_deploy_agy_host_bash_compat", lambda verbose=False: [])
+        monkeypatch.setattr(core, "_write_resolv_conf", lambda: None)
+
+        reg = {"apps": {"agy": {"name": "Antigravity CLI", "executable": "agy",
+                                "optional_env_vars": ["HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY"]}}}
+        core.repair_env(reg)
+        capsys.readouterr()
+
+        for p in (ancli_dir / "bin" / "agy", mod_dir / "system" / "bin" / "agy",
+                  ksu_bin / "agy", ap_bin / "agy",
+                  ancli_dir / "bin" / "ancli", ksu_bin / "ancli", ap_bin / "ancli"):
+            assert p.exists(), f"missing repaired entrypoint: {p}"
+
+
+class TestManifestArchiveDownloader:
+    @staticmethod
+    def _build_tar_gz(binary_bytes=b"#!/bin/sh\necho 1.5.18\n"):
+        import hashlib as _hl
+        import io as _io
+        import tarfile as _tf
+
+        buf = _io.BytesIO()
+        with _tf.open(fileobj=buf, mode="w:gz") as tf:
+            info = _tf.TarInfo(name="antigravity")
+            info.size = len(binary_bytes)
+            info.mode = 0o755
+            tf.addfile(info, _io.BytesIO(binary_bytes))
+        raw = buf.getvalue()
+        return raw, _hl.sha512(raw).hexdigest()
+
+    def _paths(self, tmp_path, monkeypatch, proxy_mode="direct", proxy_url=""):
+        ancli_dir = tmp_path / "ancli"
+        rootfs = tmp_path / "rootfs"
+        mod_dir = tmp_path / "mod"
+        ksu_bin = tmp_path / "ksu" / "bin"
+        ap_bin = tmp_path / "ap" / "bin"
+        secrets = tmp_path / "secrets"
+        for d in (ancli_dir / "bin", rootfs / "usr" / "local" / "bin", rootfs / "root",
+                  mod_dir / "system" / "bin", ksu_bin, ap_bin, secrets):
+            d.mkdir(parents=True)
+        cfg_file = rootfs / "root" / ".ancli-config.json"
+        cfg_file.write_text(json.dumps({"lang": "zh", "proxy_mode": proxy_mode, "proxy_url": proxy_url}), encoding="utf-8")
+        monkeypatch.setattr(core, "ANCLI_DIR", str(ancli_dir))
+        monkeypatch.setattr(core, "ROOTFS", str(rootfs))
+        monkeypatch.setattr(core, "MOD_DIR", str(mod_dir))
+        monkeypatch.setattr(core, "KSU_BIN", str(ksu_bin))
+        monkeypatch.setattr(core, "AP_BIN", str(ap_bin))
+        monkeypatch.setattr(core, "SECRETS_DIR", str(secrets))
+        monkeypatch.setattr(core, "INSTALLED_FILE", str(ancli_dir / "installed.json"))
+        monkeypatch.setattr(core, "UPDATE_CACHE", str(ancli_dir / ".update_cache.json"))
+        monkeypatch.setattr(core, "CONFIG_FILE", str(cfg_file))
+        monkeypatch.setattr(core, "_detect_arch", lambda: "arm64")
+        monkeypatch.setattr(core.time, "sleep", lambda s: None)
+        return ancli_dir, rootfs, mod_dir, ksu_bin, ap_bin
+
+    def test_direct_mode_ignores_env_and_cache_proxy(self, tmp_path, monkeypatch):
+        ancli_dir, *_ = self._paths(tmp_path, monkeypatch, proxy_mode="direct")
+        (ancli_dir / ".proxy_cache").write_text("192.0.2.5 8888 9999999999\n", encoding="utf-8")
+        monkeypatch.setenv("http_proxy", "http://192.0.2.9:9999")
+        monkeypatch.setenv("https_proxy", "http://192.0.2.9:9999")
+        monkeypatch.setenv("HTTPS_PROXY", "http://192.0.2.9:9999")
+
+        mode, proxy_url, desc = core._resolve_http_proxy("https://storage.googleapis.com/a.tar.gz")
+        assert mode == "direct"
+        assert proxy_url is None
+        assert desc == "direct"
+        assert core._get_detected_proxy() == ""
+
+    def test_manual_proxy_respects_no_proxy(self, tmp_path, monkeypatch):
+        self._paths(tmp_path, monkeypatch, proxy_mode="manual", proxy_url="http://127.0.0.1:7890")
+        monkeypatch.delenv("no_proxy", raising=False)
+        monkeypatch.setenv("NO_PROXY", "localhost,127.0.0.1,.internal.local")
+
+        mode_ext, purl_ext, _ = core._resolve_http_proxy("https://storage.googleapis.com/cli.tar.gz")
+        assert mode_ext == "manual"
+        assert purl_ext == "http://127.0.0.1:7890"
+
+        mode_loc, purl_loc, desc_loc = core._resolve_http_proxy("http://127.0.0.1:8080/cli.tar.gz")
+        assert mode_loc == "manual"
+        assert purl_loc is None
+        assert "NO_PROXY" in desc_loc
+
+    def test_resumable_http11_range_download_and_retry(self, tmp_path, monkeypatch, capsys):
+        import threading as _th
+        from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+        _ancli_dir, rootfs, *_ = self._paths(tmp_path, monkeypatch, proxy_mode="direct")
+        payload, sha512 = self._build_tar_gz(b"#!/bin/sh\necho agy-resumed\n")
+        requests_seen = []
+        drop_once = {"done": False}
+
+        class Handler(BaseHTTPRequestHandler):
+            protocol_version = "HTTP/1.1"
+
+            def log_message(self, fmt, *args):
+                pass
+
+            def do_GET(self):
+                requests_seen.append({
+                    "ver": self.request_version,
+                    "range": self.headers.get("Range"),
+                })
+                rng = self.headers.get("Range")
+                if rng and rng.startswith("bytes="):
+                    start = int(rng.split("=", 1)[1].split("-", 1)[0])
+                    body = payload[start:]
+                    self.send_response(206)
+                    self.send_header("Content-Range", f"bytes {start}-{len(payload) - 1}/{len(payload)}")
+                    self.send_header("Content-Length", str(len(body)))
+                    self.send_header("ETag", '"agy-v1518"')
+                    self.end_headers()
+                    self.wfile.write(body)
+                    return
+
+                self.send_response(200)
+                self.send_header("Content-Length", str(len(payload)))
+                self.send_header("Accept-Ranges", "bytes")
+                self.send_header("ETag", '"agy-v1518"')
+                self.end_headers()
+                if not drop_once["done"]:
+                    drop_once["done"] = True
+                    split = len(payload) // 2
+                    self.wfile.write(payload[:split])
+                    self.wfile.flush()
+                    # Drop socket mid-transfer before Content-Length completes.
+                    self.close_connection = True
+                    return
+                self.wfile.write(payload)
+
+        srv = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        port = srv.server_address[1]
+        t = _th.Thread(target=srv.serve_forever, daemon=True)
+        t.start()
+        try:
+            monkeypatch.setattr(core.urllib.request, "urlopen", core._STDLIB_URLOPEN)
+            dest = str(rootfs / "root" / ".cache" / "cli_linux_arm64.tar.gz")
+            ok, err = core._download_file_resumable(
+                f"http://127.0.0.1:{port}/cli_linux_arm64.tar.gz",
+                dest,
+                expected_sha512=sha512,
+                chunk_size=64,
+                validate_tar_gz=True,
+                required_tar_member="antigravity",
+            )
+            out = capsys.readouterr().out
+            assert ok is True, f"err={err}\nout={out}"
+            assert os.path.getsize(dest) == len(payload)
+            assert not os.path.exists(dest + ".part")
+            assert len(requests_seen) == 2
+            assert requests_seen[0]["ver"] == "HTTP/1.1"
+            assert requests_seen[1]["range"] is not None and requests_seen[1]["range"].startswith("bytes=")
+            assert "Proxy mode: direct" in out
+            assert "resuming from" in out
+        finally:
+            srv.shutdown()
+            srv.server_close()
+
+    def test_download_failure_preserves_part_and_logs_diagnostics(self, tmp_path, monkeypatch, capsys):
+        import threading as _th
+        from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+        _ancli_dir, rootfs, *_ = self._paths(tmp_path, monkeypatch, proxy_mode="direct")
+        payload, sha512 = self._build_tar_gz()
+
+        class DropHandler(BaseHTTPRequestHandler):
+            protocol_version = "HTTP/1.1"
+
+            def log_message(self, fmt, *args):
+                pass
+
+            def do_GET(self):
+                rng = self.headers.get("Range")
+                start = int(rng.split("=", 1)[1].split("-", 1)[0]) if (rng and rng.startswith("bytes=")) else 0
+                if start == 0:
+                    self.send_response(200)
+                    self.send_header("Content-Length", str(len(payload)))
+                    self.end_headers()
+                    self.wfile.write(payload[:40])
+                    self.wfile.flush()
+                    self.close_connection = True
+                    return
+                self.send_response(503)
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+
+        srv = ThreadingHTTPServer(("127.0.0.1", 0), DropHandler)
+        port = srv.server_address[1]
+        t = _th.Thread(target=srv.serve_forever, daemon=True)
+        t.start()
+        try:
+            monkeypatch.setattr(core.urllib.request, "urlopen", core._STDLIB_URLOPEN)
+            dest = str(rootfs / "root" / ".cache" / "cli_linux_arm64.tar.gz")
+            ok, err = core._download_file_resumable(
+                f"http://127.0.0.1:{port}/cli_linux_arm64.tar.gz",
+                dest,
+                expected_sha512=sha512,
+                max_retries=1,
+            )
+            out = capsys.readouterr().out
+            assert ok is False and "503" in err
+            assert not os.path.exists(dest)
+            assert os.path.exists(dest + ".part")
+            assert os.path.getsize(dest + ".part") == 40
+            assert "URL:" in out
+            assert "Proxy mode: direct" in out
+            assert "Retries: 1" in out
+            assert "Resumable temp file retained: yes" in out
+        finally:
+            srv.shutdown()
+            srv.server_close()
+
+    def test_sha512_mismatch_discards_corrupt_partial(self, tmp_path, monkeypatch, capsys):
+        import threading as _th
+        from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+        _ancli_dir, rootfs, *_ = self._paths(tmp_path, monkeypatch, proxy_mode="direct")
+        payload, _real_sha = self._build_tar_gz()
+        wrong_sha = "0" * 128
+
+        class BadShaHandler(BaseHTTPRequestHandler):
+            protocol_version = "HTTP/1.1"
+
+            def log_message(self, fmt, *args):
+                pass
+
+            def do_GET(self):
+                self.send_response(200)
+                self.send_header("Content-Length", str(len(payload)))
+                self.end_headers()
+                self.wfile.write(payload)
+
+        srv = ThreadingHTTPServer(("127.0.0.1", 0), BadShaHandler)
+        port = srv.server_address[1]
+        t = _th.Thread(target=srv.serve_forever, daemon=True)
+        t.start()
+        try:
+            monkeypatch.setattr(core.urllib.request, "urlopen", core._STDLIB_URLOPEN)
+            dest = str(rootfs / "root" / ".cache" / "bad.tar.gz")
+            ok, err = core._download_file_resumable(
+                f"http://127.0.0.1:{port}/bad.tar.gz",
+                dest,
+                expected_sha512=wrong_sha,
+                max_retries=1,
+                validate_tar_gz=True,
+                required_tar_member="antigravity",
+            )
+            out = capsys.readouterr().out
+            assert ok is False and "SHA-512 mismatch" in err
+            assert not os.path.exists(dest)
+            assert not os.path.exists(dest + ".part")
+            assert "Resumable temp file retained: no" in out
+        finally:
+            srv.shutdown()
+            srv.server_close()
+
+    def test_manifest_archive_install_and_update_inject_all_wrappers(self, tmp_path, monkeypatch, capsys):
+        ancli_dir, rootfs, mod_dir, ksu_bin, ap_bin = self._paths(tmp_path, monkeypatch, proxy_mode="direct")
+        payload, sha512 = self._build_tar_gz(b"#!/bin/sh\necho 1.5.18\n")
+        post_cmds = []
+
+        # Test end-to-end _install_manifest_archive + update_app using mocked HTTPS manifest & archive responses
+        manifest_bytes = json.dumps({
+            "version": "1.5.18",
+            "url": "https://storage.googleapis.com/antigravity-public/1.5.18/cli_linux_arm64.tar.gz",
+            "sha512": sha512,
+        }).encode("utf-8")
+
+        class FakeResp:
+            def __init__(self, body):
+                self._body = body
+                self._pos = 0
+                self.status = 200
+                self.headers = {"Content-Length": str(len(body)), "ETag": '"etag-1518"'}
+
+            def read(self, n=-1):
+                if n is None or n < 0:
+                    out = self._body[self._pos:]
+                    self._pos = len(self._body)
+                    return out
+                out = self._body[self._pos:self._pos + n]
+                self._pos += len(out)
+                return out
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return False
+
+        def fake_urlopen(req, timeout=30, context=None):
+            if "manifests/linux_arm64.json" in req.full_url:
+                return FakeResp(manifest_bytes)
+            if "cli_linux_arm64.tar.gz" in req.full_url:
+                return FakeResp(payload)
+            raise AssertionError(f"unexpected url: {req.full_url}")
+
+        monkeypatch.setattr(core.urllib.request, "urlopen", fake_urlopen)
+        monkeypatch.setattr(core, "run_cmd", lambda cmd: post_cmds.append(cmd) or True)
+        monkeypatch.setattr(core, "_deploy_xdg_open", lambda: None)
+        monkeypatch.setattr(core, "_deploy_guest_ancli", lambda verbose=True: True)
+        monkeypatch.setattr(core, "_fix_config_permissions", lambda: None)
+        monkeypatch.setattr(core, "setup_skill_dirs", lambda verbose=False: {})
+        monkeypatch.setattr(core, "setup_runtime_context", lambda verbose=False, refresh=True: {})
+        monkeypatch.setattr(core, "_probe_installed_version", lambda app, reg=None: "1.5.18")
+        monkeypatch.setattr(core, "_latest_version", lambda app, reg=None: ("1.5.18", "manifest", None))
+
+        reg_path = os.path.join(os.path.dirname(__file__), "..", "src", "registry.json")
+        with open(reg_path, encoding="utf-8") as fh:
+            registry = json.load(fh)
+
+        assert core.install_app("agy", registry) is True
+        capsys.readouterr()
+
+        bin_path = rootfs / "usr" / "local" / "bin" / "agy"
+        assert bin_path.exists() and b"1.5.18" in bin_path.read_bytes()
+        assert post_cmds == ["agy install --dir /usr/local/bin"]
+        for wrapper_path in (
+            ancli_dir / "bin" / "agy",
+            mod_dir / "system" / "bin" / "agy",
+            ksu_bin / "agy",
+            ap_bin / "agy",
+        ):
+            assert wrapper_path.exists(), wrapper_path
+
+        # Remove dynamic entrypoints and verify update_app regenerates them immediately.
+        (ksu_bin / "agy").unlink()
+        (ap_bin / "agy").unlink()
+        assert core.update_app("agy", registry) is True
+        capsys.readouterr()
+        assert (ksu_bin / "agy").exists()
+        assert (ap_bin / "agy").exists()
+        assert core.load_installed()["agy"]["installed_version"] == "1.5.18"
